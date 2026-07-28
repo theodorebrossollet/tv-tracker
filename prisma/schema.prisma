@@ -1,0 +1,78 @@
+// TV Tracker — v1 schema.
+// See docs/technical-design.md section 2.
+//
+// No `User` model in v1: this is a single-user proof of concept, so all rows
+// belong to the one implicit user. Phase 2 adds accounts — see the note at the
+// bottom of this file before changing anything here.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A show as cached from TMDB. Populated when a show is first tracked so we
+/// aren't hitting the TMDB API on every page load.
+model Show {
+  id         String   @id // TMDB show id, stored as a string
+  name       String
+  posterPath String?
+  overview   String?
+  lastSynced DateTime @default(now()) // last refresh of episode data from TMDB
+
+  episodes Episode[]
+  tracked  TrackedShow?
+}
+
+/// A single episode of a cached show, including its air date.
+model Episode {
+  id            String    @id // TMDB episode id
+  showId        String
+  seasonNumber  Int
+  episodeNumber Int
+  name          String?
+  airDate       DateTime?
+
+  show    Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
+  watched WatchedEpisode?
+
+  @@index([showId])
+  @@index([airDate])
+}
+
+/// A show the user has added to "watching" or their watchlist.
+model TrackedShow {
+  id      String   @id @default(cuid())
+  showId  String   @unique
+  status  String // "watching" | "watchlist"
+  addedAt DateTime @default(now())
+
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+}
+
+/// Marks one episode as watched. Presence of the row is the "watched" flag.
+model WatchedEpisode {
+  id        String   @id @default(cuid())
+  episodeId String   @unique
+  watchedAt DateTime @default(now())
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+}
+
+/// Single-row table (id is always 1) holding user preferences. A full settings
+/// table is overkill for one user, but it keeps prefs in the database rather
+/// than in a file that Vercel would wipe on redeploy.
+model Settings {
+  id            Int     @id @default(1)
+  notifyEnabled Boolean @default(false)
+}
+
+// Phase 2 (accounts) migration notes:
+//   - `TrackedShow` and `WatchedEpisode` need a `userId` field.
+//   - Their unique constraints move from `showId` / `episodeId` alone to
+//     `@@unique([userId, showId])` / `@@unique([userId, episodeId])`.
+//   - `Settings` becomes one row per user instead of a fixed id=1.
+// Keeping these in mind means v1 migrates cleanly instead of being rewritten.
