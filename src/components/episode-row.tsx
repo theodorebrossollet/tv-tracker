@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched, unmarkEpisodeWatched } from "@/app/actions";
 import { formatAirDate } from "@/lib/format";
@@ -38,55 +38,99 @@ export function EpisodeRow({
   runtime,
   overview,
 }: EpisodeRowProps) {
-  // Optimistic local state: the checkbox flips immediately and rolls back if
-  // the action fails, rather than waiting for a round trip.
-  const [checked, setChecked] = useState(watched);
+  // useOptimistic, not useState: the displayed value is derived from the
+  // `watched` prop, so it follows the server after a revalidation. The previous
+  // useState version initialised once and then ignored props — which meant
+  // "Mark all watched" updated the database and the season counter while the
+  // rows themselves stayed visibly unwatched.
+  const [optimisticWatched, setOptimisticWatched] = useOptimistic(watched);
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function toggle() {
-    const next = !checked;
-    setChecked(next);
+    // Episodes that haven't aired can't be marked, matching what
+    // "Mark all watched" does for the season.
+    if (!aired) return;
 
     startTransition(async () => {
-      const result = next
-        ? await markEpisodeWatched(episodeId)
-        : await unmarkEpisodeWatched(episodeId);
+      setOptimisticWatched(!watched);
 
-      if (!result.ok) {
-        setChecked(!next);
+      // No manual rollback needed: when the transition ends, the optimistic
+      // value is dropped and the prop wins — the refreshed one on success, the
+      // original one on failure.
+      if (watched) {
+        await unmarkEpisodeWatched(episodeId);
+      } else {
+        await markEpisodeWatched(episodeId);
       }
     });
   }
 
-  return (
-    <li className="border-b border-border last:border-b-0">
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <input
-          type="checkbox"
-          id={`ep-${episodeId}`}
-          checked={checked}
-          onChange={toggle}
-          disabled={pending}
-          className="size-4 shrink-0 accent-[var(--accent)]"
-        />
+  const code = `S${String(seasonNumber).padStart(2, "0")}E${String(
+    episodeNumber,
+  ).padStart(2, "0")}`;
 
-        <label
-          htmlFor={`ep-${episodeId}`}
-          className="flex min-w-0 flex-1 cursor-pointer flex-wrap items-baseline gap-x-2"
+  return (
+    <li
+      className={`border-b border-border last:border-b-0 border-l-2 transition-colors ${
+        optimisticWatched
+          ? "border-l-accent bg-accent/[0.07]"
+          : "border-l-transparent"
+      }`}
+    >
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={optimisticWatched}
+          aria-label={`${name ?? code}${aired ? "" : " (not aired yet)"}`}
+          onClick={toggle}
+          disabled={pending || !aired}
+          title={aired ? undefined : "Hasn't aired yet"}
+          className={`flex min-w-0 flex-1 items-center gap-3 text-left ${
+            aired ? "cursor-pointer" : "cursor-not-allowed"
+          }`}
         >
-          <span className="font-mono text-xs text-muted">
-            S{String(seasonNumber).padStart(2, "0")}E
-            {String(episodeNumber).padStart(2, "0")}
-          </span>
           <span
-            className={`min-w-0 flex-1 truncate text-sm ${
-              checked ? "text-muted line-through" : ""
+            className={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              optimisticWatched
+                ? "border-accent bg-accent text-white"
+                : aired
+                  ? "border-muted"
+                  : "border-dashed border-border"
             }`}
           >
-            {name ?? "Untitled episode"}
+            {optimisticWatched ? (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="size-3"
+              >
+                <path d="m5 13 4 4L19 7" />
+              </svg>
+            ) : null}
           </span>
-        </label>
+
+          <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+            <span className="font-mono text-xs text-muted">{code}</span>
+            <span
+              className={`min-w-0 flex-1 truncate text-sm ${
+                optimisticWatched
+                  ? "text-muted line-through"
+                  : aired
+                    ? ""
+                    : "text-muted"
+              }`}
+            >
+              {name ?? "Untitled episode"}
+            </span>
+          </span>
+        </button>
 
         <span className="shrink-0 text-xs text-muted">
           {runtime ? `${formatRuntime(runtime)} · ` : ""}
@@ -103,8 +147,8 @@ export function EpisodeRow({
             aria-expanded={expanded}
             aria-label={
               expanded
-                ? `Hide synopsis for episode ${episodeNumber}`
-                : `Show synopsis for episode ${episodeNumber}`
+                ? `Hide synopsis for ${code}`
+                : `Show synopsis for ${code}`
             }
             className="shrink-0 rounded p-1 text-muted transition-colors hover:bg-surface hover:text-foreground"
           >

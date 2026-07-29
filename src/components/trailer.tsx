@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
 interface TrailerProps {
@@ -10,16 +11,26 @@ interface TrailerProps {
 }
 
 /**
- * Plays the trailer inline, but contacts YouTube only once you press play.
+ * Plays the trailer inline, showing YouTube's own thumbnail as the poster frame
+ * and loading the player itself only on click.
  *
- * A plain `<iframe>` would load YouTube — and its cookies — on every show page
- * view, which conflicts with the "no third-party trackers, no cookie banner"
- * line in docs/scope.md. So this renders a local placeholder first and swaps in
- * the real player on click, using youtube-nocookie.com. Nothing leaves the page
- * for anyone who doesn't hit play.
+ * The thumbnail keeps the no-third-party-contact property, which is not
+ * obvious: `next/image` fetches and re-encodes remote images **on the server**,
+ * so the browser only ever requests `/_next/image` from this app. YouTube sees
+ * the server's address, never the visitor's, and sets no cookies in their
+ * browser. Replacing this with a plain `<img src="https://i.ytimg.com/…">`
+ * would quietly break that.
+ *
+ * Pressing play is the first time the visitor's browser talks to YouTube, and
+ * that request goes to youtube-nocookie.com.
  */
 export function Trailer({ videoKey, name, showName }: TrailerProps) {
   const [playing, setPlaying] = useState(false);
+  // maxresdefault only exists for videos uploaded at 720p or better; every
+  // valid video has hqdefault, so fall back to it rather than showing a gap.
+  const [thumbnail, setThumbnail] = useState(
+    `https://i.ytimg.com/vi/${videoKey}/maxresdefault.jpg`,
+  );
 
   return (
     <section className="mt-8">
@@ -38,23 +49,38 @@ export function Trailer({ videoKey, name, showName }: TrailerProps) {
           <button
             type="button"
             onClick={() => setPlaying(true)}
-            className="group flex size-full flex-col items-center justify-center gap-3 transition-colors hover:bg-border"
+            aria-label={`Play trailer: ${name}`}
+            className="group relative flex size-full items-center justify-center"
           >
-            <span className="flex size-14 items-center justify-center rounded-full bg-accent text-white transition-transform group-hover:scale-105">
+            <Image
+              src={thumbnail}
+              alt=""
+              fill
+              sizes="(max-width: 672px) 100vw, 672px"
+              className="object-cover"
+              onError={() =>
+                setThumbnail(
+                  `https://i.ytimg.com/vi/${videoKey}/hqdefault.jpg`,
+                )
+              }
+            />
+
+            {/* Scrim keeps the play button and caption legible over any frame. */}
+            <span className="absolute inset-0 bg-black/35 transition-colors group-hover:bg-black/45" />
+
+            <span className="relative flex size-16 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-transform group-hover:scale-105">
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
-                className="ml-0.5 size-6"
+                className="ml-1 size-7"
               >
                 <path d="M8 5v14l11-7z" />
               </svg>
             </span>
 
-            <span className="px-4 text-center text-sm font-medium">{name}</span>
-            <span className="px-4 text-center text-xs text-muted">
-              Plays from YouTube. Nothing is loaded from them until you press
-              play.
+            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-8 text-left text-sm font-medium text-white">
+              {name}
             </span>
           </button>
         )}

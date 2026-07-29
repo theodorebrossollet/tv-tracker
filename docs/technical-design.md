@@ -25,7 +25,7 @@ SQLite via Prisma — local file in dev, Turso in production
 > That turned out to be too optimistic: Vercel's filesystem is read-only outside
 > `/tmp`, so writes fail entirely rather than merely being temporary — tracking
 > a show would not work at all. Turso (planned for Phase 2) was pulled forward
-> into v1. Sections 9 and 10 reflect the change; the data model is unaffected.
+> into v1. Sections 10 and 11 reflect the change; the data model is unaffected.
 
 No separate backend service, no message queue, no external state, no auth layer — deliberately minimal for a single-user PoC.
 
@@ -116,8 +116,16 @@ keep its first-seen data forever.
 **Trailers are click-to-load.** A normal YouTube `<iframe>` would contact
 YouTube and set its cookies on every show page view, which contradicts the
 "no third-party trackers, no cookie banner" line in `scope.md`. So the page
-renders a local placeholder and only swaps in a `youtube-nocookie.com` player
-once you press play — verified as zero YouTube requests before the click.
+shows a poster frame and only swaps in a `youtube-nocookie.com` player once you
+press play.
+
+The poster frame is YouTube's own thumbnail, which sounds like it breaks that —
+it doesn't, because `next/image` fetches remote images **server-side**. The
+browser only ever requests `/_next/image` from this app; YouTube sees the
+server's address, not the visitor's, and sets no cookies in their browser.
+Rendering the thumbnail as a plain `<img src="https://i.ytimg.com/…">` would
+silently undo this.
+
 
 ## 4. Tracking Model
 
@@ -130,7 +138,22 @@ the tracked row too.
 Unmarking the last watched episode does *not* demote a show back to the
 watchlist — an accidental click shouldn't silently reorganise your lists.
 
-## 5. Server Actions (core logic)
+## 5. Marking Episodes Watched
+
+Both paths — the per-episode control and a season's "Mark all watched" — act on
+exactly the episodes that have **already aired**. Unaired episodes render with
+their control disabled, since you can't have watched something that hasn't been
+broadcast. Keeping the two paths on the same set is deliberate: they previously
+disagreed, with individual rows allowing what the bulk action skipped.
+
+`EpisodeRow` derives its checked state from props via `useOptimistic`, **not**
+`useState`. This matters: `useState` initialises once and then ignores prop
+changes, so after "Mark all watched" revalidated the page the database and the
+season counter updated while every row still displayed as unwatched. Deriving
+from props means a bulk action, a refresh, or a failed request all resolve to
+whatever the server actually holds.
+
+## 6. Server Actions (core logic)
 
 - `searchSuggestions(query)` — backs the overlay's typeahead; annotates results with their current list
 - `addToWatchlist(tmdbShowId)` — upserts `Show` + `Episode` rows from TMDB, creates `TrackedShow` with status `watchlist`
@@ -144,7 +167,7 @@ watchlist — an accidental click shouldn't silently reorganise your lists.
 
 No session/auth check needed in v1 — every action just operates on the single implicit user's data.
 
-## 6. TMDB Integration
+## 7. TMDB Integration
 
 - Search: `GET /search/tv` — used by the search overlay
 - Show details + episodes: `GET /tv/{id}` and `GET /tv/{id}/season/{season_number}` — populate `Episode` rows with air dates, runtime and per-episode synopsis (all three come in the same response, no extra requests)
@@ -157,7 +180,7 @@ Availability data is JustWatch's, supplied via TMDB. Their terms require
 attribution, which is why the show page credits JustWatch under the provider
 list — don't remove it.
 
-## 7. Refresh Schedule
+## 8. Refresh Schedule
 
 Vercel Cron Job configured in `vercel.json`, running **twice a day** (e.g., 6am and 6pm), hitting `/api/cron/refresh-episodes`. That route loops through tracked shows and re-fetches episode/air-date data from TMDB, updating `lastSynced`. No manual refresh button needed for v1.
 
@@ -169,7 +192,7 @@ Vercel Cron Job configured in `vercel.json`, running **twice a day** (e.g., 6am 
 }
 ```
 
-## 8. Key Dependencies
+## 9. Key Dependencies
 
 - `next` — framework
 - `@prisma/client`, `prisma` — database ORM
@@ -177,7 +200,7 @@ Vercel Cron Job configured in `vercel.json`, running **twice a day** (e.g., 6am 
 
 **Tailwind vs. plain CSS — decided: Tailwind.** Utility classes styled directly in components, with a built-in consistent spacing/color system. Normally more of a learning curve, but since Claude Code will be writing most of the styling code, that downside mostly disappears — and Tailwind is the dominant approach in the current Next.js ecosystem, so generated UI tends to come out more polished and consistent.
 
-## 9. Environment Variables
+## 10. Environment Variables
 
 ```
 TMDB_API_KEY=                        # TMDB v3 key or v4 read access token
@@ -192,7 +215,7 @@ could hit repeatedly, burning through the TMDB rate limit.
 
 (Auth-related variables will be added in Phase 2 once the login method is decided.)
 
-## 10. Deployment
+## 11. Deployment
 
 - Vercel, connected to GitHub — push to `main` deploys automatically
 - **Database: Turso** (hosted, SQLite-compatible, free tier). Not the original
@@ -216,7 +239,7 @@ DATABASE_URL="libsql://…" npm run db:deploy  # applies it to Turso
 Keeping this out of the Vercel build is deliberate: a build step that mutates
 the production database is easy to trigger accidentally and hard to undo.
 
-## 11. Open Technical Questions (carry into exec plan)
+## 12. Open Technical Questions (carry into exec plan)
 
 - Phase 2 login method: Google OAuth vs. anonymous account-code — still undecided, needs a decision before Phase 2 build starts
 - Exact cron time (currently 6am/6pm — adjust if a different schedule fits your viewing habits better)
