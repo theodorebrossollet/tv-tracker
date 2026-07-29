@@ -307,7 +307,26 @@ These exist because the same class of bug shipped twice: state copied into
 the browser, after release. The suite was verified by reintroducing three real
 regressions and confirming each one fails a test.
 
-## 13. Logging
+## 13. Access Control
+
+`src/proxy.ts` (Next 16 renamed Middleware to Proxy) gates the whole app behind
+one shared password from `APP_PASSWORD`, sent as HTTP Basic auth.
+
+This is not authentication — Phase 2 still owns that. It exists because v1 has
+no accounts *and* server actions are reachable by direct POST, `clearAllData`
+included. A public URL would therefore let anyone erase the data. Running
+before routing means the gate covers action POSTs, not just pages.
+
+Two details that matter if this is ever edited:
+
+- `/api/cron/*` is excluded from the matcher. Vercel Cron sends its own
+  `Authorization: Bearer $CRON_SECRET`, which Basic auth would reject — the
+  twice-daily refresh would silently stop. That route authenticates itself.
+- With no `APP_PASSWORD` set, the app serves normally in development but
+  returns **503** in production rather than sitting open. It deliberately sends
+  no `WWW-Authenticate` in that case, since no password could satisfy it.
+
+## 14. Logging
 
 `src/lib/logger.ts` emits one JSON object per line — `level`, `event`, `time`,
 plus context. Structure is the point: Vercel's runtime logs can then be filtered
@@ -324,7 +343,7 @@ v3 API key as a query parameter, so nothing that might contain one is logged.
 There is no log retention beyond whatever the host keeps. If that matters later,
 point a drain at the same stream rather than changing call sites.
 
-## 14. Open Technical Questions (carry into exec plan)
+## 15. Open Technical Questions (carry into exec plan)
 
 - Phase 2 login method: Google OAuth vs. anonymous account-code — still undecided, needs a decision before Phase 2 build starts
 - Exact cron time (currently 6am/6pm — adjust if a different schedule fits your viewing habits better)
