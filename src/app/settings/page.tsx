@@ -1,4 +1,5 @@
 import { SettingsClient } from "./settings-client";
+import { describeError, logger } from "@/lib/logger";
 import { getSettings } from "@/lib/shows";
 import { getWatchRegions, TmdbError } from "@/lib/tmdb";
 
@@ -17,7 +18,7 @@ export default async function SettingsPage() {
     regions = await getWatchRegions();
   } catch (error) {
     if (!(error instanceof TmdbError)) throw error;
-    console.error("Could not load country list:", error.message);
+    logger.warn("settings.regions_unavailable", describeError(error));
   }
 
   return (

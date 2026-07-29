@@ -283,7 +283,48 @@ DATABASE_URL="libsql://…" npm run db:deploy  # applies it to Turso
 Keeping this out of the Vercel build is deliberate: a build step that mutates
 the production database is easy to trigger accidentally and hard to undo.
 
-## 12. Open Technical Questions (carry into exec plan)
+## 12. Tests
+
+`npm test` (Vitest). 59 tests, no network and no dev server needed — TMDB is
+mocked at `fetch`, and the database tests build a throwaway SQLite file under
+`tests/.tmp` from the real migration files, so they exercise the same schema
+production gets.
+
+Covered:
+
+- **Tracking rules** — promotion on marking, demotion when the last watched
+  episode is undone, aired-only season marking, no double counting.
+- **Air date anchoring** — midnight US Eastern in summer and winter, and across
+  the spring switchover.
+- **TMDB client** — v3-key vs v4-token auth, error mapping, trailer ranking
+  (rejects featurettes and recaps), provider grouping, the in-process cache.
+- **Query aggregation** — aired vs upcoming counts, "fully watched", next-up,
+  upcoming across both lists.
+- **Formatting** — timezone-stable dates, relative air dates.
+
+These exist because the same class of bug shipped twice: state copied into
+`useState` instead of derived from props. Both instances were found by hand, in
+the browser, after release. The suite was verified by reintroducing three real
+regressions and confirming each one fails a test.
+
+## 13. Logging
+
+`src/lib/logger.ts` emits one JSON object per line — `level`, `event`, `time`,
+plus context. Structure is the point: Vercel's runtime logs can then be filtered
+by event name or show id, which free-text messages can't be.
+
+Events are namespaced by area (`cron.refresh.completed`,
+`show.refresh_failed_serving_stale`, `action.failed`). Errors and warnings go to
+stderr so they can be separated by stream alone.
+
+`describeError` deliberately keeps only the error name and message. Stacks are
+noise in aggregated logs, and — more importantly — a thrown TMDB URL can carry a
+v3 API key as a query parameter, so nothing that might contain one is logged.
+
+There is no log retention beyond whatever the host keeps. If that matters later,
+point a drain at the same stream rather than changing call sites.
+
+## 14. Open Technical Questions (carry into exec plan)
 
 - Phase 2 login method: Google OAuth vs. anonymous account-code — still undecided, needs a decision before Phase 2 build starts
 - Exact cron time (currently 6am/6pm — adjust if a different schedule fits your viewing habits better)

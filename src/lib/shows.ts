@@ -1,5 +1,6 @@
 import "server-only";
 
+import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getAllEpisodes, getShowDetails, TmdbError } from "@/lib/tmdb";
 
@@ -104,7 +105,10 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
     // A show we already have cached shouldn't 500 just because a refresh
     // failed — serve the stale copy instead.
     if (existing) {
-      console.error(`Could not refresh show ${tmdbShowId}:`, error);
+      logger.warn("show.refresh_failed_serving_stale", {
+        showId: tmdbShowId,
+        ...describeError(error),
+      });
       return true;
     }
 

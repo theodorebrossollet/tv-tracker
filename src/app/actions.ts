@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
@@ -24,7 +25,7 @@ function toResult(error: unknown): ActionResult {
     return { ok: false, error: error.message };
   }
 
-  console.error("Action failed:", error);
+  logger.error("action.failed", describeError(error));
   return { ok: false, error: "Something went wrong. Please try again." };
 }
 
@@ -328,17 +329,6 @@ export async function updateCountry(country: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** Re-fetches episode data for one show on demand, from the show page. */
-export async function refreshShow(showId: string): Promise<ActionResult> {
-  try {
-    await syncShowFromTmdb(showId);
-  } catch (error) {
-    return toResult(error);
-  }
-
-  revalidateShowViews(showId);
-  return { ok: true };
-}
 
 /**
  * Wipes the user's tracking data. The global Show/Episode cache is kept so

@@ -1,3 +1,4 @@
+import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
 import { TmdbError } from "@/lib/tmdb";
@@ -26,6 +27,7 @@ function isAuthorized(request: Request): boolean {
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
+    logger.warn("cron.refresh.unauthorized");
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -47,9 +49,18 @@ export async function GET(request: Request) {
       const message =
         error instanceof TmdbError ? error.message : "Unexpected error";
       failed.push({ showId, error: message });
-      console.error(`Refresh failed for show ${showId}:`, error);
+      logger.error("cron.refresh.show_failed", {
+        showId,
+        ...describeError(error),
+      });
     }
   }
+
+  logger.info("cron.refresh.completed", {
+    checked: tracked.length,
+    refreshed: refreshed.length,
+    failed: failed.length,
+  });
 
   return Response.json({
     checked: tracked.length,

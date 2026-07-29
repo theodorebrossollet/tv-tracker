@@ -8,6 +8,7 @@ import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
+import { describeError, logger } from "@/lib/logger";
 import { getSettings } from "@/lib/shows";
 import {
   getSeasonTrailers,
@@ -58,7 +59,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
     ]);
   } catch (error) {
     if (!(error instanceof TmdbError)) throw error;
-    console.error("Could not load availability or trailers:", error.message);
+    logger.warn("show.extras_unavailable", describeError(error));
   }
 
   // The show-wide trailer first, then any season that has one of its own.
