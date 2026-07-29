@@ -3,14 +3,32 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { clearAllData, updateNotificationPrefs } from "@/app/actions";
+import {
+  clearAllData,
+  updateCountry,
+  updateNotificationPrefs,
+} from "@/app/actions";
+import type { WatchRegion } from "@/lib/tmdb";
 
-export function SettingsClient({ notifyEnabled }: { notifyEnabled: boolean }) {
+interface SettingsClientProps {
+  notifyEnabled: boolean;
+  country: string | null;
+  regions: WatchRegion[];
+}
+
+export function SettingsClient({
+  notifyEnabled,
+  country,
+  regions,
+}: SettingsClientProps) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(notifyEnabled);
+  const [selectedCountry, setSelectedCountry] = useState(country ?? "");
+  const [countrySaved, setCountrySaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [savingPrefs, startPrefs] = useTransition();
+  const [savingCountry, startCountry] = useTransition();
   const [clearing, startClear] = useTransition();
 
   function toggleNotifications() {
@@ -23,6 +41,22 @@ export function SettingsClient({ notifyEnabled }: { notifyEnabled: boolean }) {
     });
   }
 
+  function changeCountry(next: string) {
+    const previous = selectedCountry;
+    setSelectedCountry(next);
+    setCountrySaved(false);
+
+    startCountry(async () => {
+      const result = await updateCountry(next);
+
+      if (result.ok) {
+        setCountrySaved(true);
+      } else {
+        setSelectedCountry(previous);
+      }
+    });
+  }
+
   function confirmClear() {
     startClear(async () => {
       const result = await clearAllData();
@@ -30,6 +64,8 @@ export function SettingsClient({ notifyEnabled }: { notifyEnabled: boolean }) {
       if (result.ok) {
         setCleared(true);
         setConfirming(false);
+        setSelectedCountry("");
+        setEnabled(false);
         router.refresh();
       }
     });
@@ -37,6 +73,43 @@ export function SettingsClient({ notifyEnabled }: { notifyEnabled: boolean }) {
 
   return (
     <div className="mt-6 space-y-8">
+      <section>
+        <h2 className="font-medium">Country</h2>
+        <p className="mt-1 text-sm text-muted">
+          Used as the default when showing where a series is available to
+          stream. You can still check other countries from any show page.
+        </p>
+
+        {regions.length === 0 ? (
+          <p className="mt-3 text-sm text-muted">
+            Couldn&rsquo;t load the country list from TMDB. Reload to try again.
+          </p>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <select
+              value={selectedCountry}
+              onChange={(event) => changeCountry(event.target.value)}
+              disabled={savingCountry}
+              aria-label="Country"
+              className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
+            >
+              <option value="">Not set</option>
+              {regions.map((region) => (
+                <option key={region.code} value={region.code}>
+                  {region.name}
+                </option>
+              ))}
+            </select>
+
+            {savingCountry ? (
+              <span className="text-xs text-muted">Saving…</span>
+            ) : countrySaved ? (
+              <span className="text-xs text-accent">Saved</span>
+            ) : null}
+          </div>
+        )}
+      </section>
+
       <section>
         <h2 className="font-medium">Notifications</h2>
 

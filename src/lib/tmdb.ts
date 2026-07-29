@@ -1,7 +1,7 @@
 import "server-only";
 
-// Thin wrapper around the TMDB API. Only the endpoints listed in
-// docs/technical-design.md section 5 are covered.
+// Thin wrapper around the TMDB API. Endpoints are listed in
+// docs/technical-design.md section 6.
 //
 // This module is server-only: the API key must never reach the browser.
 
@@ -75,15 +75,21 @@ function buildRequest(path: string, params: Record<string, string>) {
 async function tmdbFetch<T>(
   path: string,
   params: Record<string, string> = {},
+  /** Seconds to let Next.js cache the response. 0 disables caching. */
+  revalidate = 0,
 ): Promise<T> {
   const { url, headers } = buildRequest(path, params);
 
   let response: Response;
   try {
-    // No Next.js data cache here: show data is cached in our own database
-    // instead (see the Show/Episode models), which is the caching layer the
-    // design doc calls for.
-    response = await fetch(url, { headers, cache: "no-store" });
+    // Show data isn't cached here — it's cached in our own database instead
+    // (see the Show/Episode models), which is the caching layer the design doc
+    // calls for. `revalidate` is for the handful of endpoints that aren't
+    // per-show, like the list of streaming regions.
+    response = await fetch(url, {
+      headers,
+      ...(revalidate > 0 ? { next: { revalidate } } : { cache: "no-store" }),
+    });
   } catch (cause) {
     throw new TmdbError(`Could not reach TMDB: ${(cause as Error).message}`);
   }
@@ -207,4 +213,122 @@ export async function getAllEpisodes(
   }
 
   return episodes;
+}
+
+// ---------------------------------------------------------------------------
+// Streaming availability
+//
+// TMDB sources this from JustWatch. Their terms require attributing JustWatch
+// wherever it's displayed — see the show page.
+// ---------------------------------------------------------------------------
+
+export interface WatchProvider {
+  id: number;
+  name: string;
+  logoPath: string | null;
+}
+
+export interface CountryAvailability {
+  /** ISO 3166-1 alpha-2, e.g. "FR". */
+  code: string;
+  /** Deep link to the TMDB "watch" page for this show and country. */
+  link: string | null;
+  /** Included with a subscription. */
+  flatrate: WatchProvider[];
+  /** Free, possibly ad-supported. */
+  free: WatchProvider[];
+  rent: WatchProvider[];
+  buy: WatchProvider[];
+}
+
+interface RawProvider {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  display_priority?: number;
+}
+
+interface RawProvidersResponse {
+  results?: Record<
+    string,
+    {
+      link?: string;
+      flatrate?: RawProvider[];
+      free?: RawProvider[];
+      ads?: RawProvider[];
+      rent?: RawProvider[];
+      buy?: RawProvider[];
+    }
+  >;
+}
+
+function mapProviders(list: RawProvider[] | undefined): WatchProvider[] {
+  if (!list) return [];
+
+  return [...list]
+    // display_priority is TMDB's own "show this one first" ordering.
+    .sort((a, b) => (a.display_priority ?? 999) - (b.display_priority ?? 999))
+    .map((provider) => ({
+      id: provider.provider_id,
+      name: provider.provider_name,
+      logoPath: provider.logo_path,
+    }));
+}
+
+/**
+ * Where a show can be streamed, keyed by country code. TMDB returns every
+ * country it has data for in one response, so a country switcher costs no
+ * extra requests.
+ */
+export async function getWatchProviders(
+  tmdbShowId: string | number,
+): Promise<CountryAvailability[]> {
+  const data = await tmdbFetch<RawProvidersResponse>(
+    `/tv/${tmdbShowId}/watch/providers`,
+  );
+
+  return Object.entries(data.results ?? {})
+    .map(([code, entry]) => ({
+      code,
+      link: entry.link ?? null,
+      flatrate: mapProviders(entry.flatrate),
+      // TMDB splits "free" and "ads"; both mean "watchable without paying".
+      free: [...mapProviders(entry.free), ...mapProviders(entry.ads)],
+      rent: mapProviders(entry.rent),
+      buy: mapProviders(entry.buy),
+    }))
+    .filter(
+      (entry) =>
+        entry.flatrate.length +
+          entry.free.length +
+          entry.rent.length +
+          entry.buy.length >
+        0,
+    )
+    .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+export interface WatchRegion {
+  code: string;
+  name: string;
+}
+
+interface RawRegionsResponse {
+  results?: Array<{ iso_3166_1: string; english_name: string }>;
+}
+
+/**
+ * Countries TMDB has streaming data for. Cached for a day — this list changes
+ * about never, and it's fetched on every settings page view.
+ */
+export async function getWatchRegions(): Promise<WatchRegion[]> {
+  const data = await tmdbFetch<RawRegionsResponse>(
+    "/watch/providers/regions",
+    { language: "en-US" },
+    60 * 60 * 24,
+  );
+
+  return (data.results ?? [])
+    .map((region) => ({ code: region.iso_3166_1, name: region.english_name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

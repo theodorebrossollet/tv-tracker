@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 
+import { AddButton } from "@/components/add-button";
+import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import { Poster } from "@/components/poster";
-import { TrackButtons } from "@/components/track-buttons";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
+import { getSettings } from "@/lib/shows";
+import { getWatchProviders, getWatchRegions, TmdbError } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +25,35 @@ export async function generateMetadata({ params }: ShowPageProps) {
 
 export default async function ShowPage({ params }: ShowPageProps) {
   const { id } = await params;
-  const show = await getShowDetail(id);
 
-  // Shows are only cached locally once tracked, so an unknown id means it was
-  // never added (or was cleared) rather than that it doesn't exist on TMDB.
+  const [show, settings] = await Promise.all([getShowDetail(id), getSettings()]);
+
+  // getShowDetail falls back to TMDB for shows that aren't tracked, so a null
+  // here means TMDB doesn't know this id either.
   if (!show) notFound();
+
+  // Availability is a nice-to-have: if TMDB is unreachable or rate-limits us,
+  // the rest of the page should still render.
+  let countries: Awaited<ReturnType<typeof getWatchProviders>> = [];
+  let regions: Awaited<ReturnType<typeof getWatchRegions>> = [];
+
+  try {
+    [countries, regions] = await Promise.all([
+      getWatchProviders(id),
+      getWatchRegions(),
+    ]);
+  } catch (error) {
+    if (!(error instanceof TmdbError)) throw error;
+    console.error("Could not load availability:", error.message);
+  }
+
+  const regionNames = Object.fromEntries(
+    regions.map((region) => [region.code, region.name]),
+  );
+
+  const hasSettingsCountry = countries.some(
+    (country) => country.code === settings.country,
+  );
 
   const now = new Date();
 
@@ -48,14 +75,26 @@ export default async function ShowPage({ params }: ShowPageProps) {
           ) : null}
 
           <div className="mt-4">
-            <TrackButtons showId={show.id} status={show.status} size="md" />
+            <AddButton showId={show.id} status={show.status} />
           </div>
 
           <p className="mt-3 text-xs text-muted">
-            Episode data last refreshed {formatAirDate(show.lastSynced.toISOString())}
+            Episode data last refreshed{" "}
+            {formatAirDate(show.lastSynced.toISOString())}
           </p>
         </div>
       </div>
+
+      {countries.length > 0 ? (
+        <Availability
+          countries={countries}
+          regionNames={regionNames}
+          defaultCode={hasSettingsCountry ? settings.country : null}
+          settingsCountryUnavailable={
+            settings.country && !hasSettingsCountry ? settings.country : null
+          }
+        />
+      ) : null}
 
       <div className="mt-8 space-y-6">
         {show.seasons.map((season) => {

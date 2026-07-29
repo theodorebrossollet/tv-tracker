@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { ensureShowCached } from "@/lib/shows";
 import type { TrackStatus } from "@/lib/types";
 
 export interface TrackedShowSummary {
@@ -11,6 +12,8 @@ export interface TrackedShowSummary {
   /** Episodes that have already aired — the denominator for progress. */
   airedCount: number;
   watchedCount: number;
+  /** Every aired episode watched. Drives the "hide finished shows" toggle. */
+  fullyWatched: boolean;
   nextUnwatched: {
     seasonNumber: number;
     episodeNumber: number;
@@ -50,6 +53,9 @@ export async function getTrackedShows(
       (episode) => episode.airDate !== null && episode.airDate <= now,
     );
     const nextUnwatched = aired.find((episode) => episode.watched === null);
+    const watchedCount = aired.filter(
+      (episode) => episode.watched !== null,
+    ).length;
 
     return {
       showId: entry.showId,
@@ -57,7 +63,8 @@ export async function getTrackedShows(
       posterPath: entry.show.posterPath,
       status: entry.status as TrackStatus,
       airedCount: aired.length,
-      watchedCount: aired.filter((episode) => episode.watched !== null).length,
+      watchedCount,
+      fullyWatched: aired.length > 0 && watchedCount === aired.length,
       nextUnwatched: nextUnwatched
         ? {
             seasonNumber: nextUnwatched.seasonNumber,
@@ -74,6 +81,7 @@ export interface UpcomingEpisode {
   showId: string;
   showName: string;
   posterPath: string | null;
+  status: TrackStatus;
   seasonNumber: number;
   episodeNumber: number;
   name: string | null;
@@ -81,9 +89,9 @@ export interface UpcomingEpisode {
 }
 
 /**
- * Episodes airing in the future for shows the user is watching, soonest first.
- * Watchlist shows are excluded — you haven't started them, so an upcoming
- * episode isn't actionable yet.
+ * Episodes airing in the future for any tracked show, soonest first — both the
+ * ones being watched and the ones still on the watchlist, so a show you haven't
+ * started yet still tells you when its next episode lands.
  */
 export async function getUpcomingEpisodes(
   limit = 50,
@@ -91,11 +99,11 @@ export async function getUpcomingEpisodes(
   const episodes = await prisma.episode.findMany({
     where: {
       airDate: { gt: new Date() },
-      show: { tracked: { status: "watching" } },
+      show: { tracked: { isNot: null } },
     },
     orderBy: { airDate: "asc" },
     take: limit,
-    include: { show: true },
+    include: { show: { include: { tracked: true } } },
   });
 
   return episodes.map((episode) => ({
@@ -103,6 +111,8 @@ export async function getUpcomingEpisodes(
     showId: episode.showId,
     showName: episode.show.name,
     posterPath: episode.show.posterPath,
+    // Safe: the query only returns episodes whose show is tracked.
+    status: episode.show.tracked!.status as TrackStatus,
     seasonNumber: episode.seasonNumber,
     episodeNumber: episode.episodeNumber,
     name: episode.name,
@@ -111,20 +121,23 @@ export async function getUpcomingEpisodes(
   }));
 }
 
-/** Full detail for one show, with episodes grouped into seasons. */
+/**
+ * Full detail for one show, with episodes grouped into seasons.
+ *
+ * Falls back to fetching from TMDB when the show isn't in the local cache yet,
+ * so search results can link straight through to a show page before it has been
+ * added to any list. Returns null only when TMDB doesn't know the id either.
+ */
 export async function getShowDetail(showId: string) {
-  const show = await prisma.show.findUnique({
-    where: { id: showId },
-    include: {
-      tracked: true,
-      episodes: {
-        orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-        include: { watched: true },
-      },
-    },
-  });
+  let show = await loadShow(showId);
 
-  if (!show) return null;
+  if (!show) {
+    const cached = await ensureShowCached(showId);
+    if (!cached) return null;
+
+    show = await loadShow(showId);
+    if (!show) return null;
+  }
 
   const seasons = new Map<number, typeof show.episodes>();
   for (const episode of show.episodes) {
@@ -149,13 +162,16 @@ export async function getShowDetail(showId: string) {
   };
 }
 
-/** Which TMDB ids are already tracked, so search can show current state. */
-export async function getTrackedStatusMap(): Promise<Map<string, TrackStatus>> {
-  const tracked = await prisma.trackedShow.findMany({
-    select: { showId: true, status: true },
+function loadShow(showId: string) {
+  return prisma.show.findUnique({
+    where: { id: showId },
+    include: {
+      tracked: true,
+      episodes: {
+        orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
+        include: { watched: true },
+      },
+    },
   });
-
-  return new Map(
-    tracked.map((entry) => [entry.showId, entry.status as TrackStatus]),
-  );
 }
+

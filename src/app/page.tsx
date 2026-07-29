@@ -1,7 +1,9 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { FindShowButton } from "@/components/find-show-button";
 import { Poster } from "@/components/poster";
+import { ShowGrid } from "@/components/show-grid";
 import { relativeAirDate } from "@/lib/format";
 import { getTrackedShows, getUpcomingEpisodes } from "@/lib/queries";
 
@@ -29,79 +31,13 @@ export default async function DashboardPage() {
         {watching.length === 0 ? (
           <div className="mt-4">
             <EmptyState
-              title="Nothing tracked yet"
-              description="Search for a show to start tracking your progress through it."
-              action={{ href: "/search", label: "Find a show" }}
+              title="Nothing in progress"
+              description="Shows land here automatically once you mark an episode watched. Add one to your watchlist to get started."
+              action={<FindShowButton />}
             />
           </div>
         ) : (
-          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-            {watching.map((show) => {
-              const percent =
-                show.airedCount === 0
-                  ? 0
-                  : Math.round((show.watchedCount / show.airedCount) * 100);
-
-              return (
-                <li key={show.showId}>
-                  <Link
-                    href={`/show/${show.showId}`}
-                    className="flex gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-surface"
-                  >
-                    <Poster
-                      path={show.posterPath}
-                      name={show.name}
-                      width={64}
-                    />
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{show.name}</p>
-
-                      <p className="mt-0.5 text-xs text-muted">
-                        {show.watchedCount} / {show.airedCount} aired episodes
-                        watched
-                      </p>
-
-                      <div
-                        className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface"
-                        role="progressbar"
-                        aria-valuenow={percent}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label={`${show.name} progress`}
-                      >
-                        <div
-                          className="h-full rounded-full bg-accent"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-
-                      <p className="mt-2 truncate text-xs">
-                        {show.nextUnwatched ? (
-                          <>
-                            <span className="text-muted">Next up: </span>
-                            <span className="font-mono">
-                              {episodeCode(
-                                show.nextUnwatched.seasonNumber,
-                                show.nextUnwatched.episodeNumber,
-                              )}
-                            </span>{" "}
-                            {show.nextUnwatched.name ?? ""}
-                          </>
-                        ) : (
-                          <span className="text-muted">
-                            {show.airedCount > 0
-                              ? "All caught up"
-                              : "No episodes aired yet"}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <ShowGrid shows={watching} />
         )}
       </section>
 
@@ -110,14 +46,15 @@ export default async function DashboardPage() {
           Upcoming episodes
         </h2>
         <p className="mt-1 text-sm text-muted">
-          Air dates come from TMDB and refresh twice a day.
+          Across everything you&rsquo;re watching and everything on your
+          watchlist. Air dates come from TMDB and refresh twice a day.
         </p>
 
         {upcoming.length === 0 ? (
           <div className="mt-4">
             <EmptyState
               title="Nothing scheduled"
-              description="None of the shows you're watching have an announced air date coming up."
+              description="None of your tracked shows have an announced air date coming up."
             />
           </div>
         ) : (
@@ -135,8 +72,13 @@ export default async function DashboardPage() {
                   />
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium">
                       {episode.showName}
+                      {episode.status === "watchlist" ? (
+                        <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted">
+                          watchlist
+                        </span>
+                      ) : null}
                     </p>
                     <p className="truncate text-xs text-muted">
                       <span className="font-mono">

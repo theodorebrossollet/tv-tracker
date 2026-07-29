@@ -1,8 +1,9 @@
 import Link from "next/link";
 
+import { AddButton } from "@/components/add-button";
 import { EmptyState } from "@/components/empty-state";
+import { FindShowButton } from "@/components/find-show-button";
 import { Poster } from "@/components/poster";
-import { TrackButtons } from "@/components/track-buttons";
 import { getTrackedShows } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,8 @@ export default async function WatchlistPage() {
     <div>
       <h1 className="text-xl font-semibold tracking-tight">Watchlist</h1>
       <p className="mt-1 text-sm text-muted">
-        Shows you want to start later. Move one to “Watching” when you begin it.
+        Shows you haven&rsquo;t started. Mark any episode watched and the show
+        moves to Watching on its own.
       </p>
 
       {shows.length === 0 ? (
@@ -24,37 +26,33 @@ export default async function WatchlistPage() {
           <EmptyState
             title="Watchlist is empty"
             description="Add shows here when you want to remember to start them later."
-            action={{ href: "/search", label: "Find a show" }}
+            action={<FindShowButton />}
           />
         </div>
       ) : (
         <ul className="mt-5 space-y-3">
           {shows.map((show) => (
-            <li
-              key={show.showId}
-              className="flex gap-3 rounded-lg border border-border p-3"
-            >
-              <Link href={`/show/${show.showId}`} className="shrink-0">
+            <li key={show.showId}>
+              <Link
+                href={`/show/${show.showId}`}
+                className="flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-surface"
+              >
                 <Poster path={show.posterPath} name={show.name} width={64} />
-              </Link>
 
-              <div className="min-w-0 flex-1">
-                <Link
-                  href={`/show/${show.showId}`}
-                  className="font-medium hover:underline"
-                >
-                  {show.name}
-                </Link>
-
-                <p className="mt-0.5 text-xs text-muted">
-                  {show.airedCount} episode{show.airedCount === 1 ? "" : "s"}{" "}
-                  available
-                </p>
-
-                <div className="mt-2.5">
-                  <TrackButtons showId={show.showId} status={show.status} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{show.name}</p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {show.airedCount} episode{show.airedCount === 1 ? "" : "s"}{" "}
+                    available
+                  </p>
                 </div>
-              </div>
+
+                <AddButton
+                  showId={show.showId}
+                  status={show.status}
+                  variant="icon"
+                />
+              </Link>
             </li>
           ))}
         </ul>

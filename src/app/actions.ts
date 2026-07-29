@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
-import { isTrackStatus, type TrackStatus } from "@/lib/types";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
+import type { TrackStatus } from "@/lib/types";
 
 // v1 has no accounts, so there is no session to check here — every action
 // operates on the single implicit user's data. Phase 2 adds an auth check at
@@ -28,108 +28,176 @@ function toResult(error: unknown): ActionResult {
   return { ok: false, error: "Something went wrong. Please try again." };
 }
 
-export interface SearchState {
-  query: string;
-  results?: TmdbSearchResult[];
-  error?: string;
+/** Refreshes every route that can show a show's tracked state or progress. */
+function revalidateShowViews(showId?: string) {
+  revalidatePath("/");
+  revalidatePath("/watchlist");
+  if (showId) revalidatePath(`/show/${showId}`);
 }
 
-/** Called from the search form. Results are not cached until a show is tracked. */
-export async function searchShows(
-  _prev: SearchState,
-  formData: FormData,
-): Promise<SearchState> {
-  const query = String(formData.get("query") ?? "").trim();
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
 
-  if (!query) {
-    return { query, results: [] };
-  }
-
-  try {
-    return { query, results: await searchTvShows(query) };
-  } catch (error) {
-    const result = toResult(error);
-    return { query, error: result.error };
-  }
+export interface SearchSuggestion {
+  id: string;
+  name: string;
+  posterPath: string | null;
+  firstAirYear: string | null;
+  status: TrackStatus | null;
 }
 
 /**
- * Adds a show to "watching" or the watchlist, caching its episodes locally on
- * the way in. Re-tracking an already-tracked show just moves it between lists.
+ * Backs the search overlay's as-you-type suggestions. Results aren't cached in
+ * the database until a show is actually opened or added.
  */
-export async function trackShow(
-  tmdbShowId: string,
-  status: TrackStatus,
-): Promise<ActionResult> {
+export async function searchSuggestions(
+  query: string,
+): Promise<{ results?: SearchSuggestion[]; error?: string }> {
+  const trimmed = query.trim();
+  if (!trimmed) return { results: [] };
+
+  let results: TmdbSearchResult[];
+  try {
+    results = await searchTvShows(trimmed);
+  } catch (error) {
+    return { error: toResult(error).error };
+  }
+
+  // One query for the whole page of results, rather than one per row.
+  const tracked = await prisma.trackedShow.findMany({
+    where: { showId: { in: results.map((result) => String(result.id)) } },
+    select: { showId: true, status: true },
+  });
+  const statusByShow = new Map(tracked.map((row) => [row.showId, row.status]));
+
+  return {
+    results: results.slice(0, 12).map((result) => {
+      const id = String(result.id);
+
+      return {
+        id,
+        name: result.name,
+        posterPath: result.posterPath,
+        firstAirYear: result.firstAirYear,
+        status: (statusByShow.get(id) ?? null) as TrackStatus | null,
+      };
+    }),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tracking
+//
+// There is only one way a show enters your lists: the "+" button puts it on the
+// watchlist. It graduates to "watching" on its own the moment you mark any
+// episode watched — which is the point at which "watching" becomes true.
+// ---------------------------------------------------------------------------
+
+/** Adds a show to the watchlist, caching it from TMDB on the way in. */
+export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> {
   if (!tmdbShowId.trim()) {
     return { ok: false, error: "Missing show id." };
   }
 
-  if (!isTrackStatus(status)) {
-    return { ok: false, error: "Unknown list." };
-  }
-
   try {
-    await syncShowFromTmdb(tmdbShowId);
-
-    await prisma.trackedShow.upsert({
+    const existing = await prisma.trackedShow.findUnique({
       where: { showId: tmdbShowId },
-      create: { showId: tmdbShowId, status },
-      update: { status },
+      select: { id: true },
+    });
+
+    // Already tracked — don't demote a show you're watching back to the
+    // watchlist just because the button was pressed again.
+    if (existing) return { ok: true };
+
+    await syncShowFromTmdb(tmdbShowId);
+    await prisma.trackedShow.create({
+      data: { showId: tmdbShowId, status: "watchlist" },
     });
   } catch (error) {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath("/watchlist");
-  revalidatePath(`/show/${tmdbShowId}`);
+  revalidateShowViews(tmdbShowId);
   return { ok: true };
 }
 
-/** Removes a show from both lists. The cached show/episode rows stay. */
-export async function untrackShow(showId: string): Promise<ActionResult> {
+/** Removes a show from your lists. The cached show/episode rows stay. */
+export async function removeShow(showId: string): Promise<ActionResult> {
   try {
     await prisma.trackedShow.deleteMany({ where: { showId } });
   } catch (error) {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath("/watchlist");
-  revalidatePath(`/show/${showId}`);
+  revalidateShowViews(showId);
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Watch progress
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks an episode watched and promotes its show to "watching".
+ *
+ * The promotion also covers shows that were never added at all: marking an
+ * episode watched is a clearer statement of intent than pressing "+", so it
+ * creates the tracked row rather than silently recording progress for a show
+ * that appears on no list.
+ */
 export async function markEpisodeWatched(
   episodeId: string,
 ): Promise<ActionResult> {
   try {
+    const episode = await prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { showId: true },
+    });
+
+    if (!episode) return { ok: false, error: "Unknown episode." };
+
     await prisma.watchedEpisode.upsert({
       where: { episodeId },
       create: { episodeId },
       update: {},
     });
+
+    await prisma.trackedShow.upsert({
+      where: { showId: episode.showId },
+      create: { showId: episode.showId, status: "watching" },
+      update: { status: "watching" },
+    });
+
+    revalidateShowViews(episode.showId);
   } catch (error) {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath("/show", "layout");
   return { ok: true };
 }
 
+/**
+ * Unmarks an episode. The show stays on "watching" even if this was its last
+ * watched episode — dropping it back to the watchlist on an accidental click
+ * would be more surprising than leaving it where it is.
+ */
 export async function unmarkEpisodeWatched(
   episodeId: string,
 ): Promise<ActionResult> {
   try {
     await prisma.watchedEpisode.deleteMany({ where: { episodeId } });
+
+    const episode = await prisma.episode.findUnique({
+      where: { id: episodeId },
+      select: { showId: true },
+    });
+
+    revalidateShowViews(episode?.showId);
   } catch (error) {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath("/show", "layout");
   return { ok: true };
 }
 
@@ -149,11 +217,11 @@ export async function setSeasonWatched(
       select: { id: true },
     });
 
+    const episodeIds = episodes.map((episode) => episode.id);
+
     if (watched) {
       // SQLite doesn't support `skipDuplicates`, so filter out the episodes
       // that are already marked instead of relying on conflict handling.
-      const episodeIds = episodes.map((episode) => episode.id);
-
       const alreadyWatched = await prisma.watchedEpisode.findMany({
         where: { episodeId: { in: episodeIds } },
         select: { episodeId: true },
@@ -166,19 +234,31 @@ export async function setSeasonWatched(
           .filter((episodeId) => !seen.has(episodeId))
           .map((episodeId) => ({ episodeId })),
       });
+
+      // Same promotion rule as marking a single episode.
+      if (episodeIds.length > 0) {
+        await prisma.trackedShow.upsert({
+          where: { showId },
+          create: { showId, status: "watching" },
+          update: { status: "watching" },
+        });
+      }
     } else {
       await prisma.watchedEpisode.deleteMany({
-        where: { episodeId: { in: episodes.map((episode) => episode.id) } },
+        where: { episodeId: { in: episodeIds } },
       });
     }
   } catch (error) {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath(`/show/${showId}`);
+  revalidateShowViews(showId);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
 
 export async function updateNotificationPrefs(
   enabled: boolean,
@@ -197,6 +277,29 @@ export async function updateNotificationPrefs(
   return { ok: true };
 }
 
+/** Sets the default country for streaming availability. "" clears it. */
+export async function updateCountry(country: string): Promise<ActionResult> {
+  const value = country.trim().toUpperCase();
+
+  if (value && !/^[A-Z]{2}$/.test(value)) {
+    return { ok: false, error: "Country must be a two-letter code." };
+  }
+
+  try {
+    await prisma.settings.upsert({
+      where: { id: 1 },
+      create: { id: 1, country: value || null },
+      update: { country: value || null },
+    });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/show", "layout");
+  return { ok: true };
+}
+
 /** Re-fetches episode data for one show on demand, from the show page. */
 export async function refreshShow(showId: string): Promise<ActionResult> {
   try {
@@ -205,8 +308,7 @@ export async function refreshShow(showId: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  revalidatePath("/");
-  revalidatePath(`/show/${showId}`);
+  revalidateShowViews(showId);
   return { ok: true };
 }
 

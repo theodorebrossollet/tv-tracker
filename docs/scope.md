@@ -12,11 +12,12 @@ A web app to track TV shows you've watched, replacing TV Time. **v1 is a single-
 - **Why this stack:** minimal moving parts, huge amount of documentation/examples online, and Claude Code can scaffold all of it quickly.
 
 ## MVP Features (v1 — build this first)
-1. **Search** — look up shows via TMDB
-2. **Track shows** — add to "watching," mark episodes as watched
+1. **Search** — look up shows via TMDB, as an overlay opened from anywhere with live as-you-type results
+2. **Track shows** — a single "+" adds a show to the watchlist; it moves to "watching" automatically once you mark an episode watched
 3. **Watchlist** — "want to watch" list
-4. **Upcoming episodes** — list of episodes releasing in the future for shows you're tracking (via TMDB release dates)
-5. **Settings page** — manage notification preferences, option to clear all data
+4. **Upcoming episodes** — future episodes across *both* lists (via TMDB release dates)
+5. **Where to watch** — streaming availability per show, defaulting to your country with a dropdown for others
+6. **Settings page** — country, notification preferences, option to clear all data
 
 ### User Stories (v1)
 - As a user, I want to search for a show so I can start tracking it.
@@ -24,6 +25,9 @@ A web app to track TV shows you've watched, replacing TV Time. **v1 is a single-
 - As a user, I want to add shows to a watchlist so I remember what to start later.
 - As a user, I want to see which upcoming episodes are coming for my tracked shows so I know when to watch next.
 - As a user, I want to clear my data if I want to start fresh.
+- As a user, I want to open a show from a search result and read about it before deciding to add it.
+- As a user, I want to hide shows I've finished so my Watching list stays useful.
+- As a user, I want to know which service a show is on in my country.
 
 ### Success Criteria (v1 "done")
 You can search for and track a show, mark episodes watched, and see an accurate upcoming-episodes list — running reliably with no crashes during normal use.
@@ -32,11 +36,11 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 - Single user (you) — no multi-user concerns for v1
 - Should work on both desktop and mobile browsers (responsive, not a dedicated mobile app)
 - "Best effort" uptime — no formal SLA, occasional downtime for updates is fine
-- ~~Data resets on redeploy are accepted for v1 (SQLite on Vercel doesn't persist across deploys)~~ — no longer applies: v1 uses Turso, so data persists. See technical design doc, section 9.
+- ~~Data resets on redeploy are accepted for v1 (SQLite on Vercel doesn't persist across deploys)~~ — no longer applies: v1 uses Turso, so data persists. See technical design doc, section 10.
 
 ## Phase 2 (after MVP works)
 - **Account system** — multi-user support, so friends/family can each have their own private tracking data. **Open question, not yet decided:** Google OAuth login vs. anonymous account-code login (Mullvad-style) — evaluate trade-offs (convenience vs. privacy/no-recovery) before building
-- ~~**Persistent database** — move from local SQLite file to a hosted SQLite-compatible service (e.g., Turso), so data survives redeploys~~ **Done in v1** — had to be pulled forward, since a local SQLite file isn't writable on Vercel at all. See the technical design doc, section 9.
+- ~~**Persistent database** — move from local SQLite file to a hosted SQLite-compatible service (e.g., Turso), so data survives redeploys~~ **Done in v1** — had to be pulled forward, since a local SQLite file isn't writable on Vercel at all. See the technical design doc, section 10.
 - Movies (search, tracking, watchlist)
 - Ratings — 1–5 rating per show/movie
 - Basic profile page — see your own watched list and stats (shows completed, episodes watched)
@@ -56,7 +60,7 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 
 ## Security & Privacy Best Practices
 **Secrets**
-- Never commit secrets to GitHub — keep the TMDB API key in `.env.local` (gitignored) locally and in Vercel's environment variables in production
+- Never commit secrets to GitHub — keep the TMDB API key in `.env` (gitignored) locally and in Vercel's environment variables in production. (Built as `.env` rather than `.env.local`: Prisma's CLI reads `.env`, and one file is less confusing than two. Both are gitignored.)
 
 **Data**
 - Prisma parameterizes queries by default — don't bypass it with raw/hand-built SQL strings
@@ -73,10 +77,11 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 ## Assumptions & Open Risks
 - TMDB's free API tier is assumed sufficient — not yet verified against their rate limits
 - "Upcoming episodes" accuracy depends entirely on TMDB's data being correct/up to date — no fallback if it's wrong or delayed
-- v1 data resets on redeploy (accepted trade-off, see Non-Functional Expectations)
 - Phase 2 login method (Google vs. anonymous) is still undecided — needs a decision before Phase 2 build starts
 
 ## Next Steps
 1. Get a free TMDB API key (themoviedb.org → API settings)
 2. Create a GitHub account/repo for the project (if you don't have one)
 3. Open the project folder in Claude Code and hand it this scope doc as the starting brief
+
+_(All three done — see the README for how to run it.)_
