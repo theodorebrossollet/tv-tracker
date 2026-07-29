@@ -161,15 +161,32 @@ props.
 
 ### When an episode becomes markable
 
-TMDB supplies an air **date**, never a time, so the date is stored as midnight
-UTC and an episode unlocks the moment that passes. For an episode dated
-30 July, that's 02:00 in Paris (UTC+2 in summer) — not local midnight, and not
-the broadcaster's actual drop time, which TMDB doesn't publish. Anywhere east
-of UTC unlocks part-way into its own local day.
+TMDB supplies an air **date**, never a time, so "when does this become
+watchable" needs a convention. Air dates are stored as **midnight US Eastern**
+(`America/New_York`), converted to the equivalent UTC instant by `parseAirDate`
+in `src/lib/tmdb.ts`. An episode dated 30 July unlocks at 04:00 UTC — midnight
+in New York, 06:00 in Paris.
 
-This is deliberately the simple rule rather than a wrong-in-a-different-way one:
-without a real air time, any choice is an approximation, and this one is
-consistent and explainable.
+The zone name is used rather than a fixed `-05:00` so daylight saving is
+handled: EST in winter, EDT in summer. Verified across both switchovers.
+
+This replaced an earlier rule of midnight **UTC**, which unlocked episodes
+before the broadcast date had started anywhere in the Americas. It's still an
+approximation — TMDB doesn't publish the broadcaster's actual release time —
+but most tracked shows premiere on a US schedule, so it errs much closer.
+
+Two properties worth preserving if this is ever changed:
+
+- Because the zone is behind UTC, the stored instant's **UTC calendar date
+  still equals the broadcast date**. `formatAirDate` formats in UTC, so the
+  displayed day is unaffected by the conversion.
+- Every `airDate <= now` comparison in queries, the show page and
+  `setSeasonWatched` needs no special casing — the shift lives entirely in
+  parsing.
+
+`scripts/backfill-air-dates.mjs` converts rows cached under the old rule. It's
+idempotent: it only touches rows sitting at exactly 00:00 UTC, which converted
+rows never are.
 
 ## 6. Server Actions (core logic)
 

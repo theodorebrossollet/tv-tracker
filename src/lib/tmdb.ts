@@ -131,11 +131,74 @@ async function tmdbFetch<T>(
   return (await response.json()) as T;
 }
 
-/** Parses TMDB's "YYYY-MM-DD" air dates, tolerating empty strings. */
+/**
+ * The zone air dates are anchored to.
+ *
+ * TMDB gives a calendar date with no time, so "when does this episode become
+ * watchable" needs a convention. US Eastern is the least-wrong one: most of
+ * what this app tracks premieres on a US schedule, and treating the date as
+ * midnight UTC (the previous behaviour) unlocked episodes several hours before
+ * anywhere in the Americas had reached that date at all.
+ *
+ * Using the zone name rather than a fixed -05:00 means daylight saving is
+ * handled — EST in winter, EDT in summer.
+ */
+const AIR_DATE_ZONE = "America/New_York";
+
+const ZONE_PARTS = new Intl.DateTimeFormat("en-US", {
+  timeZone: AIR_DATE_ZONE,
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+/** How far `AIR_DATE_ZONE` is from UTC at a given instant, in milliseconds. */
+function zoneOffsetMs(at: Date): number {
+  const parts = ZONE_PARTS.formatToParts(at);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  const asIfUtc = Date.UTC(
+    read("year"),
+    read("month") - 1,
+    read("day"),
+    // Intl can emit hour 24 for midnight in some locales; normalise it.
+    read("hour") % 24,
+    read("minute"),
+    read("second"),
+  );
+
+  return asIfUtc - at.getTime();
+}
+
+/**
+ * Parses TMDB's "YYYY-MM-DD" air dates as midnight in `AIR_DATE_ZONE`,
+ * tolerating empty strings.
+ *
+ * Stored as the equivalent UTC instant, so every `airDate <= now` comparison in
+ * the app keeps working unchanged. Because the zone is behind UTC, the UTC
+ * calendar date still matches the broadcast date, and `formatAirDate` (which
+ * formats in UTC) still shows the right day.
+ */
 function parseAirDate(value: string | null | undefined): Date | null {
   if (!value) return null;
-  const parsed = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+
+  const midnightUtc = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(midnightUtc.getTime())) return null;
+
+  // local = utc + offset, and we want local to read as midnight, so shift the
+  // UTC instant back by the offset.
+  const firstPass = new Date(midnightUtc.getTime() - zoneOffsetMs(midnightUtc));
+
+  // Re-check at the result in case the first guess sat the other side of a
+  // daylight-saving switch.
+  const settled = new Date(midnightUtc.getTime() - zoneOffsetMs(firstPass));
+
+  return settled;
 }
 
 interface RawSearchResponse {
