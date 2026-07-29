@@ -32,11 +32,11 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 - Single user (you) — no multi-user concerns for v1
 - Should work on both desktop and mobile browsers (responsive, not a dedicated mobile app)
 - "Best effort" uptime — no formal SLA, occasional downtime for updates is fine
-- Data resets on redeploy are accepted for v1 (SQLite on Vercel doesn't persist across deploys) — see technical design doc
+- ~~Data resets on redeploy are accepted for v1 (SQLite on Vercel doesn't persist across deploys)~~ — no longer applies: v1 uses Turso, so data persists. See technical design doc, section 9.
 
 ## Phase 2 (after MVP works)
 - **Account system** — multi-user support, so friends/family can each have their own private tracking data. **Open question, not yet decided:** Google OAuth login vs. anonymous account-code login (Mullvad-style) — evaluate trade-offs (convenience vs. privacy/no-recovery) before building
-- **Persistent database** — move from local SQLite file to a hosted SQLite-compatible service (e.g., Turso), so data survives redeploys
+- ~~**Persistent database** — move from local SQLite file to a hosted SQLite-compatible service (e.g., Turso), so data survives redeploys~~ **Done in v1** — had to be pulled forward, since a local SQLite file isn't writable on Vercel at all. See the technical design doc, section 9.
 - Movies (search, tracking, watchlist)
 - Ratings — 1–5 rating per show/movie
 - Basic profile page — see your own watched list and stats (shows completed, episodes watched)

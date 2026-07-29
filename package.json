@@ -4,15 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "node scripts/migrate.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.9.1",
+    "@libsql/client": "^0.17.4",
+    "@prisma/adapter-libsql": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "next": "16.2.12",
     "prisma": "^7.9.1",
@@ -31,11 +33,14 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
+  "overrides": {
+    "sharp": "^0.35.3",
+    "postcss": "^8.5.24"
+  },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true,
     "prisma@7.9.1": true,
     "@prisma/engines@7.9.1": true,
-    "sharp@0.34.5": true,
+    "sharp@0.35.3": true,
     "unrs-resolver@1.12.2": true
   }
 }

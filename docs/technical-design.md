@@ -17,8 +17,15 @@ Next.js App Router (Vercel)
   ├── Cron job (2x/day) ── refreshes episode/air-date data
   │
   ▼
-SQLite database (via Prisma) — resets on redeploy (accepted for v1)
+SQLite via Prisma — local file in dev, Turso in production
 ```
+
+> **Updated during build (29 Jul 2026).** This doc originally planned a local
+> SQLite file in production, accepting that data would reset on each redeploy.
+> That turned out to be too optimistic: Vercel's filesystem is read-only outside
+> `/tmp`, so writes fail entirely rather than merely being temporary — tracking
+> a show would not work at all. Turso (planned for Phase 2) was pulled forward
+> into v1. Sections 8 and 9 reflect the change; the data model is unaffected.
 
 No separate backend service, no message queue, no external state, no auth layer — deliberately minimal for a single-user PoC.
 
@@ -131,18 +138,41 @@ Vercel Cron Job configured in `vercel.json`, running **twice a day** (e.g., 6am 
 ## 8. Environment Variables
 
 ```
-TMDB_API_KEY=
-DATABASE_URL=file:./dev.db   # SQLite, local file
+TMDB_API_KEY=                        # TMDB v3 key or v4 read access token
+DATABASE_URL=file:./dev.db           # local dev; libsql://… in production
+TURSO_AUTH_TOKEN=                    # only needed when DATABASE_URL is libsql://
+CRON_SECRET=                         # protects the refresh endpoint in production
 ```
+
+See `.env.example` for the annotated version. `CRON_SECRET` was added during the
+build: without it `/api/cron/refresh-episodes` would be a public endpoint anyone
+could hit repeatedly, burning through the TMDB rate limit.
 
 (Auth-related variables will be added in Phase 2 once the login method is decided.)
 
 ## 9. Deployment
 
 - Vercel, connected to GitHub — push to `main` deploys automatically
-- SQLite on Vercel note: Vercel's filesystem is ephemeral per deployment, so a local SQLite file **won't persist** across deploys/restarts in production
-- **Decision:** for v1 (PoC), this is accepted — data resets on redeploy are fine at this stage
-- **Deferred to Phase 2:** move to a hosted SQLite-compatible service (e.g., Turso) once the PoC has proven the concept and persistent data actually matters — minimal code change since it stays Prisma-compatible
+- **Database: Turso** (hosted, SQLite-compatible, free tier). Not the original
+  plan — see the note in section 1 for why a local SQLite file can't work on
+  Vercel at all, not even temporarily.
+- The app talks to both local files and Turso through one Prisma driver adapter
+  (`@prisma/adapter-libsql`), so dev and production run identical code paths.
+
+**Migrations are applied manually, not during the build.** `prisma migrate
+deploy` only understands local SQLite file paths — it rejects `libsql://` URLs
+with "P1013: the scheme is not recognized". So `scripts/migrate.mjs` applies
+Prisma's generated migration SQL over the libSQL client instead, tracking what
+it has already run in an `_applied_migrations` table:
+
+```bash
+# after changing the schema
+npx prisma migrate dev                       # creates the migration locally
+DATABASE_URL="libsql://…" npm run db:deploy  # applies it to Turso
+```
+
+Keeping this out of the Vercel build is deliberate: a build step that mutates
+the production database is easy to trigger accidentally and hard to undo.
 
 ## 10. Open Technical Questions (carry into exec plan)
 

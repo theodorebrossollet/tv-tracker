@@ -15,7 +15,7 @@ private until Phase 2 adds accounts.
 | Piece | Choice |
 |---|---|
 | Framework | Next.js 16 (App Router, Server Actions) |
-| Database | SQLite via Prisma 7 |
+| Database | SQLite via Prisma 7 — local file in dev, [Turso](https://turso.tech/) in production |
 | Show data | [TMDB API](https://www.themoviedb.org/) |
 | Styling | Tailwind CSS v4 |
 | Hosting | Vercel (see the caveat below) |
@@ -82,29 +82,70 @@ burns your TMDB quota.
 
 ```bash
 npm run dev          # development server
-npm run build        # production build (runs prisma generate + migrate deploy)
+npm run build        # production build (runs prisma generate first)
 npm run lint         # eslint
 npm run db:studio    # browse the database in Prisma Studio
-npm run db:migrate   # create and apply a new migration after schema changes
+npm run db:migrate   # create and apply a new migration locally
+npm run db:deploy    # apply pending migrations to whatever DATABASE_URL points at
 ```
 
-## Deploying — read this first
+## Deploying
 
-The app builds and runs, but **SQLite does not work on Vercel**. Vercel's
-filesystem is read-only apart from `/tmp`, so any write — tracking a show,
-marking an episode watched — will fail in production. This is a stronger
-limitation than the "data resets on redeploy" note in the technical design doc,
-which assumed writes would at least succeed until the next deploy.
+Local development uses a plain SQLite file. Production uses
+[Turso](https://turso.tech/) — hosted, SQLite-compatible, free tier. Both go
+through the same Prisma driver adapter, so the code is identical either way;
+only `DATABASE_URL` changes.
 
-Two ways forward:
+Turso is required rather than a nice-to-have: Vercel's filesystem is read-only
+outside `/tmp`, so a local SQLite file there can be read but never written.
+Tracking a show or marking an episode watched would fail outright.
 
-1. **Run it locally** (`npm run dev`) for now. Everything works, data persists
-   in `dev.db`, and nothing needs to change.
-2. **Switch to [Turso](https://turso.tech/)** (hosted, SQLite-compatible, free
-   tier) before deploying. This was already planned for Phase 2. It's a small
-   change: swap `@prisma/adapter-better-sqlite3` for `@prisma/adapter-libsql`
-   in `src/lib/prisma.ts` and point `DATABASE_URL` at your Turso database. The
-   schema and every query stay exactly the same.
+**1. Create the database**
+
+```bash
+npm install -g turso
+turso auth signup
+turso db create tv-tracker
+turso db show tv-tracker --url          # → libsql://tv-tracker-you.turso.io
+turso db tokens create tv-tracker       # → the auth token
+```
+
+**2. Create the schema in it**
+
+Migrations are applied by hand, not during the Vercel build — a build step that
+writes to your production database is easy to trigger by accident and hard to
+undo. From your machine:
+
+```bash
+DATABASE_URL="libsql://…" TURSO_AUTH_TOKEN="…" npm run db:deploy
+```
+
+Re-run that same command after any future `npx prisma migrate dev`. It only
+applies migrations that haven't run yet, so running it twice is harmless.
+
+**3. Deploy**
+
+Import the repo at [vercel.com/new](https://vercel.com/new) and set four
+environment variables: `TMDB_API_KEY`, `DATABASE_URL` (the `libsql://` URL),
+`TURSO_AUTH_TOKEN`, and `CRON_SECRET` (`openssl rand -hex 32`).
+
+Remember there is still no login — anyone with the URL has full access to your
+data. Keep the deployment private until Phase 2.
+
+## About `npm audit`
+
+`npm audit` reports 9 high-severity issues. All of them are in eslint's
+dependency chain, which only ever runs on your own machine — none of it is
+served to anyone visiting the app. They all trace back to a single package
+(`brace-expansion`), and the only fix is a major eslint upgrade that would
+likely break the config, so they're left alone for now.
+
+The three that *did* affect the running app — outdated `sharp` and `postcss`,
+both pinned to old versions by Next.js — are fixed via the `overrides` block in
+`package.json`. `npm audit --omit=dev` reports zero vulnerabilities.
+
+Re-check with `npm audit --omit=dev` after a monthly `npm update`; that's the
+number that actually matters.
 
 ## Project layout
 
