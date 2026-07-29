@@ -4,11 +4,17 @@ import { AddButton } from "@/components/add-button";
 import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import { Poster } from "@/components/poster";
+import { Trailer } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
 import { getSettings } from "@/lib/shows";
-import { getWatchProviders, getWatchRegions, TmdbError } from "@/lib/tmdb";
+import {
+  getShowTrailer,
+  getWatchProviders,
+  getWatchRegions,
+  TmdbError,
+} from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
@@ -32,19 +38,21 @@ export default async function ShowPage({ params }: ShowPageProps) {
   // here means TMDB doesn't know this id either.
   if (!show) notFound();
 
-  // Availability is a nice-to-have: if TMDB is unreachable or rate-limits us,
-  // the rest of the page should still render.
+  // Availability and the trailer are nice-to-haves: if TMDB is unreachable or
+  // rate-limits us, the rest of the page should still render.
   let countries: Awaited<ReturnType<typeof getWatchProviders>> = [];
   let regions: Awaited<ReturnType<typeof getWatchRegions>> = [];
+  let trailer: Awaited<ReturnType<typeof getShowTrailer>> = null;
 
   try {
-    [countries, regions] = await Promise.all([
+    [countries, regions, trailer] = await Promise.all([
       getWatchProviders(id),
       getWatchRegions(),
+      getShowTrailer(id),
     ]);
   } catch (error) {
     if (!(error instanceof TmdbError)) throw error;
-    console.error("Could not load availability:", error.message);
+    console.error("Could not load availability or trailer:", error.message);
   }
 
   const regionNames = Object.fromEntries(
@@ -96,6 +104,14 @@ export default async function ShowPage({ params }: ShowPageProps) {
         />
       ) : null}
 
+      {trailer ? (
+        <Trailer
+          videoKey={trailer.key}
+          name={trailer.name}
+          showName={show.name}
+        />
+      ) : null}
+
       <div className="mt-8 space-y-6">
         {show.seasons.map((season) => {
           const aired = season.episodes.filter(
@@ -137,6 +153,8 @@ export default async function ShowPage({ params }: ShowPageProps) {
                     airDate={episode.airDate?.toISOString() ?? null}
                     watched={episode.watched !== null}
                     aired={episode.airDate !== null && episode.airDate <= now}
+                    runtime={episode.runtime}
+                    overview={episode.overview}
                   />
                 ))}
               </ul>

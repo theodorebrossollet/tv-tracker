@@ -35,6 +35,10 @@ model Episode {
   episodeNumber Int
   name          String?
   airDate       DateTime?
+  /// Minutes. Comes free with the season fetch; also what a future
+  /// "hours watched" stat would be built on.
+  runtime       Int?
+  overview      String?
 
   show    Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
   watched WatchedEpisode?

@@ -17,7 +17,8 @@ A web app to track TV shows you've watched, replacing TV Time. **v1 is a single-
 3. **Watchlist** — "want to watch" list
 4. **Upcoming episodes** — future episodes across *both* lists (via TMDB release dates)
 5. **Where to watch** — streaming availability per show, defaulting to your country with a dropdown for others
-6. **Settings page** — country, notification preferences, option to clear all data
+6. **Episode detail** — runtime and a per-episode synopsis (collapsed by default), plus an inline trailer on each show page
+7. **Settings page** — country, notification preferences, option to clear all data
 
 ### User Stories (v1)
 - As a user, I want to search for a show so I can start tracking it.

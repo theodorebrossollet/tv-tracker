@@ -52,6 +52,8 @@ model Episode {
   episodeNumber Int
   name          String?
   airDate       DateTime?
+  runtime       Int?                  // minutes; free with the season fetch
+  overview      String?
 
   show          Show     @relation(fields: [showId], references: [id])
   watched       WatchedEpisode?
@@ -106,6 +108,17 @@ without losing the page you were on. It queries as you type, debounced 250ms.
 isn't cached locally, it's fetched from TMDB on first view. That's what lets a
 search result link straight through to a full show page.
 
+Viewing a show also re-syncs it if the cache is more than 24h old **and** the
+show isn't tracked. Tracked shows are left to the cron; untracked ones have no
+other refresh path, so without this a show cached from a search result would
+keep its first-seen data forever.
+
+**Trailers are click-to-load.** A normal YouTube `<iframe>` would contact
+YouTube and set its cookies on every show page view, which contradicts the
+"no third-party trackers, no cookie banner" line in `scope.md`. So the page
+renders a local placeholder and only swaps in a `youtube-nocookie.com` player
+once you press play — verified as zero YouTube requests before the click.
+
 ## 4. Tracking Model
 
 One button — "+" — puts a show on the **watchlist**. Nothing else adds a show
@@ -134,7 +147,8 @@ No session/auth check needed in v1 — every action just operates on the single 
 ## 6. TMDB Integration
 
 - Search: `GET /search/tv` — used by the search overlay
-- Show details + episodes: `GET /tv/{id}` and `GET /tv/{id}/season/{season_number}` — populate `Episode` rows with air dates
+- Show details + episodes: `GET /tv/{id}` and `GET /tv/{id}/season/{season_number}` — populate `Episode` rows with air dates, runtime and per-episode synopsis (all three come in the same response, no extra requests)
+- Trailer: `GET /tv/{id}/videos` — cached 24h; the best YouTube trailer is picked by preferring official trailers over teasers
 - Streaming availability: `GET /tv/{id}/watch/providers` — returns **every** country in one response, so the country dropdown on a show page switches instantly without further requests
 - Country list: `GET /watch/providers/regions` — cached for 24h, it changes about never
 - Rate limits: TMDB's free tier is generous for this scale, but cache aggressively (don't refetch on every page view)

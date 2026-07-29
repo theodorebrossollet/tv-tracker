@@ -129,15 +129,13 @@ export async function getUpcomingEpisodes(
  * added to any list. Returns null only when TMDB doesn't know the id either.
  */
 export async function getShowDetail(showId: string) {
-  let show = await loadShow(showId);
+  // Runs first so it can also refresh a cached-but-stale show, not just fetch
+  // a missing one.
+  const cached = await ensureShowCached(showId);
+  if (!cached) return null;
 
-  if (!show) {
-    const cached = await ensureShowCached(showId);
-    if (!cached) return null;
-
-    show = await loadShow(showId);
-    if (!show) return null;
-  }
+  const show = await loadShow(showId);
+  if (!show) return null;
 
   const seasons = new Map<number, typeof show.episodes>();
   for (const episode of show.episodes) {

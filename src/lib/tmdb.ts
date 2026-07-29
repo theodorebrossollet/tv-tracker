@@ -39,6 +39,9 @@ export interface TmdbEpisode {
   episodeNumber: number;
   name: string | null;
   airDate: Date | null;
+  /** Minutes, when TMDB knows it. */
+  runtime: number | null;
+  overview: string | null;
 }
 
 /**
@@ -177,6 +180,8 @@ interface RawSeasonResponse {
     episode_number: number;
     name: string | null;
     air_date: string | null;
+    runtime: number | null;
+    overview: string | null;
   }>;
 }
 
@@ -194,6 +199,9 @@ export async function getSeasonEpisodes(
     episodeNumber: episode.episode_number,
     name: episode.name || null,
     airDate: parseAirDate(episode.air_date),
+    // Both already present in this response — no extra request needed.
+    runtime: episode.runtime ?? null,
+    overview: episode.overview || null,
   }));
 }
 
@@ -331,4 +339,61 @@ export async function getWatchRegions(): Promise<WatchRegion[]> {
   return (data.results ?? [])
     .map((region) => ({ code: region.iso_3166_1, name: region.english_name }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ---------------------------------------------------------------------------
+// Trailers
+// ---------------------------------------------------------------------------
+
+export interface TmdbVideo {
+  /** YouTube video id, for the embed URL. */
+  key: string;
+  name: string;
+  type: string;
+}
+
+interface RawVideosResponse {
+  results?: Array<{
+    key: string;
+    name: string;
+    site: string;
+    type: string;
+    official?: boolean;
+    published_at?: string;
+  }>;
+}
+
+/**
+ * Picks the single best trailer for a show, or null if there isn't one.
+ *
+ * Only YouTube is handled: it's the overwhelming majority of what TMDB returns,
+ * and every other site would need its own embed handling for a rare case.
+ */
+export async function getShowTrailer(
+  tmdbShowId: string | number,
+): Promise<TmdbVideo | null> {
+  const data = await tmdbFetch<RawVideosResponse>(
+    `/tv/${tmdbShowId}/videos`,
+    { language: "en-US" },
+    // Trailers change rarely; a day of caching keeps this off the critical path.
+    60 * 60 * 24,
+  );
+
+  const candidates = (data.results ?? []).filter(
+    (video) => video.site === "YouTube" && video.key,
+  );
+
+  if (candidates.length === 0) return null;
+
+  // Prefer an official trailer, then any trailer, then a teaser, then whatever
+  // is left — so the play button doesn't open a random behind-the-scenes clip.
+  const rank = (video: (typeof candidates)[number]) => {
+    if (video.type === "Trailer") return video.official ? 0 : 1;
+    if (video.type === "Teaser") return video.official ? 2 : 3;
+    return 4;
+  };
+
+  const best = [...candidates].sort((a, b) => rank(a) - rank(b))[0];
+
+  return { key: best.key, name: best.name, type: best.type };
 }
