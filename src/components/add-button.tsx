@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 
 import { addToWatchlist, removeShow } from "@/app/actions";
 import type { TrackStatus } from "@/lib/types";
@@ -28,10 +28,16 @@ export function AddButton({
   status,
   variant = "full",
 }: AddButtonProps) {
-  // Optimistic local copy so the button reacts immediately; the server action
-  // revalidates the page afterwards and the prop catches up.
-  const [current, setCurrent] = useState(status);
-  const [error, setError] = useState<string | null>(null);
+  // Derived from the prop via useOptimistic, not copied into useState. The
+  // status changes for reasons this button never sees — marking an episode
+  // promotes a show to "watching", unmarking the last one sends it back to the
+  // watchlist — and a useState copy would keep displaying whatever the status
+  // was when the page first rendered.
+  const [current, setCurrent] = useOptimistic(status);
+  const [error, setError] = useOptimistic<string | null, string | null>(
+    null,
+    (_, next) => next,
+  );
   const [pending, startTransition] = useTransition();
 
   const tracked = current !== null;
@@ -40,18 +46,17 @@ export function AddButton({
     // These buttons sit inside links on the list pages.
     event.preventDefault();
     event.stopPropagation();
-    setError(null);
-
-    const next: TrackStatus | null = tracked ? null : "watchlist";
-    setCurrent(next);
 
     startTransition(async () => {
+      setCurrent(tracked ? null : "watchlist");
+
       const result = tracked
         ? await removeShow(showId)
         : await addToWatchlist(showId);
 
+      // No manual rollback: when the transition ends the optimistic value is
+      // dropped and the prop wins either way.
       if (!result.ok) {
-        setCurrent(tracked ? status : null);
         setError(result.error ?? "Something went wrong.");
       }
     });

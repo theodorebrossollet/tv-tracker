@@ -4,12 +4,13 @@ import { AddButton } from "@/components/add-button";
 import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import { Poster } from "@/components/poster";
-import { Trailer } from "@/components/trailer";
+import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
 import { getSettings } from "@/lib/shows";
 import {
+  getSeasonTrailers,
   getShowTrailer,
   getWatchProviders,
   getWatchRegions,
@@ -43,17 +44,42 @@ export default async function ShowPage({ params }: ShowPageProps) {
   let countries: Awaited<ReturnType<typeof getWatchProviders>> = [];
   let regions: Awaited<ReturnType<typeof getWatchRegions>> = [];
   let trailer: Awaited<ReturnType<typeof getShowTrailer>> = null;
+  let seasonTrailers: Awaited<ReturnType<typeof getSeasonTrailers>> = [];
 
   try {
-    [countries, regions, trailer] = await Promise.all([
+    [countries, regions, trailer, seasonTrailers] = await Promise.all([
       getWatchProviders(id),
       getWatchRegions(),
       getShowTrailer(id),
+      getSeasonTrailers(
+        id,
+        show.seasons.map((season) => season.seasonNumber),
+      ),
     ]);
   } catch (error) {
     if (!(error instanceof TmdbError)) throw error;
-    console.error("Could not load availability or trailer:", error.message);
+    console.error("Could not load availability or trailers:", error.message);
   }
+
+  // The show-wide trailer first, then any season that has one of its own.
+  const trailerOptions: TrailerOption[] = [
+    ...(trailer
+      ? [
+          {
+            id: "show",
+            label: "Show",
+            videoKey: trailer.key,
+            name: trailer.name,
+          },
+        ]
+      : []),
+    ...seasonTrailers.map((entry) => ({
+      id: `season-${entry.seasonNumber}`,
+      label: `Season ${entry.seasonNumber}`,
+      videoKey: entry.key,
+      name: entry.name,
+    })),
+  ];
 
   const regionNames = Object.fromEntries(
     regions.map((region) => [region.code, region.name]),
@@ -104,12 +130,8 @@ export default async function ShowPage({ params }: ShowPageProps) {
         />
       ) : null}
 
-      {trailer ? (
-        <Trailer
-          videoKey={trailer.key}
-          name={trailer.name}
-          showName={show.name}
-        />
+      {trailerOptions.length > 0 ? (
+        <Trailer options={trailerOptions} showName={show.name} />
       ) : null}
 
       <div className="mt-8 space-y-6">

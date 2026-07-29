@@ -178,20 +178,45 @@ export async function markEpisodeWatched(
 }
 
 /**
- * Unmarks an episode. The show stays on "watching" even if this was its last
- * watched episode — dropping it back to the watchlist on an accidental click
- * would be more surprising than leaving it where it is.
+ * Drops a show back to the watchlist once it has no watched episodes left.
+ *
+ * This is the exact inverse of the promotion rule: "watching" means at least
+ * one episode watched, so undoing the last one has to undo the move as well.
+ * Without it, marking an episode by mistake left the show stuck under Watching
+ * with zero progress and no way back short of removing and re-adding it.
+ *
+ * Shows already on the watchlist are untouched, and a show that isn't tracked
+ * at all is left alone rather than being added.
+ */
+async function demoteIfNothingWatched(showId: string) {
+  const remaining = await prisma.watchedEpisode.count({
+    where: { episode: { showId } },
+  });
+
+  if (remaining > 0) return;
+
+  await prisma.trackedShow.updateMany({
+    where: { showId, status: "watching" },
+    data: { status: "watchlist" },
+  });
+}
+
+/**
+ * Unmarks an episode, and returns the show to the watchlist if that was the
+ * last watched episode.
  */
 export async function unmarkEpisodeWatched(
   episodeId: string,
 ): Promise<ActionResult> {
   try {
-    await prisma.watchedEpisode.deleteMany({ where: { episodeId } });
-
     const episode = await prisma.episode.findUnique({
       where: { id: episodeId },
       select: { showId: true },
     });
+
+    await prisma.watchedEpisode.deleteMany({ where: { episodeId } });
+
+    if (episode) await demoteIfNothingWatched(episode.showId);
 
     revalidateShowViews(episode?.showId);
   } catch (error) {
@@ -247,6 +272,9 @@ export async function setSeasonWatched(
       await prisma.watchedEpisode.deleteMany({
         where: { episodeId: { in: episodeIds } },
       });
+
+      // Same rule as unmarking a single episode.
+      await demoteIfNothingWatched(showId);
     }
   } catch (error) {
     return toResult(error);

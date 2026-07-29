@@ -3,15 +3,21 @@
 import Image from "next/image";
 import { useState } from "react";
 
-interface TrailerProps {
-  /** YouTube video id. */
+export interface TrailerOption {
+  /** Stable id: "show" or "season-3". */
+  id: string;
+  label: string;
   videoKey: string;
   name: string;
+}
+
+interface TrailerProps {
+  options: TrailerOption[];
   showName: string;
 }
 
 /**
- * Plays the trailer inline, showing YouTube's own thumbnail as the poster frame
+ * Plays a trailer inline, showing YouTube's own thumbnail as the poster frame
  * and loading the player itself only on click.
  *
  * The thumbnail keeps the no-third-party-contact property, which is not
@@ -24,23 +30,60 @@ interface TrailerProps {
  * Pressing play is the first time the visitor's browser talks to YouTube, and
  * that request goes to youtube-nocookie.com.
  */
-export function Trailer({ videoKey, name, showName }: TrailerProps) {
+export function Trailer({ options, showName }: TrailerProps) {
+  const [selectedId, setSelectedId] = useState(options[0]?.id ?? "");
   const [playing, setPlaying] = useState(false);
+
+  const selected =
+    options.find((option) => option.id === selectedId) ?? options[0];
+
   // maxresdefault only exists for videos uploaded at 720p or better; every
   // valid video has hqdefault, so fall back to it rather than showing a gap.
-  const [thumbnail, setThumbnail] = useState(
-    `https://i.ytimg.com/vi/${videoKey}/maxresdefault.jpg`,
-  );
+  const [failedThumbnails, setFailedThumbnails] = useState<string[]>([]);
+
+  if (!selected) return null;
+
+  const useFallback = failedThumbnails.includes(selected.videoKey);
+  const thumbnail = `https://i.ytimg.com/vi/${selected.videoKey}/${
+    useFallback ? "hqdefault" : "maxresdefault"
+  }.jpg`;
+
+  function select(id: string) {
+    setSelectedId(id);
+    // Switching trailers should show the new poster frame, not keep playing
+    // the previous video.
+    setPlaying(false);
+  }
 
   return (
     <section className="mt-8">
-      <h2 className="font-semibold">Trailer</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-semibold">Trailer</h2>
+
+        {options.length > 1 ? (
+          <label className="flex items-center gap-2 text-xs text-muted">
+            For
+            <select
+              value={selected.id}
+              onChange={(event) => select(event.target.value)}
+              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-accent"
+            >
+              {options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
 
       <div className="mt-3 aspect-video w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-surface">
         {playing ? (
           <iframe
-            src={`https://www.youtube-nocookie.com/embed/${videoKey}?autoplay=1&rel=0`}
-            title={`${showName} — ${name}`}
+            key={selected.videoKey}
+            src={`https://www.youtube-nocookie.com/embed/${selected.videoKey}?autoplay=1&rel=0`}
+            title={`${showName} — ${selected.name}`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             className="size-full"
@@ -49,18 +92,21 @@ export function Trailer({ videoKey, name, showName }: TrailerProps) {
           <button
             type="button"
             onClick={() => setPlaying(true)}
-            aria-label={`Play trailer: ${name}`}
+            aria-label={`Play trailer: ${selected.name}`}
             className="group relative flex size-full items-center justify-center"
           >
             <Image
+              key={thumbnail}
               src={thumbnail}
               alt=""
               fill
               sizes="(max-width: 672px) 100vw, 672px"
               className="object-cover"
               onError={() =>
-                setThumbnail(
-                  `https://i.ytimg.com/vi/${videoKey}/hqdefault.jpg`,
+                setFailedThumbnails((keys) =>
+                  keys.includes(selected.videoKey)
+                    ? keys
+                    : [...keys, selected.videoKey],
                 )
               }
             />
@@ -80,7 +126,7 @@ export function Trailer({ videoKey, name, showName }: TrailerProps) {
             </span>
 
             <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-4 pb-3 pt-8 text-left text-sm font-medium text-white">
-              {name}
+              {selected.name}
             </span>
           </button>
         )}

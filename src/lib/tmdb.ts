@@ -75,11 +75,38 @@ function buildRequest(path: string, params: Record<string, string>) {
   return { url, headers };
 }
 
+// In-process cache for the slow-changing endpoints (streaming regions, video
+// lists). Next's own fetch cache can't be used here: these pages are
+// `dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and
+// discards any `next: { revalidate }` the fetch asks for — measured, not
+// assumed. Without this, opening one Game of Thrones page cost 11 TMDB
+// requests, every time.
+//
+// Per-process, so a restart or a second serverless instance re-warms it. That's
+// fine for data measured in days, and it avoids a schema change for something
+// this peripheral.
+const responseCache = new Map<string, { value: unknown; expiresAt: number }>();
+
+async function cached<T>(
+  key: string,
+  ttlSeconds: number,
+  load: () => Promise<T>,
+): Promise<T> {
+  const hit = responseCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value as T;
+
+  const value = await load();
+  responseCache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlSeconds * 1000,
+  });
+
+  return value;
+}
+
 async function tmdbFetch<T>(
   path: string,
   params: Record<string, string> = {},
-  /** Seconds to let Next.js cache the response. 0 disables caching. */
-  revalidate = 0,
 ): Promise<T> {
   const { url, headers } = buildRequest(path, params);
 
@@ -87,12 +114,8 @@ async function tmdbFetch<T>(
   try {
     // Show data isn't cached here — it's cached in our own database instead
     // (see the Show/Episode models), which is the caching layer the design doc
-    // calls for. `revalidate` is for the handful of endpoints that aren't
-    // per-show, like the list of streaming regions.
-    response = await fetch(url, {
-      headers,
-      ...(revalidate > 0 ? { next: { revalidate } } : { cache: "no-store" }),
-    });
+    // calls for. Endpoints that aren't per-show go through `cached()` above.
+    response = await fetch(url, { headers, cache: "no-store" });
   } catch (cause) {
     throw new TmdbError(`Could not reach TMDB: ${(cause as Error).message}`);
   }
@@ -330,10 +353,10 @@ interface RawRegionsResponse {
  * about never, and it's fetched on every settings page view.
  */
 export async function getWatchRegions(): Promise<WatchRegion[]> {
-  const data = await tmdbFetch<RawRegionsResponse>(
-    "/watch/providers/regions",
-    { language: "en-US" },
-    60 * 60 * 24,
+  const data = await cached("regions", 60 * 60 * 24, () =>
+    tmdbFetch<RawRegionsResponse>("/watch/providers/regions", {
+      language: "en-US",
+    }),
   );
 
   return (data.results ?? [])
@@ -364,36 +387,94 @@ interface RawVideosResponse {
 }
 
 /**
- * Picks the single best trailer for a show, or null if there isn't one.
+ * Picks the single best trailer out of a TMDB videos response.
  *
  * Only YouTube is handled: it's the overwhelming majority of what TMDB returns,
  * and every other site would need its own embed handling for a rare case.
  */
-export async function getShowTrailer(
-  tmdbShowId: string | number,
-): Promise<TmdbVideo | null> {
-  const data = await tmdbFetch<RawVideosResponse>(
-    `/tv/${tmdbShowId}/videos`,
-    { language: "en-US" },
-    // Trailers change rarely; a day of caching keeps this off the critical path.
-    60 * 60 * 24,
-  );
-
+function pickBestTrailer(data: RawVideosResponse): TmdbVideo | null {
   const candidates = (data.results ?? []).filter(
     (video) => video.site === "YouTube" && video.key,
   );
 
   if (candidates.length === 0) return null;
 
-  // Prefer an official trailer, then any trailer, then a teaser, then whatever
-  // is left — so the play button doesn't open a random behind-the-scenes clip.
+  // Prefer an official trailer, then any trailer, then a teaser. Anything else
+  // — featurettes, recaps, opening credits, behind-the-scenes — is rejected
+  // outright: season video lists are mostly those, and a "Trailer" button that
+  // opens a recap is worse than no button.
   const rank = (video: (typeof candidates)[number]) => {
     if (video.type === "Trailer") return video.official ? 0 : 1;
     if (video.type === "Teaser") return video.official ? 2 : 3;
-    return 4;
+    return 99;
   };
 
-  const best = [...candidates].sort((a, b) => rank(a) - rank(b))[0];
+  const best = [...candidates]
+    .map((video) => ({ video, score: rank(video) }))
+    .filter((entry) => entry.score < 99)
+    .sort((a, b) => a.score - b.score)[0];
 
-  return { key: best.key, name: best.name, type: best.type };
+  if (!best) return null;
+
+  return { key: best.video.key, name: best.video.name, type: best.video.type };
+}
+
+/** Trailers change rarely, so a day of caching keeps them off the hot path. */
+const VIDEO_CACHE_SECONDS = 60 * 60 * 24;
+
+export async function getShowTrailer(
+  tmdbShowId: string | number,
+): Promise<TmdbVideo | null> {
+  return pickBestTrailer(
+    await cached(`videos:${tmdbShowId}`, VIDEO_CACHE_SECONDS, () =>
+      tmdbFetch<RawVideosResponse>(`/tv/${tmdbShowId}/videos`, {
+        language: "en-US",
+      }),
+    ),
+  );
+}
+
+export interface SeasonTrailer extends TmdbVideo {
+  seasonNumber: number;
+}
+
+/**
+ * Trailers for individual seasons, for the ones that have any.
+ *
+ * Coverage is patchy — plenty of seasons have no trailer at all, and some have
+ * only featurettes — so this returns just the seasons that yielded something,
+ * rather than an entry per season.
+ *
+ * Seasons are fetched in parallel because they're independent and cached for a
+ * day; a long-running show would otherwise serialise eight round trips.
+ */
+export async function getSeasonTrailers(
+  tmdbShowId: string | number,
+  seasonNumbers: number[],
+): Promise<SeasonTrailer[]> {
+  const results = await Promise.all(
+    seasonNumbers.map(async (seasonNumber) => {
+      try {
+        const data = await cached(
+          `videos:${tmdbShowId}:${seasonNumber}`,
+          VIDEO_CACHE_SECONDS,
+          () =>
+            tmdbFetch<RawVideosResponse>(
+              `/tv/${tmdbShowId}/season/${seasonNumber}/videos`,
+              { language: "en-US" },
+            ),
+        );
+
+        const trailer = pickBestTrailer(data);
+        return trailer ? { ...trailer, seasonNumber } : null;
+      } catch {
+        // One season failing shouldn't cost the whole page its trailers.
+        return null;
+      }
+    }),
+  );
+
+  return results
+    .filter((entry): entry is SeasonTrailer => entry !== null)
+    .sort((a, b) => a.seasonNumber - b.seasonNumber);
 }

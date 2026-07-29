@@ -135,8 +135,12 @@ marked watched, including when it wasn't on a list at all: marking an episode
 watched is a clearer statement of intent than pressing a button, so it creates
 the tracked row too.
 
-Unmarking the last watched episode does *not* demote a show back to the
-watchlist — an accidental click shouldn't silently reorganise your lists.
+Unmarking the **last** watched episode sends the show back to the watchlist.
+That's the exact inverse of the promotion rule — "watching" means at least one
+episode watched — and it's what makes a mistaken tap undoable. An earlier
+version deliberately didn't demote, on the theory that an accidental click
+shouldn't reorganise your lists; in practice that left a show stuck under
+Watching with zero progress and no way back short of removing and re-adding it.
 
 ## 5. Marking Episodes Watched
 
@@ -146,12 +150,26 @@ their control disabled, since you can't have watched something that hasn't been
 broadcast. Keeping the two paths on the same set is deliberate: they previously
 disagreed, with individual rows allowing what the bulk action skipped.
 
-`EpisodeRow` derives its checked state from props via `useOptimistic`, **not**
-`useState`. This matters: `useState` initialises once and then ignores prop
-changes, so after "Mark all watched" revalidated the page the database and the
-season counter updated while every row still displayed as unwatched. Deriving
-from props means a bulk action, a refresh, or a failed request all resolve to
-whatever the server actually holds.
+`EpisodeRow` and `AddButton` derive their state from props via `useOptimistic`,
+**not** `useState`. This matters: `useState` initialises once and then ignores
+prop changes, so a revalidation could never correct the display. Two real bugs
+came from this — "Mark all watched" updating the database and the season counter
+while every row still showed unwatched, and the add button still reading "On
+watchlist" after marking an episode had promoted the show to Watching. Any
+component whose state the server can change behind its back must derive from
+props.
+
+### When an episode becomes markable
+
+TMDB supplies an air **date**, never a time, so the date is stored as midnight
+UTC and an episode unlocks the moment that passes. For an episode dated
+30 July, that's 02:00 in Paris (UTC+2 in summer) — not local midnight, and not
+the broadcaster's actual drop time, which TMDB doesn't publish. Anywhere east
+of UTC unlocks part-way into its own local day.
+
+This is deliberately the simple rule rather than a wrong-in-a-different-way one:
+without a real air time, any choice is an approximation, and this one is
+consistent and explainable.
 
 ## 6. Server Actions (core logic)
 
@@ -171,7 +189,16 @@ No session/auth check needed in v1 — every action just operates on the single 
 
 - Search: `GET /search/tv` — used by the search overlay
 - Show details + episodes: `GET /tv/{id}` and `GET /tv/{id}/season/{season_number}` — populate `Episode` rows with air dates, runtime and per-episode synopsis (all three come in the same response, no extra requests)
-- Trailer: `GET /tv/{id}/videos` — cached 24h; the best YouTube trailer is picked by preferring official trailers over teasers
+- Trailers: `GET /tv/{id}/videos` and `GET /tv/{id}/season/{n}/videos` — the best YouTube trailer is picked by preferring official trailers over teasers, and anything that isn't a trailer or teaser (featurettes, recaps, opening credits — which dominate season video lists) is rejected rather than shown under a "Trailer" heading. Season coverage is patchy; only seasons that yield one appear in the picker.
+
+**Caching these is done in-process, not by Next.** `lib/tmdb.ts` keeps a small
+TTL map for the region list and video lists. Next's own fetch cache can't do it
+here: these pages are `dynamic = "force-dynamic"`, which forces
+`fetchCache: "force-no-store"` and discards any `next: { revalidate }` a fetch
+asks for. Setting `export const fetchCache = "default-cache"` does *not*
+override it — measured, not assumed. Before the in-process cache, one Game of
+Thrones page view cost 11 TMDB requests every single time; it is now 11 cold
+and 1 warm.
 - Streaming availability: `GET /tv/{id}/watch/providers` — returns **every** country in one response, so the country dropdown on a show page switches instantly without further requests
 - Country list: `GET /watch/providers/regions` — cached for 24h, it changes about never
 - Rate limits: TMDB's free tier is generous for this scale, but cache aggressively (don't refetch on every page view)
