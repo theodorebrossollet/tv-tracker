@@ -14,6 +14,8 @@ capture ideas as they come up, to revisit once the current phase is done.
 - **Mobile app** — native app rather than the responsive web view (currently
   listed as explicitly out of scope in [scope.md](scope.md); revisit that if
   this gets prioritized)
+- **Calendar view** — a calendar showing upcoming episode releases across
+  tracked shows, as an alternative to the existing upcoming-episodes list
 
 ## Already captured elsewhere
 
