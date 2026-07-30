@@ -65,8 +65,9 @@ calling TMDB on every load — faster, and it keeps you well inside TMDB's free
 tier rate limits.
 
 Air dates change (episodes get delayed, new ones get announced), so a Vercel
-Cron job hits `/api/cron/refresh-episodes` twice a day to re-sync every tracked
-show. Locally you can trigger the same refresh by hand:
+Cron job hits `/api/cron/refresh-episodes` once a day (06:00 UTC) to re-sync
+every tracked show. Once rather than twice because Vercel's free plan rejects
+any cron that runs more than daily. Locally you can trigger the same refresh by hand:
 
 ```bash
 curl http://localhost:3000/api/cron/refresh-episodes

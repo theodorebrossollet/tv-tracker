@@ -226,15 +226,35 @@ list — don't remove it.
 
 ## 8. Refresh Schedule
 
-Vercel Cron Job configured in `vercel.json`, running **twice a day** (e.g., 6am and 6pm), hitting `/api/cron/refresh-episodes`. That route loops through tracked shows and re-fetches episode/air-date data from TMDB, updating `lastSynced`. No manual refresh button needed for v1.
+Vercel Cron Job configured in `vercel.json`, hitting
+`/api/cron/refresh-episodes`. That route loops through tracked shows and
+re-fetches episode/air-date data from TMDB, updating `lastSynced`. No manual
+refresh button needed for v1.
+
+**Once daily, not the twice-daily schedule originally specified.** Vercel's
+Hobby plan rejects any cron running more than once a day — deploying
+`0 6,18 * * *` fails outright with "Hobby accounts are limited to daily cron
+jobs".
+
+06:00 UTC is deliberate: air dates are anchored to midnight US Eastern
+(04:00–05:00 UTC), so an episode airing that day has already unlocked before
+the refresh runs. The cost is latency rather than correctness — an air date TMDB
+corrects during the day is picked up the next morning instead of that evening.
+
+Twice daily without paying is still possible: point any external scheduler at
+the same endpoint with the `CRON_SECRET` bearer token. The route has no Vercel
+dependency.
 
 ```json
 {
   "crons": [
-    { "path": "/api/cron/refresh-episodes", "schedule": "0 6,18 * * *" }
+    { "path": "/api/cron/refresh-episodes", "schedule": "0 6 * * *" }
   ]
 }
 ```
+
+Keep `vercel.json` free of extra keys — Vercel validates it against a schema and
+rejects unknown properties, so explanatory comments belong here, not there.
 
 ## 9. Key Dependencies
 
