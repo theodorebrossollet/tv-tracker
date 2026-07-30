@@ -118,6 +118,17 @@ show isn't tracked. Tracked shows are left to the cron; untracked ones have no
 other refresh path, so without this a show cached from a search result would
 keep its first-seen data forever.
 
+**Gap worth knowing when adding a column to `Show` or `Episode`.** Both refresh
+paths key on *time*, not on completeness: the cron visits tracked shows on a
+schedule, and the on-view refresh only fires once a row is 24h stale. Neither
+notices that a newly added column is empty on an otherwise fresh row. So after a
+migration that adds fields, previously-cached rows keep rendering blanks until
+they happen to age out — for untracked shows, up to a day.
+
+Fix by running a one-off backfill after the migration rather than waiting, as
+was done for `runtime`/`overview`, for the air-date rezoning
+(`scripts/backfill-air-dates.mjs`), and for the show metadata columns.
+
 **Trailers are click-to-load.** A normal YouTube `<iframe>` would contact
 YouTube and set its cookies on every show page view, which contradicts the
 "no third-party trackers, no cookie banner" line in `scope.md`. So the page
