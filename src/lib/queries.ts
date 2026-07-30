@@ -30,14 +30,17 @@ export interface TrackedShowSummary {
 /**
  * Lists tracked shows with enough detail to render a card: poster, watch
  * progress, and the next episode to watch.
+ *
+ * Pass no status to get every tracked show — used by `getShowBuckets`, which
+ * needs them all in order to apply precedence.
  */
 export async function getTrackedShows(
-  status: TrackStatus,
+  status?: TrackStatus,
 ): Promise<TrackedShowSummary[]> {
   const now = new Date();
 
   const tracked = await prisma.trackedShow.findMany({
-    where: { status },
+    where: status ? { status } : undefined,
     orderBy: { addedAt: "desc" },
     include: {
       show: {
@@ -132,6 +135,59 @@ function sortByActionability<
   });
 }
 
+export interface ShowBuckets {
+  /** In progress: being watched, with something left to watch. */
+  watching: TrackedShowSummary[];
+  /** Never started. */
+  watchlist: TrackedShowSummary[];
+  /** Set aside, meaning to return. */
+  paused: TrackedShowSummary[];
+  /** Every aired episode watched. Derived, not a stored status. */
+  finished: TrackedShowSummary[];
+  /** Abandoned for good. */
+  stopped: TrackedShowSummary[];
+}
+
+/**
+ * Sorts every tracked show into exactly one bucket.
+ *
+ * Precedence matters because the categories overlap: a show can be both
+ * fully watched and paused, or stopped *and* fully watched. Without a single
+ * ordering it would appear twice, in two places that disagree about what it is.
+ *
+ *   stopped → finished → paused → watchlist → watching
+ *
+ * "Stopped" wins over "finished" because abandoning a show is a decision you
+ * made, while finishing it is merely a fact about episode counts — and if you
+ * stopped watching something you'd happened to complete, the decision is the
+ * more useful label.
+ *
+ * One query for all of them: the pages each need a different slice, but the
+ * per-show episode data is the expensive part and fetching it repeatedly to
+ * answer four questions would be wasteful at any real number of shows.
+ */
+export async function getShowBuckets(): Promise<ShowBuckets> {
+  const all = await getTrackedShows();
+
+  const buckets: ShowBuckets = {
+    watching: [],
+    watchlist: [],
+    paused: [],
+    finished: [],
+    stopped: [],
+  };
+
+  for (const show of all) {
+    if (show.status === "stopped") buckets.stopped.push(show);
+    else if (show.fullyWatched) buckets.finished.push(show);
+    else if (show.status === "paused") buckets.paused.push(show);
+    else if (show.status === "watchlist") buckets.watchlist.push(show);
+    else buckets.watching.push(show);
+  }
+
+  return buckets;
+}
+
 export interface UpcomingEpisode {
   episodeId: string;
   showId: string;
@@ -155,8 +211,8 @@ export async function getUpcomingEpisodes(
   const episodes = await prisma.episode.findMany({
     where: {
       airDate: { gt: new Date() },
-      // Paused shows are excluded: if you've set a show aside, its next episode
-      // isn't something you're waiting for.
+      // Set-aside shows are excluded: if you've paused or stopped a show, its
+      // next episode isn't something you're waiting for.
       show: { tracked: { status: { in: ["watching", "watchlist"] } } },
     },
     orderBy: { airDate: "asc" },

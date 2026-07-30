@@ -2,7 +2,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { ShowGrid } from "@/components/show-grid";
 import { UpcomingList } from "@/components/upcoming-list";
-import { getTrackedShows, getUpcomingEpisodes } from "@/lib/queries";
+import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 
 // Everything on this page comes from the database and changes as soon as you
 // mark an episode watched, so there's nothing worth prerendering at build time.
@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 
 export default async function DashboardPage() {
-  const [watching, upcoming] = await Promise.all([
-    getTrackedShows("watching"),
+  const [{ watching }, upcoming] = await Promise.all([
+    getShowBuckets(),
     // Fetch well past the first page so "Load more" needs no round trip.
     getUpcomingEpisodes(90),
   ]);
@@ -25,7 +25,7 @@ export default async function DashboardPage() {
           <div className="mt-4">
             <EmptyState
               title="Nothing in progress"
-              description="Shows land here automatically once you mark an episode watched. Add one to your watchlist to get started."
+              description="Shows land here automatically once you mark an episode watched. Finished ones move to the Archive."
               action={<FindShowButton />}
             />
           </div>

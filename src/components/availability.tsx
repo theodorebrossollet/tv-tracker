@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 
+import { Select } from "@/components/select";
 import { posterUrl } from "@/lib/images";
 import type { CountryAvailability, WatchProvider } from "@/lib/tmdb";
 
@@ -41,17 +42,16 @@ export function Availability({
 
         <label className="flex items-center gap-2 text-xs text-muted">
           Country
-          <select
+          <Select
             value={code}
             onChange={(event) => setCode(event.target.value)}
-            className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-accent"
           >
             {countries.map((country) => (
               <option key={country.code} value={country.code}>
                 {regionNames[country.code] ?? country.code}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
       </div>
 

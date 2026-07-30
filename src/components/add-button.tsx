@@ -17,6 +17,7 @@ const LABELS: Record<TrackStatus, string> = {
   watchlist: "On watchlist",
   watching: "Watching",
   paused: "Paused",
+  stopped: "Stopped",
 };
 
 /**

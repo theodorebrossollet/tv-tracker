@@ -304,3 +304,93 @@ describe("upcoming excludes paused shows", () => {
     expect(upcoming.map((e) => e.showId)).toEqual(["w"]);
   });
 });
+
+describe("bucketing", () => {
+  it("puts each show in exactly one bucket", async () => {
+    const { getShowBuckets } = await import("@/lib/queries");
+
+    await seedShow({ showId: "a", offsets: [-10, -3], status: "watching", watched: [0] });
+    await seedShow({ showId: "b", offsets: [-10], status: "watchlist" });
+    await seedShow({ showId: "c", offsets: [-10, -3], status: "paused", watched: [0] });
+    await seedShow({ showId: "d", offsets: [-10], status: "watching", watched: [0] });
+    await seedShow({ showId: "e", offsets: [-10], status: "stopped", watched: [0] });
+
+    const buckets = await getShowBuckets();
+    const ids = (list: { showId: string }[]) => list.map((s) => s.showId);
+
+    expect(ids(buckets.watching)).toEqual(["a"]);
+    expect(ids(buckets.watchlist)).toEqual(["b"]);
+    expect(ids(buckets.paused)).toEqual(["c"]);
+    expect(ids(buckets.finished)).toEqual(["d"]);
+    expect(ids(buckets.stopped)).toEqual(["e"]);
+
+    // The real invariant: no show is listed twice.
+    const all = [...ids(buckets.watching), ...ids(buckets.watchlist),
+                 ...ids(buckets.paused), ...ids(buckets.finished), ...ids(buckets.stopped)];
+    expect(new Set(all).size).toBe(all.length);
+    expect(all).toHaveLength(5);
+  });
+
+  it("finished wins over paused", async () => {
+    // A paused show you'd already completed belongs in the Archive, not in the
+    // list of things you mean to get back to.
+    await seedShow({ offsets: [-10], status: "paused", watched: [0] });
+
+    const { getShowBuckets } = await import("@/lib/queries");
+    const buckets = await getShowBuckets();
+
+    expect(buckets.finished.map((s) => s.showId)).toEqual(["show-1"]);
+    expect(buckets.paused).toEqual([]);
+  });
+
+  it("stopped wins over finished", async () => {
+    // Abandoning a show is a decision; finishing it is an episode count. The
+    // decision is the more useful label.
+    await seedShow({ offsets: [-10], status: "stopped", watched: [0] });
+
+    const { getShowBuckets } = await import("@/lib/queries");
+    const buckets = await getShowBuckets();
+
+    expect(buckets.stopped.map((s) => s.showId)).toEqual(["show-1"]);
+    expect(buckets.finished).toEqual([]);
+  });
+
+  it("keeps finished shows out of Watching entirely", async () => {
+    // This is what replaced the "hide finished shows" toggle.
+    await seedShow({ showId: "done", offsets: [-10], status: "watching", watched: [0] });
+    await seedShow({ showId: "going", offsets: [-10, -3], status: "watching", watched: [0] });
+
+    const { getShowBuckets } = await import("@/lib/queries");
+
+    expect((await getShowBuckets()).watching.map((s) => s.showId)).toEqual(["going"]);
+  });
+
+  it("returns a finished show to Watching when a new episode airs", async () => {
+    // Finished is derived, not stored — that's what makes this work with no
+    // action from the user.
+    const { showId } = await seedShow({
+      offsets: [-10],
+      status: "watching",
+      watched: [0],
+    });
+
+    const { getShowBuckets } = await import("@/lib/queries");
+    expect((await getShowBuckets()).finished.map((s) => s.showId)).toEqual([showId]);
+
+    const { prisma } = await import("@/lib/prisma");
+    await prisma.episode.create({
+      data: {
+        id: "new-season",
+        showId,
+        seasonNumber: 2,
+        episodeNumber: 1,
+        name: "Return",
+        airDate: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+    });
+
+    const after = await getShowBuckets();
+    expect(after.finished).toEqual([]);
+    expect(after.watching.map((s) => s.showId)).toEqual([showId]);
+  });
+});

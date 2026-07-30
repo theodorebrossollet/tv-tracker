@@ -6,14 +6,28 @@
  *
  * - `watchlist` — added but never started
  * - `watching`  — at least one episode watched
- * - `paused`    — started, then set aside. Keeps its watch history but stays
- *                 out of Watching and out of Upcoming episodes.
+ * - `paused`    — started, then set aside, but you mean to come back
+ * - `stopped`   — started, then abandoned for good
  *
- * Distinct from "finished", which isn't a status at all — that's derived from
- * having watched every aired episode.
+ * `paused` and `stopped` behave identically in the data model; the difference
+ * is intent, which is what makes the two lists worth scanning separately later.
+ *
+ * "Finished" is deliberately **not** a status. It's derived from having watched
+ * every aired episode, so a show you completed drops back into Watching by
+ * itself when a new season airs — which a stored status would not do.
  */
-export type TrackStatus = "watching" | "watchlist" | "paused";
+export type TrackStatus = "watching" | "watchlist" | "paused" | "stopped";
+
+const STATUSES: readonly TrackStatus[] = [
+  "watching",
+  "watchlist",
+  "paused",
+  "stopped",
+];
 
 export function isTrackStatus(value: unknown): value is TrackStatus {
-  return value === "watching" || value === "watchlist" || value === "paused";
+  return STATUSES.includes(value as TrackStatus);
 }
+
+/** Statuses that mean "set aside", as opposed to active or planned. */
+export const INACTIVE_STATUSES = ["paused", "stopped"] as const;

@@ -94,8 +94,9 @@ describe("showMetaLine", () => {
     genres: "Drama",
   };
 
-  it("closes the range for an ended show", () => {
-    expect(showMetaLine(base)).toBe("2007–2015 · Ended · AMC · Drama");
+  it("closes the range for an ended show, without saying so twice", () => {
+    // "2007–2015" already means ended; repeating it adds nothing.
+    expect(showMetaLine(base)).toBe("2007–2015 · AMC · Drama");
   });
 
   it("uses –present for a returning show rather than its latest episode year", () => {
@@ -108,10 +109,11 @@ describe("showMetaLine", () => {
         showStatus: "Returning Series",
         network: "HBO",
       }),
-    ).toBe("2022–present · Returning · HBO · Drama");
+    ).toBe("2022–present · HBO · Drama");
   });
 
-  it("treats a cancelled show as ended", () => {
+  it("keeps Canceled, which a date range cannot express", () => {
+    // "ended in 2015" and "cancelled in 2015" are different facts.
     expect(showMetaLine({ ...base, showStatus: "Canceled" })).toBe(
       "2007–2015 · Canceled · AMC · Drama",
     );
@@ -123,7 +125,7 @@ describe("showMetaLine", () => {
         ...base,
         lastAirDate: new Date("2007-12-01T05:00:00.000Z"),
       }),
-    ).toBe("2007 · Ended · AMC · Drama");
+    ).toBe("2007 · AMC · Drama");
   });
 
   it("omits the years for a show that hasn't aired", () => {
@@ -144,7 +146,7 @@ describe("showMetaLine", () => {
         firstAirDate: new Date("2010-01-01T05:00:00.000Z"),
         lastAirDate: new Date("2012-01-01T05:00:00.000Z"),
       }),
-    ).toBe("2010–2012 · Ended · AMC · Drama");
+    ).toBe("2010–2012 · AMC · Drama");
   });
 
   it("returns null when TMDB gave us nothing", () => {

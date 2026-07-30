@@ -16,7 +16,7 @@ interface SeedOptions {
   name?: string;
   /** Days from now for each episode; negative is aired, positive upcoming. */
   offsets: number[];
-  status?: "watching" | "watchlist" | "paused" | null;
+  status?: "watching" | "watchlist" | "paused" | "stopped" | null;
   /** Indices into `offsets` that should start out watched. */
   watched?: number[];
   /** TMDB lifecycle, for the "caught up" vs "series finished" distinction. */

@@ -33,6 +33,7 @@ function toResult(error: unknown): ActionResult {
 function revalidateShowViews(showId?: string) {
   revalidatePath("/");
   revalidatePath("/watchlist");
+  revalidatePath("/archive");
   if (showId) revalidatePath(`/show/${showId}`);
 }
 
@@ -179,8 +180,12 @@ export async function markEpisodeWatched(
       update: { status: "watching" },
     });
 
-    if (previous?.status === "paused") {
-      logger.info("show.resumed", { showId: episode.showId });
+    if (previous?.status === "paused" || previous?.status === "stopped") {
+      logger.info("show.resumed", {
+        showId: episode.showId,
+        via: "watched_episode",
+        from: previous.status,
+      });
     }
 
     revalidateShowViews(episode.showId);
@@ -223,22 +228,35 @@ async function demoteIfNothingWatched(showId: string) {
 /**
  * Sets a started show aside without losing its history.
  *
- * Only meaningful from "watching": pausing something never started is what the
- * watchlist already is, and pausing an untracked show would be creating a
- * tracked row for a show the user never added.
+ * `paused` and `stopped` differ only in intent — coming back versus not — but
+ * that intent is the whole point: it's what makes the two lists worth scanning
+ * separately months later.
+ *
+ * Only meaningful from "watching" (or from the other set-aside state, so you
+ * can change your mind about which one it is). Setting aside something never
+ * started is what the watchlist already is, and doing it to an untracked show
+ * would create a tracked row for something never added.
  */
-export async function pauseShow(showId: string): Promise<ActionResult> {
+async function setAside(
+  showId: string,
+  status: "paused" | "stopped",
+): Promise<ActionResult> {
+  const other = status === "paused" ? "stopped" : "paused";
+
   try {
     const { count } = await prisma.trackedShow.updateMany({
-      where: { showId, status: "watching" },
-      data: { status: "paused" },
+      where: { showId, status: { in: ["watching", other] } },
+      data: { status },
     });
 
     if (count === 0) {
-      return { ok: false, error: "Only a show you're watching can be paused." };
+      return {
+        ok: false,
+        error: "Only a show you've started can be set aside.",
+      };
     }
 
-    logger.info("show.paused", { showId });
+    logger.info(`show.${status}`, { showId });
   } catch (error) {
     return toResult(error);
   }
@@ -247,15 +265,31 @@ export async function pauseShow(showId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** Puts a paused show back on the watching list without marking anything. */
+/** Set aside, meaning to come back to it. */
+export async function pauseShow(showId: string): Promise<ActionResult> {
+  return setAside(showId, "paused");
+}
+
+/** Set aside for good. */
+export async function stopShow(showId: string): Promise<ActionResult> {
+  return setAside(showId, "stopped");
+}
+
+/**
+ * Puts a paused or stopped show back on the watching list without marking
+ * anything watched — resuming a show you're behind on shouldn't require
+ * pretending you've seen an episode.
+ */
 export async function resumeShow(showId: string): Promise<ActionResult> {
   try {
     const { count } = await prisma.trackedShow.updateMany({
-      where: { showId, status: "paused" },
+      where: { showId, status: { in: ["paused", "stopped"] } },
       data: { status: "watching" },
     });
 
-    if (count === 0) return { ok: false, error: "That show isn't paused." };
+    if (count === 0) {
+      return { ok: false, error: "That show isn't paused or stopped." };
+    }
 
     logger.info("show.resumed", { showId, via: "explicit" });
   } catch (error) {

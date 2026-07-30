@@ -9,6 +9,7 @@ import { useSearch } from "@/components/search-provider";
 const LINKS = [
   { href: "/", label: "Watching" },
   { href: "/watchlist", label: "Watchlist" },
+  { href: "/archive", label: "Archive" },
   { href: "/settings", label: "Settings" },
 ] as const;
 

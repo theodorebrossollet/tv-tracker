@@ -8,6 +8,7 @@ import {
   updateCountry,
   updateNotificationPrefs,
 } from "@/app/actions";
+import { Select } from "@/components/select";
 import type { WatchRegion } from "@/lib/tmdb";
 
 interface SettingsClientProps {
@@ -86,12 +87,12 @@ export function SettingsClient({
           </p>
         ) : (
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <select
+            <Select
+              scale="md"
               value={selectedCountry}
               onChange={(event) => changeCountry(event.target.value)}
               disabled={savingCountry}
               aria-label="Country"
-              className="rounded-full border border-border bg-background px-4 py-2 text-sm text-foreground outline-none focus:border-accent disabled:opacity-50"
             >
               <option value="">Not set</option>
               {regions.map((region) => (
@@ -99,7 +100,7 @@ export function SettingsClient({
                   {region.name}
                 </option>
               ))}
-            </select>
+            </Select>
 
             {savingCountry ? (
               <span className="text-xs text-muted">Saving…</span>

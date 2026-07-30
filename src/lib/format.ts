@@ -62,8 +62,7 @@ export function relativeAirDate(iso: string): string {
 
 /**
  * Builds the metadata line under a show's synopsis, e.g.
- * "2007–2015 · Ended · AMC · Drama" or
- * "2022–present · Returning · HBO · Drama".
+ * "2007–2015 · AMC · Drama" or "2022–present · HBO · Drama".
  *
  * Years are read in UTC to match how air dates are stored (midnight US Eastern,
  * whose UTC calendar date is the broadcast date). Reading them locally would
@@ -103,13 +102,17 @@ export function showMetaLine(show: {
     }
   }
 
-  const status = show.showStatus
-    ? // "Returning Series" is TMDB's wording; "Returning" reads better beside a
-      // year range and means the same thing.
-      show.showStatus === "Returning Series"
+  // The status word only earns its place when the years don't already say it:
+  // "2007–2015" means ended, "2022–present" means running. What a date range
+  // can't express is cancellation, or a show with no air dates at all.
+  let status: string | null = null;
+  if (show.showStatus === "Canceled") {
+    status = "Canceled";
+  } else if (years === null && show.showStatus) {
+    status = show.showStatus === "Returning Series"
       ? "Returning"
-      : show.showStatus
-    : null;
+      : show.showStatus;
+  }
 
   const parts = [years, status, show.network, show.genres].filter(
     (part): part is string => Boolean(part),

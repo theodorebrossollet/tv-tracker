@@ -2,58 +2,104 @@
 
 import { useOptimistic, useTransition } from "react";
 
-import { pauseShow, resumeShow } from "@/app/actions";
+import { pauseShow, resumeShow, stopShow } from "@/app/actions";
 import type { TrackStatus } from "@/lib/types";
 
-interface PauseButtonProps {
+interface SetAsideButtonsProps {
   showId: string;
   status: TrackStatus | null;
 }
 
+const BUTTON =
+  "rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface disabled:opacity-50";
+
 /**
- * Sets a show aside, or picks it back up.
+ * Pause, Stop, and the way back from either.
  *
- * Only shown for shows that are actually being watched or paused — pausing
- * something you never started is what the watchlist already means.
+ * Only rendered for a show that's actually been started — setting aside
+ * something you never began is what the watchlist already is.
  *
- * There's a resume button as well as the implicit one (marking any episode
- * un-pauses automatically), because resuming a show you're *behind* on
- * shouldn't require pretending you've watched something.
+ * Pause and Stop are mechanically identical; the difference is whether you mean
+ * to come back, which is what makes the two lists worth looking at separately
+ * later. Once set aside, the pair collapses to a single Resume, plus the option
+ * to switch between the two intents without going through Watching.
  */
-export function PauseButton({ showId, status }: PauseButtonProps) {
-  // Derived from props, never copied into useState — the status changes from
-  // elsewhere (marking an episode un-pauses), and a copy would go stale.
+export function PauseButton({ showId, status }: SetAsideButtonsProps) {
+  // Derived from props, never copied into useState: the status also changes
+  // from elsewhere (marking an episode resumes a show), and a copy would go
+  // stale until a reload.
   const [current, setCurrent] = useOptimistic(status);
   const [pending, startTransition] = useTransition();
 
-  if (current !== "watching" && current !== "paused") return null;
+  const active = current === "watching";
+  const setAside = current === "paused" || current === "stopped";
 
-  const paused = current === "paused";
+  if (!active && !setAside) return null;
 
-  function toggle() {
+  function run(next: TrackStatus, action: () => Promise<unknown>) {
     startTransition(async () => {
-      setCurrent(paused ? "watching" : "paused");
-      if (paused) {
-        await resumeShow(showId);
-      } else {
-        await pauseShow(showId);
-      }
+      setCurrent(next);
+      await action();
     });
   }
 
+  if (setAside) {
+    const other: TrackStatus = current === "paused" ? "stopped" : "paused";
+
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => run("watching", () => resumeShow(showId))}
+          disabled={pending}
+          className={BUTTON}
+          title="Move back to Watching"
+        >
+          Resume
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            run(other, () =>
+              other === "paused" ? pauseShow(showId) : stopShow(showId),
+            )
+          }
+          disabled={pending}
+          className={`${BUTTON} text-muted`}
+          title={
+            other === "paused"
+              ? "You might come back to it after all"
+              : "You're not coming back to this one"
+          }
+        >
+          {other === "paused" ? "Move to Paused" : "Move to Stopped"}
+        </button>
+      </>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={pending}
-      className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface disabled:opacity-50"
-      title={
-        paused
-          ? "Move back to Watching"
-          : "Keep the history, but take it out of Watching"
-      }
-    >
-      {paused ? "Resume" : "Pause"}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => run("paused", () => pauseShow(showId))}
+        disabled={pending}
+        className={BUTTON}
+        title="Set aside for now — keeps your progress"
+      >
+        Pause
+      </button>
+
+      <button
+        type="button"
+        onClick={() => run("stopped", () => stopShow(showId))}
+        disabled={pending}
+        className={BUTTON}
+        title="Given up on it — keeps your progress, moves to the Archive"
+      >
+        Stop
+      </button>
+    </>
   );
 }

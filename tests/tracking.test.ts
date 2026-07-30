@@ -263,3 +263,67 @@ describe("pausing", () => {
     expect((await getTrackedShows("paused")).map((s) => s.showId)).toEqual(["p"]);
   });
 });
+
+describe("stopping", () => {
+  it("moves a watched show to stopped without losing progress", async () => {
+    await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
+
+    const { stopShow } = await import("@/app/actions");
+    expect((await stopShow("show-1")).ok).toBe(true);
+
+    expect(await statusOf("show-1")).toBe("stopped");
+    expect(await watchedCount("show-1")).toBe(1);
+  });
+
+  it("refuses to stop a show that was never started", async () => {
+    await seedShow({ offsets: [-10], status: "watchlist" });
+
+    const { stopShow } = await import("@/app/actions");
+
+    expect((await stopShow("show-1")).ok).toBe(false);
+    expect(await statusOf("show-1")).toBe("watchlist");
+  });
+
+  it("switches between paused and stopped without going via watching", async () => {
+    // Changing your mind about the intent shouldn't need two steps.
+    await seedShow({ offsets: [-10], status: "paused", watched: [0] });
+
+    const { stopShow, pauseShow } = await import("@/app/actions");
+
+    expect((await stopShow("show-1")).ok).toBe(true);
+    expect(await statusOf("show-1")).toBe("stopped");
+
+    expect((await pauseShow("show-1")).ok).toBe(true);
+    expect(await statusOf("show-1")).toBe("paused");
+  });
+
+  it("marking an episode brings a stopped show back", async () => {
+    const { episodeIds } = await seedShow({
+      offsets: [-10, -3],
+      status: "stopped",
+      watched: [0],
+    });
+
+    await markEpisodeWatched(episodeIds[1]);
+
+    expect(await statusOf("show-1")).toBe("watching");
+  });
+
+  it("resumes a stopped show explicitly", async () => {
+    await seedShow({ offsets: [-10], status: "stopped", watched: [0] });
+
+    const { resumeShow } = await import("@/app/actions");
+    expect((await resumeShow("show-1")).ok).toBe(true);
+
+    expect(await statusOf("show-1")).toBe("watching");
+  });
+
+  it("keeps stopped shows out of upcoming episodes", async () => {
+    await seedShow({ showId: "w", offsets: [5], status: "watching" });
+    await seedShow({ showId: "s", offsets: [3], status: "stopped" });
+
+    const { getUpcomingEpisodes } = await import("@/lib/queries");
+
+    expect((await getUpcomingEpisodes()).map((e) => e.showId)).toEqual(["w"]);
+  });
+});
