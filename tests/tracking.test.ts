@@ -181,3 +181,85 @@ describe("adding and removing", () => {
     expect(episodeIds).toHaveLength(2);
   });
 });
+
+describe("pausing", () => {
+  it("moves a watched show out of Watching without losing progress", async () => {
+    await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
+
+    const { pauseShow } = await import("@/app/actions");
+    expect((await pauseShow("show-1")).ok).toBe(true);
+
+    expect(await statusOf("show-1")).toBe("paused");
+    expect(await watchedCount("show-1")).toBe(1);
+  });
+
+  it("refuses to pause a show that was never started", async () => {
+    // Pausing something on the watchlist is what the watchlist already means.
+    await seedShow({ offsets: [-10], status: "watchlist" });
+
+    const { pauseShow } = await import("@/app/actions");
+    const result = await pauseShow("show-1");
+
+    expect(result.ok).toBe(false);
+    expect(await statusOf("show-1")).toBe("watchlist");
+  });
+
+  it("refuses to pause an untracked show rather than tracking it", async () => {
+    await seedShow({ offsets: [-10], status: null });
+
+    const { pauseShow } = await import("@/app/actions");
+
+    expect((await pauseShow("show-1")).ok).toBe(false);
+    expect(await statusOf("show-1")).toBeNull();
+  });
+
+  it("marking an episode un-pauses the show", async () => {
+    // The implicit resume: watching something is the clearest possible signal
+    // you've picked it back up.
+    const { episodeIds } = await seedShow({
+      offsets: [-10, -3],
+      status: "paused",
+      watched: [0],
+    });
+
+    await markEpisodeWatched(episodeIds[1]);
+
+    expect(await statusOf("show-1")).toBe("watching");
+  });
+
+  it("resumes explicitly without marking anything watched", async () => {
+    // Needed because resuming a show you're behind on shouldn't require
+    // pretending you've watched an episode.
+    await seedShow({ offsets: [-10, -3], status: "paused", watched: [0] });
+
+    const { resumeShow } = await import("@/app/actions");
+    expect((await resumeShow("show-1")).ok).toBe(true);
+
+    expect(await statusOf("show-1")).toBe("watching");
+    expect(await watchedCount("show-1")).toBe(1);
+  });
+
+  it("does not demote a paused show to the watchlist", async () => {
+    // Demotion is scoped to "watching" so it can't silently undo an explicit
+    // pause.
+    const { episodeIds } = await seedShow({
+      offsets: [-10],
+      status: "paused",
+      watched: [0],
+    });
+
+    await unmarkEpisodeWatched(episodeIds[0]);
+
+    expect(await statusOf("show-1")).toBe("paused");
+  });
+
+  it("keeps paused shows out of the watching list", async () => {
+    await seedShow({ showId: "w", offsets: [-1], status: "watching", watched: [0] });
+    await seedShow({ showId: "p", offsets: [-1], status: "paused", watched: [0] });
+
+    const { getTrackedShows } = await import("@/lib/queries");
+
+    expect((await getTrackedShows("watching")).map((s) => s.showId)).toEqual(["w"]);
+    expect((await getTrackedShows("paused")).map((s) => s.showId)).toEqual(["p"]);
+  });
+});

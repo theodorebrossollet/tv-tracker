@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSyncExternalStore } from "react";
 
 import { Poster } from "@/components/poster";
+import { caughtUpLabel } from "@/lib/format";
 import type { TrackedShowSummary } from "@/lib/queries";
 
 const STORAGE_KEY = "tv-tracker:hide-finished";
@@ -143,7 +144,7 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
                       ) : (
                         <span className="text-muted">
                           {show.airedCount > 0
-                            ? "All caught up"
+                            ? caughtUpLabel(show.showStatus)
                             : "No episodes aired yet"}
                         </span>
                       )}

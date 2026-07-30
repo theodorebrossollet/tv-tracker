@@ -206,3 +206,101 @@ describe("show detail", () => {
     expect((await getShowDetail("loose"))?.status).toBeNull();
   });
 });
+
+describe("watching order", () => {
+  it("puts shows with something to watch above ones that are caught up", async () => {
+    // Seeded so that ordering by "recently added" alone would put the
+    // caught-up show first — the test would pass by accident otherwise.
+    await seedShow({
+      showId: "behind",
+      offsets: [-10, -3],
+      status: "watching",
+      watched: [0],
+    });
+    await seedShow({
+      showId: "caughtup",
+      offsets: [-10],
+      status: "watching",
+      watched: [0],
+    });
+
+    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+
+    expect(order).toEqual(["behind", "caughtup"]);
+  });
+
+  it("sinks finished shows to the bottom", async () => {
+    // The original complaint: a show finished months ago sat above one with
+    // unwatched episodes purely because it was added later.
+    // Added last, so add-order would float it to the top.
+    await seedShow({
+      showId: "active",
+      offsets: [-10, -3],
+      status: "watching",
+      watched: [0],
+    });
+    await seedShow({
+      showId: "finished",
+      offsets: [-30],
+      status: "watching",
+      watched: [0],
+      showStatus: "Ended",
+    });
+
+    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+
+    expect(order).toEqual(["active", "finished"]);
+  });
+
+  it("orders by most recent activity within a band", async () => {
+    // "fresh" is added first, so add-order would rank it last.
+    const b = await seedShow({
+      showId: "fresh",
+      offsets: [-40, -3],
+      status: "watching",
+      watched: [0],
+    });
+    const a = await seedShow({
+      showId: "stale",
+      offsets: [-40, -3],
+      status: "watching",
+      watched: [0],
+    });
+
+    const { setWatchedAt } = await import("./helpers");
+    await setWatchedAt(a.episodeIds[0], 90);
+    await setWatchedAt(b.episodeIds[0], 1);
+
+    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+
+    expect(order).toEqual(["fresh", "stale"]);
+  });
+
+  it("falls back to when a show was added if it has no watch history", async () => {
+    await seedShow({ showId: "older", offsets: [-10], status: "watching" });
+    await seedShow({ showId: "newer", offsets: [-10], status: "watching" });
+
+    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+
+    // Both are equally actionable and unwatched, so the later addition wins.
+    expect(order).toEqual(["newer", "older"]);
+  });
+});
+
+describe("upcoming excludes paused shows", () => {
+  it("drops episodes of a paused show", async () => {
+    // If you've set a show aside, its next episode isn't something you're
+    // waiting for.
+    await seedShow({ showId: "w", offsets: [5], status: "watching" });
+    await seedShow({
+      showId: "p",
+      offsets: [3],
+      status: "paused",
+      watched: [],
+    });
+
+    const upcoming = await getUpcomingEpisodes();
+
+    expect(upcoming.map((e) => e.showId)).toEqual(["w"]);
+  });
+});

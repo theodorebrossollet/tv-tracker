@@ -14,6 +14,12 @@ export interface TrackedShowSummary {
   watchedCount: number;
   /** Every aired episode watched. Drives the "hide finished shows" toggle. */
   fullyWatched: boolean;
+  /** TMDB lifecycle, so "caught up" can be told apart from "series over". */
+  showStatus: string | null;
+  /** Most recent watch on this show, for ordering. Null if never watched. */
+  lastWatchedAt: Date | null;
+  /** Fallback ordering key for shows with no watch history yet. */
+  addedAt: Date;
   nextUnwatched: {
     seasonNumber: number;
     episodeNumber: number;
@@ -45,7 +51,7 @@ export async function getTrackedShows(
     },
   });
 
-  return tracked.map((entry) => {
+  const summaries = tracked.map((entry) => {
     // "Aired" excludes episodes with no air date at all — TMDB leaves the date
     // empty for episodes that are announced but unscheduled, and counting those
     // as available would make progress look permanently incomplete.
@@ -57,6 +63,10 @@ export async function getTrackedShows(
       (episode) => episode.watched !== null,
     ).length;
 
+    const watchedTimes = entry.show.episodes
+      .map((episode) => episode.watched?.watchedAt)
+      .filter((at): at is Date => at != null);
+
     return {
       showId: entry.showId,
       name: entry.show.name,
@@ -65,6 +75,11 @@ export async function getTrackedShows(
       airedCount: aired.length,
       watchedCount,
       fullyWatched: aired.length > 0 && watchedCount === aired.length,
+      showStatus: entry.show.status,
+      lastWatchedAt: watchedTimes.length
+        ? new Date(Math.max(...watchedTimes.map((at) => at.getTime())))
+        : null,
+      addedAt: entry.addedAt,
       nextUnwatched: nextUnwatched
         ? {
             seasonNumber: nextUnwatched.seasonNumber,
@@ -73,6 +88,47 @@ export async function getTrackedShows(
           }
         : null,
     };
+  });
+
+  return sortByActionability(summaries);
+}
+
+/**
+ * Orders a list so the shows you could watch right now come first.
+ *
+ * Three bands: something unwatched and aired, then caught up but still
+ * running, then finished. Add-order alone buried a show with three unwatched
+ * episodes underneath one you finished months ago.
+ *
+ * Within a band, most recent activity first — a show watched last night is more
+ * likely the one you want than one last touched in March. Shows never watched
+ * fall back to when they were added.
+ */
+function sortByActionability<
+  T extends {
+    airedCount: number;
+    watchedCount: number;
+    fullyWatched: boolean;
+    lastWatchedAt: Date | null;
+    addedAt: Date;
+  },
+>(shows: T[]): T[] {
+  const band = (show: T) => {
+    if (show.fullyWatched) return 2;
+    if (show.watchedCount < show.airedCount) return 0;
+    // Caught up: nothing aired left, but the show isn't finished either
+    // (nothing has aired yet, or the next episode is still upcoming).
+    return 1;
+  };
+
+  return [...shows].sort((a, b) => {
+    const byBand = band(a) - band(b);
+    if (byBand !== 0) return byBand;
+
+    const activity = (show: T) =>
+      (show.lastWatchedAt ?? show.addedAt).getTime();
+
+    return activity(b) - activity(a);
   });
 }
 
@@ -99,7 +155,9 @@ export async function getUpcomingEpisodes(
   const episodes = await prisma.episode.findMany({
     where: {
       airDate: { gt: new Date() },
-      show: { tracked: { isNot: null } },
+      // Paused shows are excluded: if you've set a show aside, its next episode
+      // isn't something you're waiting for.
+      show: { tracked: { status: { in: ["watching", "watchlist"] } } },
     },
     orderBy: { airDate: "asc" },
     take: limit,
@@ -154,6 +212,11 @@ export async function getShowDetail(showId: string) {
     overview: show.overview,
     lastSynced: show.lastSynced,
     status: (show.tracked?.status ?? null) as TrackStatus | null,
+    firstAirDate: show.firstAirDate,
+    lastAirDate: show.lastAirDate,
+    showStatus: show.status,
+    network: show.network,
+    genres: show.genres,
     seasons: [...seasons.entries()]
       .sort(([a], [b]) => a - b)
       .map(([seasonNumber, episodes]) => ({ seasonNumber, episodes })),

@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Show" ADD COLUMN "firstAirDate" DATETIME;
+ALTER TABLE "Show" ADD COLUMN "genres" TEXT;
+ALTER TABLE "Show" ADD COLUMN "lastAirDate" DATETIME;
+ALTER TABLE "Show" ADD COLUMN "network" TEXT;
+ALTER TABLE "Show" ADD COLUMN "status" TEXT;

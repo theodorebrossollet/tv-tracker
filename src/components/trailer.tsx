@@ -7,6 +7,8 @@ export interface TrailerOption {
   /** Stable id: "show" or "season-3". */
   id: string;
   label: string;
+  /** Compact form for the pills, e.g. "S3" instead of "Season 3". */
+  shortLabel?: string;
   videoKey: string;
   name: string;
 }
@@ -60,25 +62,30 @@ export function Trailer({ options, showName }: TrailerProps) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Trailer</h2>
 
+        {/* Pills rather than a dropdown: every option is visible, and picking
+            one is a single click instead of two. */}
         {options.length > 1 ? (
-          <label className="flex items-center gap-2 text-xs text-muted">
-            For
-            <select
-              value={selected.id}
-              onChange={(event) => select(event.target.value)}
-              className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-accent"
-            >
-              {options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => select(option.id)}
+                aria-pressed={option.id === selected.id}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  option.id === selected.id
+                    ? "border-accent bg-accent text-white"
+                    : "border-border text-muted hover:bg-surface hover:text-foreground"
+                }`}
+              >
+                {option.shortLabel ?? option.label}
+              </button>
+            ))}
+          </div>
         ) : null}
       </div>
 
-      <div className="mt-3 aspect-video w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="mt-3 aspect-video w-full max-w-md overflow-hidden rounded-lg border border-border bg-surface">
         {playing ? (
           <iframe
             key={selected.videoKey}
@@ -100,7 +107,7 @@ export function Trailer({ options, showName }: TrailerProps) {
               src={thumbnail}
               alt=""
               fill
-              sizes="(max-width: 672px) 100vw, 672px"
+              sizes="(max-width: 448px) 100vw, 448px"
               className="object-cover"
               onError={() =>
                 setFailedThumbnails((keys) =>

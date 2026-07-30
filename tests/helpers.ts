@@ -16,9 +16,11 @@ interface SeedOptions {
   name?: string;
   /** Days from now for each episode; negative is aired, positive upcoming. */
   offsets: number[];
-  status?: "watching" | "watchlist" | null;
+  status?: "watching" | "watchlist" | "paused" | null;
   /** Indices into `offsets` that should start out watched. */
   watched?: number[];
+  /** TMDB lifecycle, for the "caught up" vs "series finished" distinction. */
+  showStatus?: string | null;
 }
 
 /** Creates a show with episodes, optionally tracked and partly watched. */
@@ -28,8 +30,9 @@ export async function seedShow({
   offsets,
   status = null,
   watched = [],
+  showStatus = null,
 }: SeedOptions) {
-  await prisma.show.create({ data: { id: showId, name } });
+  await prisma.show.create({ data: { id: showId, name, status: showStatus } });
 
   const episodeIds: string[] = [];
 
@@ -70,4 +73,12 @@ export async function statusOf(showId: string) {
 
 export async function watchedCount(showId: string) {
   return prisma.watchedEpisode.count({ where: { episode: { showId } } });
+}
+
+/** Backdates a show's watch history so ordering tests aren't all identical. */
+export async function setWatchedAt(episodeId: string, daysAgo: number) {
+  await prisma.watchedEpisode.update({
+    where: { episodeId },
+    data: { watchedAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000) },
+  });
 }

@@ -23,6 +23,20 @@ model Show {
   overview   String?
   lastSynced DateTime @default(now()) // last refresh of episode data from TMDB
 
+  /// Metadata for the line under the synopsis. All of it arrives in the same
+  /// `/tv/{id}` response the sync already makes, so none of it costs a request.
+  firstAirDate DateTime?
+  lastAirDate  DateTime?
+  /// TMDB's lifecycle value: "Ended", "Returning Series", "In Production" are
+  /// the ones seen in practice. Note cancelled shows are usually reported as
+  /// "Ended" rather than "Canceled", so don't rely on that value existing.
+  status       String?
+  /// Primary network only — TMDB lists co-producers that add noise.
+  network      String?
+  /// Comma-separated; there are rarely more than three and a join table would
+  /// be overkill for something only ever rendered as a single string.
+  genres       String?
+
   episodes Episode[]
   tracked  TrackedShow?
 }

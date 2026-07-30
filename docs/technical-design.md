@@ -14,7 +14,7 @@ Next.js App Router (Vercel)
   │
   ├── Server Actions ── read/write via Prisma
   ├── TMDB API client ── fetches show/episode data (cached in DB)
-  ├── Cron job (2x/day) ── refreshes episode/air-date data
+  ├── Cron job (daily)  ── refreshes episode/air-date data
   │
   ▼
 SQLite via Prisma — local file in dev, Turso in production
@@ -40,6 +40,11 @@ model Show {
   posterPath  String?
   overview    String?
   lastSynced  DateTime @default(now()) // last time we refreshed episode data from TMDB
+  firstAirDate DateTime?               // all five arrive in the same /tv/{id}
+  lastAirDate  DateTime?               // response, so they cost no extra request
+  status       String?                 // "Ended" | "Returning Series" | "In Production"
+  network      String?
+  genres       String?                 // comma-separated
 
   episodes     Episode[]
   tracked      TrackedShow?   // one-to-one: showId is unique on TrackedShow
@@ -62,7 +67,7 @@ model Episode {
 model TrackedShow {
   id        String   @id @default(cuid())
   showId    String   @unique
-  status    String   // "watching" | "watchlist"
+  status    String   // "watching" | "watchlist" | "paused"
   addedAt   DateTime @default(now())
 
   show      Show     @relation(fields: [showId], references: [id])
@@ -85,7 +90,7 @@ model Settings {
 
 **Notes:**
 - Show/Episode data is cached locally after first search/track, rather than hitting TMDB on every page load — faster, and keeps you under TMDB's free-tier rate limits.
-- `lastSynced` lets you decide later how often to refresh episode/air-date data — resolved below (twice-daily cron).
+- `lastSynced` lets you decide later how often to refresh episode/air-date data — resolved below (daily cron; Vercel's free plan won't allow more).
 - `Settings` is a single-row table (id always 1) since there's only one user — simplest way to store preferences without a full user system. `country` is the default region for streaming availability; null until set.
 - `Show.tracked` is a **one-to-one** relation, not a list as originally drafted here — `TrackedShow.showId` is unique, so a show is on at most one list.
 - **Phase 2 note:** when accounts are added, `TrackedShow` and `WatchedEpisode` will need a `userId` field added back (and their unique constraints changed from `showId`/`episodeId` alone to `[userId, showId]` / `[userId, episodeId]`), and `Settings` becomes per-user instead of a single row. Worth keeping this in mind so the v1 schema migrates cleanly rather than needing a rewrite.
@@ -95,10 +100,10 @@ model Settings {
 | Route | Purpose |
 |---|---|
 | `/` | Dashboard — shows in progress + upcoming episodes list |
-| `/watchlist` | Shows added but not started |
+| `/watchlist` | Shows added but not started, plus a Paused section |
 | `/show/[id]` | Show detail — synopsis, streaming availability, season/episode list, mark watched |
 | `/settings` | Country, notification preferences, clear all data |
-| `/api/cron/refresh-episodes` | Called by Vercel Cron twice daily — refreshes episode/air-date data for tracked shows |
+| `/api/cron/refresh-episodes` | Called by Vercel Cron daily — refreshes episode/air-date data for tracked shows |
 
 There is no `/search` route. Search is an overlay (`components/search-overlay.tsx`)
 opened from the magnifying glass in the nav, so you can search from anywhere
@@ -135,12 +140,39 @@ marked watched, including when it wasn't on a list at all: marking an episode
 watched is a clearer statement of intent than pressing a button, so it creates
 the tracked row too.
 
+A third status, **paused**, is for shows you started and set aside. It keeps the
+watch history but stays out of Watching and out of Upcoming episodes — if you've
+stopped, the next episode isn't something you're waiting for. Pausing is only
+possible from `watching`: pausing something never started is what the watchlist
+already means.
+
+Resuming works two ways. Marking any episode watched un-pauses automatically —
+the same rule that promotes a watchlist show — and there's an explicit Resume
+button too, because picking up a show you're *behind* on shouldn't require
+pretending you watched something.
+
+Demotion is scoped to `watching` so it can't silently undo an explicit pause.
+
+**Paused is not "finished".** Finished isn't a status at all: it's derived from
+having watched every aired episode. A show you completed and one you abandoned
+are different things and the UI keeps them apart.
+
 Unmarking the **last** watched episode sends the show back to the watchlist.
 That's the exact inverse of the promotion rule — "watching" means at least one
 episode watched — and it's what makes a mistaken tap undoable. An earlier
 version deliberately didn't demote, on the theory that an accidental click
 shouldn't reorganise your lists; in practice that left a show stuck under
 Watching with zero progress and no way back short of removing and re-adding it.
+
+### Ordering the Watching list
+
+Sorted by what you could act on, not by when you added it: shows with an
+unwatched aired episode, then shows you're caught up on, then finished ones.
+Within a band, most recent watch activity first, falling back to when the show
+was added.
+
+Add-order alone buried a show with three unwatched episodes underneath one
+finished months earlier.
 
 ## 5. Marking Episodes Watched
 

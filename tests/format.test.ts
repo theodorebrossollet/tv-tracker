@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  caughtUpLabel,
   daysUntil,
   formatAirDate,
   formatAirDateShort,
   relativeAirDate,
+  showMetaLine,
 } from "@/lib/format";
 
 afterEach(() => {
@@ -80,5 +82,89 @@ describe("relativeAirDate", () => {
     vi.setSystemTime(new Date("2026-07-29T12:00:00.000Z"));
 
     expect(relativeAirDate("2026-08-20T04:00:00.000Z")).toBe("20 Aug");
+  });
+});
+
+describe("showMetaLine", () => {
+  const base = {
+    firstAirDate: new Date("2007-07-19T04:00:00.000Z"),
+    lastAirDate: new Date("2015-05-17T04:00:00.000Z"),
+    showStatus: "Ended",
+    network: "AMC",
+    genres: "Drama",
+  };
+
+  it("closes the range for an ended show", () => {
+    expect(showMetaLine(base)).toBe("2007–2015 · Ended · AMC · Drama");
+  });
+
+  it("uses –present for a returning show rather than its latest episode year", () => {
+    // lastAirDate is just the most recent episode, not an end date; printing it
+    // as one would say a running show had finished.
+    expect(
+      showMetaLine({
+        ...base,
+        firstAirDate: new Date("2022-08-21T04:00:00.000Z"),
+        showStatus: "Returning Series",
+        network: "HBO",
+      }),
+    ).toBe("2022–present · Returning · HBO · Drama");
+  });
+
+  it("treats a cancelled show as ended", () => {
+    expect(showMetaLine({ ...base, showStatus: "Canceled" })).toBe(
+      "2007–2015 · Canceled · AMC · Drama",
+    );
+  });
+
+  it("collapses a single-year run to one year", () => {
+    expect(
+      showMetaLine({
+        ...base,
+        lastAirDate: new Date("2007-12-01T05:00:00.000Z"),
+      }),
+    ).toBe("2007 · Ended · AMC · Drama");
+  });
+
+  it("omits the years for a show that hasn't aired", () => {
+    expect(
+      showMetaLine({
+        ...base,
+        firstAirDate: null,
+        lastAirDate: null,
+        showStatus: "In Production",
+      }),
+    ).toBe("In Production · AMC · Drama");
+  });
+
+  it("reads years in UTC so a 1 January premiere isn't off by one", () => {
+    expect(
+      showMetaLine({
+        ...base,
+        firstAirDate: new Date("2010-01-01T05:00:00.000Z"),
+        lastAirDate: new Date("2012-01-01T05:00:00.000Z"),
+      }),
+    ).toBe("2010–2012 · Ended · AMC · Drama");
+  });
+
+  it("returns null when TMDB gave us nothing", () => {
+    expect(
+      showMetaLine({
+        firstAirDate: null,
+        lastAirDate: null,
+        showStatus: null,
+        network: null,
+        genres: null,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("caughtUpLabel", () => {
+  it("distinguishes a finished series from being merely up to date", () => {
+    expect(caughtUpLabel("Ended")).toBe("Series finished");
+    expect(caughtUpLabel("Canceled")).toBe("Series finished");
+    expect(caughtUpLabel("Returning Series")).toBe("Caught up");
+    expect(caughtUpLabel(null)).toBe("Caught up");
   });
 });

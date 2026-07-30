@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { AddButton } from "@/components/add-button";
 import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
+import { PauseButton } from "@/components/pause-button";
 import { Poster } from "@/components/poster";
 import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
-import { formatAirDate } from "@/lib/format";
+import { formatAirDate, showMetaLine } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
 import { describeError, logger } from "@/lib/logger";
 import { getSettings } from "@/lib/shows";
@@ -69,6 +70,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
           {
             id: "show",
             label: "Show",
+            shortLabel: "Show",
             videoKey: trailer.key,
             name: trailer.name,
           },
@@ -77,6 +79,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
     ...seasonTrailers.map((entry) => ({
       id: `season-${entry.seasonNumber}`,
       label: `Season ${entry.seasonNumber}`,
+      shortLabel: `S${entry.seasonNumber}`,
       videoKey: entry.key,
       name: entry.name,
     })),
@@ -90,6 +93,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
     (country) => country.code === settings.country,
   );
 
+  const metaLine = showMetaLine(show);
   const now = new Date();
 
   return (
@@ -109,8 +113,13 @@ export default async function ShowPage({ params }: ShowPageProps) {
             <p className="mt-2 text-sm text-muted">{show.overview}</p>
           ) : null}
 
-          <div className="mt-4">
+          {metaLine ? (
+            <p className="mt-2 text-xs text-muted">{metaLine}</p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap items-start gap-2">
             <AddButton showId={show.id} status={show.status} />
+            <PauseButton showId={show.id} status={show.status} />
           </div>
 
           <p className="mt-3 text-xs text-muted">

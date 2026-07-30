@@ -59,3 +59,73 @@ export function relativeAirDate(iso: string): string {
 
   return formatAirDateShort(iso);
 }
+
+/**
+ * Builds the metadata line under a show's synopsis, e.g.
+ * "2007–2015 · Ended · AMC · Drama" or
+ * "2022–present · Returning · HBO · Drama".
+ *
+ * Years are read in UTC to match how air dates are stored (midnight US Eastern,
+ * whose UTC calendar date is the broadcast date). Reading them locally would
+ * show the previous year for anything airing on 1 January.
+ *
+ * The range only closes for a show that has actually finished — a running show
+ * gets "–present" rather than its most recent episode's year, which would read
+ * as an end date it hasn't reached.
+ */
+export function showMetaLine(show: {
+  firstAirDate: Date | string | null;
+  lastAirDate: Date | string | null;
+  showStatus: string | null;
+  network: string | null;
+  genres: string | null;
+}): string | null {
+  const year = (value: Date | string | null) => {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.getUTCFullYear();
+  };
+
+  const first = year(show.firstAirDate);
+  const last = year(show.lastAirDate);
+
+  // TMDB reports most cancelled shows as "Ended" too, so treating anything
+  // that isn't explicitly ended as ongoing is the safer default.
+  const hasEnded =
+    show.showStatus === "Ended" || show.showStatus === "Canceled";
+
+  let years: string | null = null;
+  if (first !== null) {
+    if (hasEnded) {
+      years = last !== null && last !== first ? `${first}–${last}` : `${first}`;
+    } else {
+      years = `${first}–present`;
+    }
+  }
+
+  const status = show.showStatus
+    ? // "Returning Series" is TMDB's wording; "Returning" reads better beside a
+      // year range and means the same thing.
+      show.showStatus === "Returning Series"
+      ? "Returning"
+      : show.showStatus
+    : null;
+
+  const parts = [years, status, show.network, show.genres].filter(
+    (part): part is string => Boolean(part),
+  );
+
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
+ * What to say when there's nothing left to watch.
+ *
+ * A finished series and a show you're merely up to date with are different
+ * situations, and TMDB's status is what tells them apart.
+ */
+export function caughtUpLabel(showStatus: string | null): string {
+  return showStatus === "Ended" || showStatus === "Canceled"
+    ? "Series finished"
+    : "Caught up";
+}

@@ -31,6 +31,13 @@ export interface TmdbShowDetails {
   posterPath: string | null;
   overview: string | null;
   seasonNumbers: number[];
+  firstAirDate: Date | null;
+  lastAirDate: Date | null;
+  /** "Ended" | "Returning Series" | "In Production" in practice. */
+  status: string | null;
+  network: string | null;
+  /** Comma-separated, in TMDB's own order. */
+  genres: string | null;
 }
 
 export interface TmdbEpisode {
@@ -239,6 +246,11 @@ interface RawShowResponse {
   poster_path: string | null;
   overview: string | null;
   seasons: Array<{ season_number: number; episode_count: number }>;
+  first_air_date: string | null;
+  last_air_date: string | null;
+  status: string | null;
+  networks?: Array<{ name: string }>;
+  genres?: Array<{ name: string }>;
 }
 
 export async function getShowDetails(
@@ -256,6 +268,17 @@ export async function getShowDetails(
     seasonNumbers: data.seasons
       .filter((season) => season.season_number > 0 && season.episode_count > 0)
       .map((season) => season.season_number),
+    // These are plain calendar dates like an episode's, so they go through the
+    // same US-Eastern anchoring — otherwise a show that premiered on the 1st
+    // could display as the 31st of the previous month.
+    firstAirDate: parseAirDate(data.first_air_date),
+    lastAirDate: parseAirDate(data.last_air_date),
+    status: data.status || null,
+    // Primary network only; TMDB lists co-producers that add noise.
+    network: data.networks?.[0]?.name ?? null,
+    genres: data.genres?.length
+      ? data.genres.map((genre) => genre.name).join(", ")
+      : null,
   };
 }
 

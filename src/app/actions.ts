@@ -146,6 +146,10 @@ export async function removeShow(showId: string): Promise<ActionResult> {
  * episode watched is a clearer statement of intent than pressing "+", so it
  * creates the tracked row rather than silently recording progress for a show
  * that appears on no list.
+ *
+ * It also un-pauses. Watching an episode of a paused show is the clearest
+ * possible signal you've picked it back up, so there's no separate "resume"
+ * action to find.
  */
 export async function markEpisodeWatched(
   episodeId: string,
@@ -164,11 +168,20 @@ export async function markEpisodeWatched(
       update: {},
     });
 
+    const previous = await prisma.trackedShow.findUnique({
+      where: { showId: episode.showId },
+      select: { status: true },
+    });
+
     await prisma.trackedShow.upsert({
       where: { showId: episode.showId },
       create: { showId: episode.showId, status: "watching" },
       update: { status: "watching" },
     });
+
+    if (previous?.status === "paused") {
+      logger.info("show.resumed", { showId: episode.showId });
+    }
 
     revalidateShowViews(episode.showId);
   } catch (error) {
@@ -196,10 +209,61 @@ async function demoteIfNothingWatched(showId: string) {
 
   if (remaining > 0) return;
 
-  await prisma.trackedShow.updateMany({
+  // Scoped to "watching" on purpose. A paused show with no watched episodes
+  // left is a contradiction anyway, but silently moving it would undo an
+  // explicit choice the user made — leave their decision alone.
+  const { count } = await prisma.trackedShow.updateMany({
     where: { showId, status: "watching" },
     data: { status: "watchlist" },
   });
+
+  if (count > 0) logger.info("show.demoted_to_watchlist", { showId });
+}
+
+/**
+ * Sets a started show aside without losing its history.
+ *
+ * Only meaningful from "watching": pausing something never started is what the
+ * watchlist already is, and pausing an untracked show would be creating a
+ * tracked row for a show the user never added.
+ */
+export async function pauseShow(showId: string): Promise<ActionResult> {
+  try {
+    const { count } = await prisma.trackedShow.updateMany({
+      where: { showId, status: "watching" },
+      data: { status: "paused" },
+    });
+
+    if (count === 0) {
+      return { ok: false, error: "Only a show you're watching can be paused." };
+    }
+
+    logger.info("show.paused", { showId });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateShowViews(showId);
+  return { ok: true };
+}
+
+/** Puts a paused show back on the watching list without marking anything. */
+export async function resumeShow(showId: string): Promise<ActionResult> {
+  try {
+    const { count } = await prisma.trackedShow.updateMany({
+      where: { showId, status: "paused" },
+      data: { status: "watching" },
+    });
+
+    if (count === 0) return { ok: false, error: "That show isn't paused." };
+
+    logger.info("show.resumed", { showId, via: "explicit" });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateShowViews(showId);
+  return { ok: true };
 }
 
 /**
