@@ -11,6 +11,9 @@ capture ideas as they come up, to revisit once the current phase is done.
 - **Rewatching** — mark a show/episode as watched again without losing the
   original watch history (currently, watched state doesn't distinguish "first
   watch" from "rewatch")
+- **Mobile app** — native app rather than the responsive web view (currently
+  listed as explicitly out of scope in [scope.md](scope.md); revisit that if
+  this gets prioritized)
 
 ## Already captured elsewhere
 
