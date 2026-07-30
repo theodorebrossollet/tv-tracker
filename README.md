@@ -3,9 +3,10 @@
 A personal web app for tracking TV shows — what you're watching, how far
 through you are, and what's airing next. A replacement for TV Time.
 
-**v1 is a single-user proof of concept.** There are no accounts and no login:
-whoever can reach the app can see and change the data. Keep the deployment
-private until Phase 2 adds accounts.
+**v1 is a single-user proof of concept.** There are no accounts. A deployed
+instance is protected by one shared password (`APP_PASSWORD`, HTTP Basic auth),
+which covers pages *and* server-action POSTs — without it anyone with the URL
+could erase the data. Real per-user login is Phase 2.
 
 - [Project scope](docs/scope.md) — features, phases, what's out of scope
 - [Technical design](docs/technical-design.md) — architecture, data model, routes
@@ -18,7 +19,7 @@ private until Phase 2 adds accounts.
 | Database | SQLite via Prisma 7 — local file in dev, [Turso](https://turso.tech/) in production |
 | Show data | [TMDB API](https://www.themoviedb.org/) |
 | Styling | Tailwind CSS v4 |
-| Hosting | Vercel (see the caveat below) |
+| Hosting | Vercel — free plan, so cron runs once daily |
 
 ## Getting started
 
@@ -88,6 +89,7 @@ npm run lint         # eslint
 npm run db:studio    # browse the database in Prisma Studio
 npm run db:migrate   # create and apply a new migration locally
 npm run db:deploy    # apply pending migrations to whatever DATABASE_URL points at
+npm test             # vitest suite
 ```
 
 ## Deploying
@@ -103,13 +105,11 @@ Tracking a show or marking an episode watched would fail outright.
 
 **1. Create the database**
 
-```bash
-npm install -g turso
-turso auth signup
-turso db create tv-tracker
-turso db show tv-tracker --url          # → libsql://tv-tracker-you.turso.io
-turso db tokens create tv-tracker       # → the auth token
-```
+Do this at [app.turso.tech](https://app.turso.tech) — sign up, create a database,
+then copy its `libsql://` URL and generate a token from the database page.
+
+No CLI needed. (Note: Homebrew's `turso` formula installs `tursodb`, the local
+database engine — *not* the Turso Cloud CLI. Don't reach for it.)
 
 **2. Create the schema in it**
 
@@ -126,12 +126,30 @@ applies migrations that haven't run yet, so running it twice is harmless.
 
 **3. Deploy**
 
-Import the repo at [vercel.com/new](https://vercel.com/new) and set four
-environment variables: `TMDB_API_KEY`, `DATABASE_URL` (the `libsql://` URL),
-`TURSO_AUTH_TOKEN`, and `CRON_SECRET` (`openssl rand -hex 32`).
+Import the repo at [vercel.com/new](https://vercel.com/new) and set five
+environment variables:
 
-Remember there is still no login — anyone with the URL has full access to your
-data. Keep the deployment private until Phase 2.
+| Variable | Value |
+|---|---|
+| `TMDB_API_KEY` | your TMDB key or token |
+| `DATABASE_URL` | the **`libsql://`** URL — not the local file path |
+| `TURSO_AUTH_TOKEN` | the Turso token |
+| `CRON_SECRET` | `openssl rand -hex 32` |
+| `APP_PASSWORD` | the password you'll type in the browser |
+
+`DATABASE_URL` is the one to get right: locally it's `file:./dev.db`, in
+production it must be the Turso URL. Vercel's env var box accepts a pasted
+`.env`, so preparing a block with the production values avoids transcribing five
+secrets by hand.
+
+Without `APP_PASSWORD` the deployment returns **503** rather than serving
+unprotected — deliberate, so a forgotten variable fails closed.
+
+**Migrating existing local data.** If you've been using the app locally, the
+production database starts empty. Copy the tables across in dependency order
+(Show → Episode → TrackedShow → WatchedEpisode → Settings) before first use;
+air dates carry over already anchored, so `scripts/backfill-air-dates.mjs` will
+correctly report zero conversions against Turso.
 
 ## About `npm audit`
 
@@ -155,20 +173,24 @@ src/
   app/
     actions.ts              server actions (all writes go through here)
     page.tsx                dashboard — watching list + upcoming episodes
-    search/                 TMDB search
-    watchlist/              "want to watch" list
-    show/[id]/              season/episode list, mark watched
-    settings/               notification preference, clear all data
-    api/cron/               twice-daily episode refresh
-  components/               shared UI
+    watchlist/              shows added but not started
+    show/[id]/              availability, trailer, episodes, mark watched
+    settings/               country, notifications, clear all data
+    api/cron/               daily episode refresh
+    error.tsx               catches an unreachable TMDB
+  components/               shared UI (search is an overlay, not a route)
+  proxy.ts                  password gate (Next 16 renamed Middleware)
   lib/
     prisma.ts               database client
     tmdb.ts                 TMDB API wrapper (server-only)
     shows.ts                show syncing logic
     queries.ts              read queries used by pages
+    logger.ts               structured JSON logging
     types.ts, format.ts,    client-safe helpers
     images.ts
 prisma/schema.prisma        data model
+scripts/                    migrate + one-off air-date backfill
+tests/                      vitest suite (npm test)
 ```
 
 Anything under `src/lib` that imports `server-only` must never be imported by a
