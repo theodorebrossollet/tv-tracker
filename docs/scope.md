@@ -49,6 +49,45 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 - Stats dashboard (hours watched, favorite genres, etc.)
 - Notifications for new episodes of shows you're watching
 
+### Last step of Phase 2 — remove the shared password
+
+**Do this only once accounts are finished and verified, and don't skip it.**
+
+v1 is protected by a single shared password (`APP_PASSWORD`, HTTP Basic auth in
+`src/proxy.ts`). It exists solely because v1 has no auth, and once every route
+and server action checks a real session it protects nothing — it just adds a
+browser prompt in front of your own login page and a second credential to
+remember. Leaving it behind is worse than useless: it looks like security while
+guarding nothing.
+
+Removal checklist:
+
+- [ ] Delete `src/proxy.ts` and `tests/proxy.test.ts`
+- [ ] Remove `APP_PASSWORD` from `.env`, `.env.example`, and Vercel's
+      environment variables
+- [ ] Delete section 13 ("Access Control") from the technical design doc
+- [ ] Update the note at the top of `README.md`
+
+Keep it until the very end, though. Phase 2 won't land in one commit, and while
+some routes are session-checked and others aren't, the shared gate is what keeps
+a half-finished deployment closed.
+
+Two things worth reconsidering rather than deleting outright:
+
+- **Preview deployments.** Every branch gets its own Vercel URL. Setting
+  `APP_PASSWORD` on the Preview environment only — production using real auth —
+  keeps unfinished branches off the open internet.
+- **Open signup.** If Phase 2 adds a registration page, anyone reaching the app
+  can create an account on it. The gate would prevent that, but disabling public
+  signup or allowlisting your own email is the cleaner fix.
+
+**The part that must survive.** The gate works because it runs in `proxy.ts`,
+*before* routing, so it catches server-action POSTs and not just page loads.
+Server actions are independently callable — someone can POST to `clearAllData`
+without ever loading a page. Phase 2's auth check therefore belongs at the top
+of **each server action**, not only in page components. Deleting the proxy
+without doing that would leave the app less protected than it is today.
+
 ## Ideas for the Future (not scheduled, just captured)
 - See friends' activity (since it's for friends/family)
 

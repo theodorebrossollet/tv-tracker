@@ -9,6 +9,13 @@ import { NextResponse, type NextRequest } from "next/server";
 // server action POSTs as well as pages because it runs before routing.
 //
 // In Next.js 16 this file is `proxy.ts` — Middleware was renamed to Proxy.
+//
+// This file is meant to be DELETED once Phase 2 ships real accounts — it would
+// then guard nothing while still demanding a password in front of the login
+// page. See "Last step of Phase 2" in docs/scope.md for the removal checklist,
+// and for the one thing that must survive it: the auth check has to move to the
+// top of each server action, because those are POST-able without ever loading a
+// page.
 
 const REALM = 'Basic realm="TV Tracker", charset="UTF-8"';
 
