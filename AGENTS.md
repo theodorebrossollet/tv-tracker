@@ -24,6 +24,10 @@ npm run db:migrate # create + apply a migration locally
 npm run db:deploy  # apply migrations to whatever DATABASE_URL points at
 ```
 
+`lint`, `test` and `build` also run on every pull request
+(`.github/workflows/ci.yml`). Vercel's preview deploy is a separate check and
+only tells you the app built.
+
 ## Where things are
 
 ```

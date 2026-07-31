@@ -1,0 +1,41 @@
+name: CI
+
+# Runs the same three checks a change is expected to pass locally. Before this
+# existed the only status on a pull request was Vercel's preview deploy, which
+# says the app built — not that the tests or the linter passed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push makes the previous run's answer irrelevant, so don't pay for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches .nvmrc.
+          node-version: 22
+          cache: npm
+
+      # postinstall runs `prisma generate`, so the client exists for the steps
+      # below without a separate command.
+      - run: npm ci
+
+      - run: npm run lint
+
+      # No network and no dev server needed: TMDB is mocked at fetch, and the
+      # database tests build a throwaway SQLite file from the real migrations.
+      # No secrets are required, and none should be added — a fork's pull
+      # request must be able to run this.
+      - run: npm test
+
+      - run: npm run build
