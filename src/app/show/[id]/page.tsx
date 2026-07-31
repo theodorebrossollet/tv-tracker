@@ -9,6 +9,7 @@ import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate, showMetaLine } from "@/lib/format";
 import { getShowDetail } from "@/lib/queries";
+import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
 import { getSettings } from "@/lib/shows";
 import {
@@ -27,13 +28,18 @@ interface ShowPageProps {
 
 export async function generateMetadata({ params }: ShowPageProps) {
   const { id } = await params;
-  const show = await getShowDetail(id);
+  const show = isTmdbShowId(id) ? await getShowDetail(id) : null;
 
   return { title: show ? `${show.name} · TV Tracker` : "Show · TV Tracker" };
 }
 
 export default async function ShowPage({ params }: ShowPageProps) {
   const { id } = await params;
+
+  // The route param is untrusted: it flows into a TMDB request path, the Show
+  // cache key, and revalidatePath. Anything that isn't an id is a 404, not a
+  // request worth making.
+  if (!isTmdbShowId(id)) notFound();
 
   const [show, settings] = await Promise.all([getShowDetail(id), getSettings()]);
 

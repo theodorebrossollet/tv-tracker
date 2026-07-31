@@ -10,7 +10,10 @@ added on the CSRF posture.
 Overall the codebase is in good shape: the threat model is written down, the
 password gate fails closed, Prisma parameterizes every query, and the TMDB key
 never leaves the server. The findings below are what remains, ordered by
-severity within each section. Nothing in this document has been fixed yet.
+severity within each section.
+
+**Status:** step 1 of the work order below (#1 and #6) is fixed. Everything
+else is outstanding.
 
 ## Security findings
 

@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
 import type { TrackStatus } from "@/lib/types";
@@ -241,8 +243,16 @@ export async function getUpcomingEpisodes(
  * Falls back to fetching from TMDB when the show isn't in the local cache yet,
  * so search results can link straight through to a show page before it has been
  * added to any list. Returns null only when TMDB doesn't know the id either.
+ *
+ * Memoized per request with React's `cache`, because the show page calls this
+ * from both `generateMetadata` and the component — two full show + episode
+ * loads per view, and, for a stale or uncached show, two concurrent
+ * `syncShowFromTmdb` runs racing each other through hundreds of upserts.
+ * Next only deduplicates `fetch` on its own; everything else needs this.
  */
-export async function getShowDetail(showId: string) {
+export const getShowDetail = cache(async function getShowDetail(
+  showId: string,
+) {
   // Runs first so it can also refresh a cached-but-stale show, not just fetch
   // a missing one.
   const cached = await ensureShowCached(showId);
@@ -277,7 +287,7 @@ export async function getShowDetail(showId: string) {
       .sort(([a], [b]) => a - b)
       .map(([seasonNumber, episodes]) => ({ seasonNumber, episodes })),
   };
-}
+});
 
 function loadShow(showId: string) {
   return prisma.show.findUnique({
