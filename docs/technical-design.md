@@ -455,10 +455,22 @@ before routing means the gate covers action POSTs, not just pages.
 one shared secret and no lockout, entropy is the control — 64 hex characters
 put guessing out of reach whatever the request rate. The 500ms delay on a wrong
 password is secondary: it slows a serial guesser and does nothing to one
-issuing requests in parallel, and no delay rescues a memorable password. Rate
-limiting belongs at the platform edge (Vercel's firewall allows custom rules on
-every plan, three of them on Hobby) and is worth turning on, but it protects
-the rate limit and the bill more than it protects the data.
+issuing requests in parallel, and no delay rescues a memorable password.
+
+Rate limiting sits at the platform edge rather than in this repo, because an
+in-process counter would reset constantly across Vercel's short-lived
+instances. A Vercel firewall custom rule, `Rate limit all paths 100/10s per
+IP`, matches every request path and denies (403) an IP that exceeds 100
+requests in a 10-second fixed window. It is configured in the Vercel
+dashboard, not here, so it will not survive moving the project to another
+host — and nothing in this repository will remind you. Note what it is *for*:
+with a generated password it protects the rate limit and the bill, not the
+data.
+
+Set the threshold generously. One cold page load pulls HTML, JS chunks and a
+screenful of posters, and the static assets the proxy leaves ungated still
+count, so a tight limit locks out a real visitor long before it inconveniences
+anyone else.
 
 Three details that matter if this is ever edited:
 

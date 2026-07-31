@@ -28,6 +28,10 @@ npm run db:deploy  # apply migrations to whatever DATABASE_URL points at
 (`.github/workflows/ci.yml`). Vercel's preview deploy is a separate check and
 only tells you the app built.
 
+**Nothing enforces a green run.** Branch protection isn't available on private
+repositories on GitHub's free plan, so a red pull request can still be merged —
+it has happened. Treat the check as a gate anyway: don't merge on red.
+
 ## Where things are
 
 ```
