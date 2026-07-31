@@ -67,7 +67,7 @@ model Episode {
 model TrackedShow {
   id        String   @id @default(cuid())
   showId    String   @unique
-  status    String   // "watching" | "watchlist" | "paused"
+  status    String   // "watching" | "watchlist" | "paused" | "stopped"
   addedAt   DateTime @default(now())
 
   show      Show     @relation(fields: [showId], references: [id])
@@ -101,6 +101,7 @@ model Settings {
 |---|---|
 | `/` | Dashboard — shows in progress + upcoming episodes list |
 | `/watchlist` | Shows added but not started, plus a Paused section |
+| `/archive` | Finished and Stopped shows |
 | `/show/[id]` | Show detail — synopsis, streaming availability, season/episode list, mark watched |
 | `/settings` | Country, notification preferences, clear all data |
 | `/api/cron/refresh-episodes` | Called by Vercel Cron daily — refreshes episode/air-date data for tracked shows |
@@ -151,7 +152,15 @@ marked watched, including when it wasn't on a list at all: marking an episode
 watched is a clearer statement of intent than pressing a button, so it creates
 the tracked row too.
 
-A third status, **paused**, is for shows you started and set aside. It keeps the
+Two further statuses cover shows you started and set aside: **paused** (you
+mean to come back) and **stopped** (you don't). They behave identically in the
+data model — the difference is intent, which is what makes the two lists worth
+scanning separately months later. Either can be switched to the other directly,
+without passing through Watching.
+
+The rest of this section describes both.
+
+A set-aside show It keeps the
 watch history but stays out of Watching and out of Upcoming episodes — if you've
 stopped, the next episode isn't something you're waiting for. Pausing is only
 possible from `watching`: pausing something never started is what the watchlist
@@ -164,9 +173,33 @@ pretending you watched something.
 
 Demotion is scoped to `watching` so it can't silently undo an explicit pause.
 
-**Paused is not "finished".** Finished isn't a status at all: it's derived from
-having watched every aired episode. A show you completed and one you abandoned
-are different things and the UI keeps them apart.
+**Neither is "finished".** Finished isn't a status at all: it's derived from
+having watched every aired episode. That's deliberate — a show you finished
+returns to Watching by itself when a new season airs, which a stored status
+would not do.
+
+### Where a show appears
+
+The categories overlap (a stopped show can also be fully watched), so
+`getShowBuckets` applies one precedence order and every show lands in exactly
+one place:
+
+    stopped → finished → paused → watchlist → watching
+
+Stopped beats finished because abandoning a show is a decision you made, while
+finishing it is a fact about episode counts — the decision is the more useful
+label. Finished beats paused for the same reason in reverse: a show you
+completed doesn't belong in the list of things you mean to get back to.
+
+| Bucket | Page |
+|---|---|
+| watching | `/` |
+| watchlist, paused | `/watchlist` |
+| finished, stopped | `/archive` |
+
+Moving finished shows off the Watching page is what removed the old "hide
+finished shows" toggle: the page can now only contain work in progress, so
+there is nothing to filter.
 
 Unmarking the **last** watched episode sends the show back to the watchlist.
 That's the exact inverse of the promotion rule — "watching" means at least one
