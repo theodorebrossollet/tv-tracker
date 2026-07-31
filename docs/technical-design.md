@@ -448,9 +448,12 @@ before routing means the gate covers action POSTs, not just pages.
 
 Two details that matter if this is ever edited:
 
-- `/api/cron/*` is excluded from the matcher. Vercel Cron sends its own
+- `/api/cron/*` is excluded from the matcher, by exact path — `api/cron/` with
+  the trailing slash, so that a future `/api/cron-debug` doesn't fall outside
+  the gate on a prefix match. Vercel Cron sends its own
   `Authorization: Bearer $CRON_SECRET`, which Basic auth would reject — the
-  twice-daily refresh would silently stop. That route authenticates itself.
+  daily refresh would silently stop. That route authenticates itself, and so
+  must anything else ever put behind that exclusion.
 - With no `APP_PASSWORD` set, the app serves normally in development but
   returns **503** in production rather than sitting open. It deliberately sends
   no `WWW-Authenticate` in that case, since no password could satisfy it.

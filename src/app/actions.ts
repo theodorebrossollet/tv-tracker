@@ -35,6 +35,20 @@ export interface ActionResult {
   error?: string;
 }
 
+/**
+ * Prisma's "unique constraint failed". Two writers raced and the second one
+ * lost — which, for a write whose whole point is "make this row exist", means
+ * the work is done rather than failed.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
 /** Turns an unexpected failure into a message safe to show the user. */
 function toResult(error: unknown): ActionResult {
   if (error instanceof TmdbError) {
@@ -72,7 +86,9 @@ export interface SearchSuggestion {
 export async function searchSuggestions(
   query: string,
 ): Promise<{ results?: SearchSuggestion[]; error?: string }> {
-  const trimmed = query.trim();
+  // Capped rather than rejected: TMDB has nothing useful to say about a pasted
+  // wall of text, and sending it verbatim helps no one.
+  const trimmed = query.trim().slice(0, 200);
   if (!trimmed) return { results: [] };
 
   let results: TmdbSearchResult[];
@@ -136,6 +152,12 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
       data: { showId: tmdbShowId, status: "watchlist" },
     });
   } catch (error) {
+    // The check above and this create aren't atomic, so a double-click can
+    // lose the race and hit the unique constraint. The show is tracked either
+    // way, which is all the caller asked for — reporting "something went
+    // wrong" for a successful add is the actual bug.
+    if (isUniqueConstraintError(error)) return { ok: true };
+
     return toResult(error);
   }
 
@@ -371,12 +393,18 @@ export async function setSeasonWatched(
       });
 
       const seen = new Set(alreadyWatched.map((row) => row.episodeId));
+      const missing = episodeIds.filter((episodeId) => !seen.has(episodeId));
 
-      await prisma.watchedEpisode.createMany({
-        data: episodeIds
-          .filter((episodeId) => !seen.has(episodeId))
-          .map((episodeId) => ({ episodeId })),
-      });
+      // Same race as addToWatchlist: another click can mark an episode between
+      // the read above and this insert. The season ends up fully marked either
+      // way, so a lost race isn't a failure worth reporting.
+      try {
+        await prisma.watchedEpisode.createMany({
+          data: missing.map((episodeId) => ({ episodeId })),
+        });
+      } catch (error) {
+        if (!isUniqueConstraintError(error)) throw error;
+      }
 
       // Same promotion rule as marking a single episode.
       if (episodeIds.length > 0) {

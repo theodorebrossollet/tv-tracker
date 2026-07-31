@@ -204,3 +204,63 @@ describe("syncing a show from TMDB", () => {
     expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
   });
 });
+
+describe("episodes removed upstream", () => {
+  it("deletes an episode TMDB no longer lists", async () => {
+    // Schedule reshuffles do this. Left behind, the row keeps inflating the
+    // aired count that "finished" is derived from.
+    mockTmdb([
+      { id: 63056, episode_number: 1 },
+      { id: 63057, episode_number: 2 },
+    ]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    mockTmdb([{ id: 63056, episode_number: 1 }]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    expect(
+      (await prisma.episode.findMany({ where: { showId: SHOW_ID } })).map(
+        (episode) => episode.id,
+      ),
+    ).toEqual(["63056"]);
+  });
+
+  it("keeps one the user has watched, rather than rewriting their history", async () => {
+    mockTmdb([
+      { id: 63056, episode_number: 1 },
+      { id: 63057, episode_number: 2 },
+    ]);
+    await syncShowFromTmdb(SHOW_ID);
+    await prisma.watchedEpisode.create({ data: { episodeId: "63057" } });
+
+    mockTmdb([{ id: 63056, episode_number: 1 }]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    expect(await prisma.episode.count({ where: { id: "63057" } })).toBe(1);
+    expect(await prisma.watchedEpisode.count()).toBe(1);
+  });
+
+  it("leaves other shows' episodes alone", async () => {
+    // The delete is keyed by id, but the ids it considers come from this
+    // show's rows only — a neighbouring show must not be caught by it.
+    mockTmdb([{ id: 63056, episode_number: 1 }]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    await prisma.show.create({ data: { id: "1400", name: "Other" } });
+    await prisma.episode.create({
+      data: {
+        id: "99999",
+        showId: "1400",
+        seasonNumber: 1,
+        episodeNumber: 1,
+        name: "Untouched",
+        airDate: new Date(),
+      },
+    });
+
+    mockTmdb([{ id: 63056, episode_number: 1 }]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    expect(await prisma.episode.count({ where: { showId: "1400" } })).toBe(1);
+  });
+});

@@ -369,3 +369,42 @@ describe("clearing all data", () => {
     expect(await prisma.episode.count()).toBe(2);
   });
 });
+
+describe("racing writes", () => {
+  it("treats a lost add race as success, not as a failure", async () => {
+    // Two clicks land together: the second one's findUnique still sees nothing,
+    // then its create hits the unique constraint. The show is tracked either
+    // way, so surfacing "Something went wrong" would be the actual bug.
+    await seedShow({ showId: "1399", offsets: [-10], status: null });
+
+    const { prisma } = await import("@/lib/prisma");
+    const create = vi
+      .spyOn(prisma.trackedShow, "create")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      );
+
+    const result = await addToWatchlist("1399");
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+
+    create.mockRestore();
+  });
+
+  it("still reports failures that aren't a lost race", async () => {
+    await seedShow({ showId: "1399", offsets: [-10], status: null });
+
+    const { prisma } = await import("@/lib/prisma");
+    const create = vi
+      .spyOn(prisma.trackedShow, "create")
+      .mockRejectedValueOnce(new Error("disk is on fire"));
+
+    const result = await addToWatchlist("1399");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Something went wrong. Please try again.");
+
+    create.mockRestore();
+  });
+});

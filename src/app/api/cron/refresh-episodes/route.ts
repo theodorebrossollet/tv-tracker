@@ -3,9 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
 import { TmdbError } from "@/lib/tmdb";
 
-// Refreshes air dates for tracked shows. Called by Vercel Cron twice a day
-// (see vercel.json) — TMDB corrects and adds air dates regularly, so the
-// upcoming-episodes list would drift without this.
+// Refreshes air dates for tracked shows. Called by Vercel Cron once a day, at
+// 06:00 UTC (see vercel.json — the Hobby plan allows no more than daily, and
+// docs/technical-design.md explains the choice of hour) — TMDB corrects and
+// adds air dates regularly, so the upcoming-episodes list would drift without
+// this.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

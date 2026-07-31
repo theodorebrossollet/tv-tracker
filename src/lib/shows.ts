@@ -72,9 +72,11 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     EpisodeFields & { id: string; showId: string }
   >();
   const toUpdate: Array<{ id: string; fields: EpisodeFields }> = [];
+  const fetchedIds = new Set<string>();
 
   for (const episode of episodes) {
     const id = String(episode.id);
+    fetchedIds.add(id);
     const fields: EpisodeFields = {
       seasonNumber: episode.seasonNumber,
       episodeNumber: episode.episodeNumber,
@@ -106,6 +108,31 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
         prisma.episode.update({ where: { id }, data: fields }),
       ),
     );
+  }
+
+  // Episodes TMDB has dropped — it does this after schedule reshuffles — would
+  // otherwise linger forever, inflating the aired count that "finished" is
+  // derived from, so a show could never read as complete again.
+  //
+  // Watched ones are kept regardless: a row the user marked is a record of
+  // something they did, and silently deleting it would rewrite their history
+  // to fix a count. A stale episode is the smaller wrong.
+  const removedIds = existing
+    .filter((row) => !fetchedIds.has(row.id))
+    .map((row) => row.id);
+
+  if (removedIds.length > 0) {
+    const { count } = await prisma.episode.deleteMany({
+      where: { id: { in: removedIds }, watched: { is: null } },
+    });
+
+    if (count > 0) {
+      logger.info("show.episodes_removed_upstream", {
+        showId: tmdbShowId,
+        deleted: count,
+        keptBecauseWatched: removedIds.length - count,
+      });
+    }
   }
 
   return { name: details.name, episodeCount: episodes.length };
