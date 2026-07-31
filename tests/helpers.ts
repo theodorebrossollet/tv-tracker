@@ -25,7 +25,7 @@ interface SeedOptions {
 
 /** Creates a show with episodes, optionally tracked and partly watched. */
 export async function seedShow({
-  showId = "show-1",
+  showId = "101",
   name = "Test Show",
   offsets,
   status = null,

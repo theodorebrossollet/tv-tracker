@@ -167,6 +167,13 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
 
 /** Removes a show from your lists. The cached show/episode rows stay. */
 export async function removeShow(showId: string): Promise<ActionResult> {
+  // Never reaches TMDB, but the guard holds the invariant uniformly: every
+  // showId an action accepts is an id, not just the ones that hit the network.
+  // Real rows can't have a non-id key, so this rejects nothing legitimate.
+  if (!isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
   try {
     await prisma.trackedShow.deleteMany({ where: { showId } });
   } catch (error) {
@@ -282,6 +289,11 @@ async function setAside(
   showId: string,
   status: "paused" | "stopped",
 ): Promise<ActionResult> {
+  // Same uniform-invariant guard as removeShow.
+  if (!isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
   const other = status === "paused" ? "stopped" : "paused";
 
   try {
@@ -322,6 +334,11 @@ export async function stopShow(showId: string): Promise<ActionResult> {
  * pretending you've seen an episode.
  */
 export async function resumeShow(showId: string): Promise<ActionResult> {
+  // Same uniform-invariant guard as removeShow.
+  if (!isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
   try {
     const { count } = await prisma.trackedShow.updateMany({
       where: { showId, status: { in: ["paused", "stopped"] } },
@@ -372,6 +389,11 @@ export async function setSeasonWatched(
   seasonNumber: number,
   watched: boolean,
 ): Promise<ActionResult> {
+  // Same uniform-invariant guard as removeShow.
+  if (!isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
   try {
     const episodes = await prisma.episode.findMany({
       where: {

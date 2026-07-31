@@ -103,9 +103,19 @@ async function cached<T>(
   if (hit && hit.expiresAt > Date.now()) return hit.value as T;
 
   const value = await load();
+
+  // Expired entries are never read again, only replaced — so without this
+  // sweep the map grows by one dead entry per show ever browsed, for the life
+  // of the process. Amortised here rather than on a timer: a misses-only
+  // workload is the only one that grows the map, and it pays as it goes.
+  const now = Date.now();
+  for (const [staleKey, entry] of responseCache) {
+    if (entry.expiresAt <= now) responseCache.delete(staleKey);
+  }
+
   responseCache.set(key, {
     value,
-    expiresAt: Date.now() + ttlSeconds * 1000,
+    expiresAt: now + ttlSeconds * 1000,
   });
 
   return value;
@@ -393,6 +403,13 @@ function mapProviders(list: RawProvider[] | undefined): WatchProvider[] {
 }
 
 /**
+ * Availability moves faster than trailers — titles do enter and leave
+ * catalogues — so it gets hours where the video lists get a day. Still cached:
+ * this was the one per-show-page TMDB call made fresh on every view.
+ */
+const PROVIDER_CACHE_SECONDS = 60 * 60 * 6;
+
+/**
  * Where a show can be streamed, keyed by country code. TMDB returns every
  * country it has data for in one response, so a country switcher costs no
  * extra requests.
@@ -400,8 +417,11 @@ function mapProviders(list: RawProvider[] | undefined): WatchProvider[] {
 export async function getWatchProviders(
   tmdbShowId: string | number,
 ): Promise<CountryAvailability[]> {
-  const data = await tmdbFetch<RawProvidersResponse>(
-    `/tv/${tmdbShowId}/watch/providers`,
+  const data = await cached(
+    `providers:${tmdbShowId}`,
+    PROVIDER_CACHE_SECONDS,
+    () =>
+      tmdbFetch<RawProvidersResponse>(`/tv/${tmdbShowId}/watch/providers`),
   );
 
   return Object.entries(data.results ?? {})

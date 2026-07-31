@@ -339,7 +339,7 @@ describe("bucketing", () => {
     const { getShowBuckets } = await import("@/lib/queries");
     const buckets = await getShowBuckets();
 
-    expect(buckets.finished.map((s) => s.showId)).toEqual(["show-1"]);
+    expect(buckets.finished.map((s) => s.showId)).toEqual(["101"]);
     expect(buckets.paused).toEqual([]);
   });
 
@@ -351,7 +351,7 @@ describe("bucketing", () => {
     const { getShowBuckets } = await import("@/lib/queries");
     const buckets = await getShowBuckets();
 
-    expect(buckets.stopped.map((s) => s.showId)).toEqual(["show-1"]);
+    expect(buckets.stopped.map((s) => s.showId)).toEqual(["101"]);
     expect(buckets.finished).toEqual([]);
   });
 
