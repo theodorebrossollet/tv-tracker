@@ -2,6 +2,10 @@
 
 Full-codebase review, 31 July 2026. Every source file, the Prisma schema, the
 proxy/auth layer, the cron route, the scripts, and the docs were read.
+Revised the same day after review feedback: #2/#3 swapped and reworked, the
+brute-force remedy corrected for Vercel's execution model, the encoded-slash
+claim downgraded to unverified, copy drift extended to four sites, and a note
+added on the CSRF posture.
 
 Overall the codebase is in good shape: the threat model is written down, the
 password gate fails closed, Prisma parameterizes every query, and the TMDB key
@@ -18,9 +22,11 @@ severity within each section. Nothing in this document has been fixed yet.
 arbitrary string and interpolate it into
 `new URL(`${TMDB_BASE}/tv/${tmdbShowId}`)`. A value like `1399/season/1` or
 `1399?append_to_response=...` redirects the server's request to a different
-TMDB endpoint. Both entry points are reachable: server actions accept direct
-POSTs, and Next decodes route params, so `/show/1399%2Fseason%2F1` yields the
-id `1399/season/1`.
+TMDB endpoint. Server actions accept direct POSTs, so that vector is
+sufficient on its own. Encoded slashes in the route param
+(`/show/1399%2Fseason%2F1`) are plausibly a second vector, but that depends on
+version-specific path normalization and has not been verified against a
+running server — the fix is identical either way.
 
 The origin can't be changed — this is not full SSRF — but the response gets
 cached as a `Show` row keyed by the raw string, and the string also flows into
@@ -29,30 +35,46 @@ cached as a `Show` row keyed by the raw string, and the string also flows into
 **Fix:** validate `/^\d+$/` once at the entry points (the actions and the show
 page) and reject anything else.
 
-### 2. The password-gate comparison is not what its comment claims
-
-`src/proxy.ts:26`
-
-`matches` early-returns on length mismatch, so it leaks the password's
-*length* through timing despite the "length-independent" comment. Practically
-minor, but the intent was a constant-time compare.
-
-**Fix:** hash both sides with SHA-256 (Web Crypto is available in the proxy
-runtime) and compare the digests — constant length, constant time.
-Related: the cron route compares its bearer token with plain `===`
-(`src/app/api/cron/refresh-episodes/route.ts:25`); give it the same treatment.
-
-### 3. No brute-force throttling on the password gate
+### 2. No brute-force throttling on the password gate
 
 `src/proxy.ts`
 
 Basic auth with a single shared password and no rate limiting means anyone who
 finds the URL can hammer it, and `clearAllData` sits behind that one password.
-Vercel's platform limits help a little.
 
-**Fix:** a per-IP fixed-window counter in the proxy (in-memory is fine for one
-instance), or at minimum a short constant delay on failure. Worth doing before
-Phase 2.
+Note what does **not** work here: an in-memory per-IP counter in the proxy.
+On Vercel the proxy runs across many short-lived instances, so an in-memory
+counter resets constantly and an attacker gets a fresh window per instance for
+free — it would read as protection without being any. The honest options are:
+
+- **Vercel's own firewall / rate-limiting** at the platform edge — the right
+  tool, no code.
+- **A durable store** (a Turso table, or a hosted counter like Upstash) if
+  enforcement must live in code — heavier than v1 probably wants.
+- **A constant delay on failure** as a fallback. Caveat, written down on
+  purpose: a delay only slows a *serial* attacker; parallel requests sidestep
+  it. It is a mitigation, not a control.
+
+Worth doing before Phase 2.
+
+### 3. The password-gate comparison's comment is false
+
+`src/proxy.ts:23-26`
+
+`matches` early-returns on length mismatch, so the "length-independent"
+comment above it is not true — the compare is constant-time only for
+equal-length inputs and leaks the password's *length* through timing.
+
+This is a comment-accuracy bug dressed as a crypto bug: the password is a
+single shared secret, and hiding its length from a network-timing attacker is
+worth approximately nothing. A digest-then-compare rewrite is possible (the
+proxy may be async, so `crypto.subtle.digest` would work) but the threat
+doesn't justify it.
+
+**Fix:** rewrite the comment to say what the code does — constant-time for
+equal lengths, leaks only the length. Related: the cron route compares its
+bearer token with plain `===`
+(`src/app/api/cron/refresh-episodes/route.ts:25`); same reasoning applies.
 
 ### 4. The proxy matcher excludes by prefix
 
@@ -79,6 +101,27 @@ Same note, lower stakes, for `scripts/migrate.mjs:109`: `executeMultiple` is
 not transactional, so a migration failing mid-file leaves the schema
 half-applied with no `_prisma_migrations` record. At minimum, log that this
 state needs manual repair.
+
+### A load-bearing control worth documenting: CSRF posture
+
+Not a defect — an invisible dependency. The password gate is Basic auth, which
+browsers replay automatically on cross-site requests, and `clearAllData` is a
+server action. The only thing standing between a malicious page and that
+action is Next's built-in Origin/Host check on server-action POSTs. That
+control is load-bearing and appears nowhere in this codebase's own comments,
+which otherwise reason carefully about the action-POST surface.
+
+Two concrete implications:
+
+- `serverActions.allowedOrigins` in `next.config.ts` must never be widened
+  casually — it is the knob that weakens this exact protection.
+- Plain route handlers get **no** such protection. The cron route is safe
+  because it does its own bearer-token check; any future route handler must
+  bring its own auth, per finding #4.
+
+**Fix:** state this in the threat-model comment at the top of
+`src/app/actions.ts` (or `src/proxy.ts`), so Phase 2 doesn't delete the
+password gate without knowing what else was holding.
 
 ## Inefficiencies
 
@@ -141,14 +184,17 @@ on insert, or cap the map size.
 
 ## Smaller notes
 
-- **Copy drift.** The dashboard says air dates "refresh twice a day"
-  (`src/app/page.tsx:43`) and the cron route's header comment says the same
-  (`route.ts:6`), but `vercel.json` runs daily at 06:00. The docs explain the
-  Hobby-plan downgrade; the UI and route comment didn't get the memo.
-- **`settings-client.tsx` copies props into `useState`** (`enabled`,
-  `selectedCountry`) — the exact pattern AGENTS.md says shipped bugs twice
-  here. It is mostly masked by manual resets in `confirmClear`, but a
-  server-side change won't be reflected. Migrate to `useOptimistic` like
+- **Copy drift, in four places.** The daily-at-06:00 schedule in `vercel.json`
+  is still described as twice-daily by the dashboard (`src/app/page.tsx:43`),
+  the cron route's header comment (`route.ts:6`), the proxy's matcher comment
+  (`src/proxy.ts:85`), and the design doc's proxy section
+  (`docs/technical-design.md:445`). Only `docs/technical-design.md:310`
+  documents the actual schedule — a few hundred lines above one of the stale
+  mentions.
+- **`src/app/settings/settings-client.tsx` copies props into `useState`**
+  (`enabled`, `selectedCountry`) — the exact pattern AGENTS.md says shipped
+  bugs twice here. It is mostly masked by manual resets in `confirmClear`, but
+  a server-side change won't be reflected. Migrate to `useOptimistic` like
   `AddButton`.
 - **`addToWatchlist` has a check-then-create race**
   (`src/app/actions.ts:106-118`): a double-click can hit the unique constraint
@@ -170,5 +216,6 @@ on insert, or cap the map size.
 1. **#1 and #6** — small diffs, real payoff.
 2. **#7 and #8** — the two scaling costs; #8 is also the cron-timeout fix the
    design doc is already tracking.
-3. **#2, #4, #5** — a hardening pass.
-4. The smaller notes, opportunistically.
+3. **#2, #4, #5** — a hardening pass, plus writing down the CSRF note while
+   in those files.
+4. **#3 and the smaller notes**, opportunistically.
