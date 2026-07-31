@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { isTmdbShowId } from "@/lib/show-id";
 import { syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
 import type { TrackStatus } from "@/lib/types";
@@ -98,7 +99,10 @@ export async function searchSuggestions(
 
 /** Adds a show to the watchlist, caching it from TMDB on the way in. */
 export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> {
-  if (!tmdbShowId.trim()) {
+  // Actions are POST-able directly, so this is an entry point for untrusted
+  // input regardless of what the UI sends. The id reaches a TMDB request path
+  // from here, via syncShowFromTmdb.
+  if (!isTmdbShowId(tmdbShowId)) {
     return { ok: false, error: "Missing show id." };
   }
 

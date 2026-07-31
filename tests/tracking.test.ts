@@ -148,20 +148,40 @@ describe("marking a whole season", () => {
 });
 
 describe("adding and removing", () => {
+  // These two use a numeric id because addToWatchlist validates the shape of
+  // one — real TMDB ids are decimal integers, and the seeded "show-1" isn't.
   it("adds to the watchlist, not to watching", async () => {
-    await seedShow({ offsets: [-10], status: null });
+    await seedShow({ showId: "1399", offsets: [-10], status: null });
 
-    await addToWatchlist("show-1");
+    await addToWatchlist("1399");
 
-    expect(await statusOf("show-1")).toBe("watchlist");
+    expect(await statusOf("1399")).toBe("watchlist");
   });
 
   it("does not demote a show already being watched", async () => {
-    await seedShow({ offsets: [-10], status: "watching", watched: [0] });
+    await seedShow({
+      showId: "1399",
+      offsets: [-10],
+      status: "watching",
+      watched: [0],
+    });
 
-    await addToWatchlist("show-1");
+    await addToWatchlist("1399");
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("1399")).toBe("watching");
+  });
+
+  it("rejects an id that isn't one, without reaching TMDB", async () => {
+    // The injection case: this would otherwise be interpolated straight into a
+    // TMDB request path, and cached as a Show row keyed by the raw string.
+    const { syncShowFromTmdb } = await import("@/lib/shows");
+    vi.mocked(syncShowFromTmdb).mockClear();
+
+    const result = await addToWatchlist("1399/season/1");
+
+    expect(result.ok).toBe(false);
+    expect(syncShowFromTmdb).not.toHaveBeenCalled();
+    expect(await statusOf("1399/season/1")).toBeNull();
   });
 
   it("removing untracks the show but keeps the cached episodes", async () => {
