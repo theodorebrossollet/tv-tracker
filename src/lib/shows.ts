@@ -41,35 +41,96 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     },
   });
 
-  // Upsert rather than delete-and-recreate: episode rows are referenced by
+  // Written as read-diff-write rather than an upsert per episode: the cron
+  // syncs every tracked show, and a 300-episode show was 300 sequential Turso
+  // round trips on every run. That is most of the ~1.1s/show that puts the 60s
+  // timeout near 50 shows (docs/technical-design.md), so this is the headroom
+  // fix, not the TMDB fetching.
+  //
+  // Still never delete-and-recreate: episode rows are referenced by
   // WatchedEpisode, so recreating them would wipe the user's watch history.
+  const existing = await prisma.episode.findMany({
+    where: { showId: tmdbShowId },
+    select: {
+      id: true,
+      seasonNumber: true,
+      episodeNumber: true,
+      name: true,
+      airDate: true,
+      runtime: true,
+      overview: true,
+    },
+  });
+
+  const byId = new Map(existing.map((row) => [row.id, row]));
+
+  // Keyed by id rather than a plain array: `createMany` has no
+  // `skipDuplicates` on SQLite, so one repeated id in a TMDB payload would
+  // abort the entire insert.
+  const toCreate = new Map<
+    string,
+    EpisodeFields & { id: string; showId: string }
+  >();
+  const toUpdate: Array<{ id: string; fields: EpisodeFields }> = [];
+
   for (const episode of episodes) {
     const id = String(episode.id);
+    const fields: EpisodeFields = {
+      seasonNumber: episode.seasonNumber,
+      episodeNumber: episode.episodeNumber,
+      name: episode.name,
+      airDate: episode.airDate,
+      runtime: episode.runtime,
+      overview: episode.overview,
+    };
 
-    await prisma.episode.upsert({
-      where: { id },
-      create: {
-        id,
-        showId: tmdbShowId,
-        seasonNumber: episode.seasonNumber,
-        episodeNumber: episode.episodeNumber,
-        name: episode.name,
-        airDate: episode.airDate,
-        runtime: episode.runtime,
-        overview: episode.overview,
-      },
-      update: {
-        seasonNumber: episode.seasonNumber,
-        episodeNumber: episode.episodeNumber,
-        name: episode.name,
-        airDate: episode.airDate,
-        runtime: episode.runtime,
-        overview: episode.overview,
-      },
-    });
+    const current = byId.get(id);
+
+    if (!current) {
+      toCreate.set(id, { id, showId: tmdbShowId, ...fields });
+    } else if (differs(current, fields)) {
+      toUpdate.push({ id, fields });
+    }
+  }
+
+  if (toCreate.size > 0) {
+    await prisma.episode.createMany({ data: [...toCreate.values()] });
+  }
+
+  // One transaction for the whole batch. Episodes TMDB didn't change are
+  // skipped outright, so re-syncing a settled show writes nothing at all —
+  // which is the common case for a nightly run.
+  if (toUpdate.length > 0) {
+    await prisma.$transaction(
+      toUpdate.map(({ id, fields }) =>
+        prisma.episode.update({ where: { id }, data: fields }),
+      ),
+    );
   }
 
   return { name: details.name, episodeCount: episodes.length };
+}
+
+/** The episode fields TMDB owns — everything a re-sync could change. */
+interface EpisodeFields {
+  seasonNumber: number;
+  episodeNumber: number;
+  name: string | null;
+  airDate: Date | null;
+  runtime: number | null;
+  overview: string | null;
+}
+
+function differs(current: EpisodeFields, next: EpisodeFields): boolean {
+  return (
+    current.seasonNumber !== next.seasonNumber ||
+    current.episodeNumber !== next.episodeNumber ||
+    current.name !== next.name ||
+    current.runtime !== next.runtime ||
+    current.overview !== next.overview ||
+    // Dates are objects: compare the instant, and allow either side to be null.
+    (current.airDate?.getTime() ?? null) !== (next.airDate?.getTime() ?? null)
+  );
 }
 
 /** How long a cached-but-untracked show may go without a re-sync. */

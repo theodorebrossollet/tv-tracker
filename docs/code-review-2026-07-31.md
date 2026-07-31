@@ -12,8 +12,8 @@ password gate fails closed, Prisma parameterizes every query, and the TMDB key
 never leaves the server. The findings below are what remains, ordered by
 severity within each section.
 
-**Status:** step 1 of the work order below (#1 and #6) is fixed. Everything
-else is outstanding.
+**Status:** steps 1 and 2 of the work order below (#1, #6, #7, #8) are fixed.
+Everything else is outstanding.
 
 ## Security findings
 

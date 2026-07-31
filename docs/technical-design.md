@@ -322,14 +322,22 @@ the same endpoint with the `CRON_SECRET` bearer token. The route has no Vercel
 dependency.
 
 **Runtime headroom.** Measured on the first unattended run (31 Jul 2026): 28
-tracked shows took ~32s, about 1.1s each, because `getAllEpisodes` fetches
-seasons sequentially to stay inside TMDB's rate limits. The route sets
-`maxDuration = 60`, so the schedule starts timing out somewhere near 50 shows.
+tracked shows took ~32s, about 1.1s each. That was read as the cost of
+`getAllEpisodes` fetching seasons sequentially, but most of it was the write
+side: `syncShowFromTmdb` upserted episodes one at a time, so a 300-episode show
+was 300 sequential round trips to Turso. The route sets `maxDuration = 60`, so
+the schedule was timing out somewhere near 50 shows.
 
-When that gets close, fetch a show's seasons in parallel — they're independent
-requests and the sequential loop was chosen for politeness, not correctness.
-A timeout here fails quietly: the cron just stops refreshing air dates, and
-nothing in the UI says so.
+Those writes are now batched — existing rows are read once, new episodes go in
+via `createMany`, changed ones update inside a single transaction, and an
+episode TMDB didn't change is not written at all, so re-syncing a settled show
+does no episode writes. The ~1.1s/show figure above predates that change and
+has not been re-measured; the next unattended run is the number to trust.
+
+Fetching a show's seasons in parallel remains available if the budget gets
+tight again — they're independent requests, and the sequential loop was chosen
+for politeness, not correctness. A timeout here fails quietly: the cron just
+stops refreshing air dates, and nothing in the UI says so.
 
 ```json
 {
