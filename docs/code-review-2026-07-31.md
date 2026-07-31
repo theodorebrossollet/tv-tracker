@@ -15,14 +15,18 @@ severity within each section.
 **Status: everything in this document is fixed** — all four steps of the work
 order, including the smaller notes.
 
-Two things it could not close by itself:
+Two of the fixes reach outside the repository, and one number is still owed:
 
-- **#2 carries only the delay-on-failure mitigation.** The actual rate limit
-  belongs at Vercel's edge and is dashboard configuration, not something this
-  repo can contain. Still worth turning on.
-- **The cron budget in `docs/technical-design.md` is unverified.** #8 removed
-  what that measurement was mostly measuring, so the ~1.1s/show figure is
-  stale rather than wrong. The next unattended run is the number to trust.
+- **#2 is finished, but half of it lives in the Vercel dashboard.** The code
+  carries the delay on a wrong password; the actual rate limit is a firewall
+  rule (100 requests per 10 seconds per IP, deny 403), and `APP_PASSWORD` has
+  been rotated to a generated 32-byte value — which is what makes guessing
+  hopeless in the first place. See "Access Control" in
+  `docs/technical-design.md`. None of that is in version control.
+- **The cron budget in `docs/technical-design.md` is still unverified.** #8
+  removed what that measurement was mostly measuring, so the ~1.1s/show figure
+  is stale rather than wrong. Every run now logs `durationMs` and `msPerShow`;
+  read the latest one and update the doc.
 
 ## Security findings
 

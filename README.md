@@ -135,7 +135,7 @@ environment variables:
 | `DATABASE_URL` | the **`libsql://`** URL — not the local file path |
 | `TURSO_AUTH_TOKEN` | the Turso token |
 | `CRON_SECRET` | `openssl rand -hex 32` |
-| `APP_PASSWORD` | the password you'll type in the browser |
+| `APP_PASSWORD` | `openssl rand -hex 32` — generate it, don't invent it |
 
 `DATABASE_URL` is the one to get right: locally it's `file:./dev.db`, in
 production it must be the Turso URL. Vercel's env var box accepts a pasted
@@ -144,6 +144,19 @@ secrets by hand.
 
 Without `APP_PASSWORD` the deployment returns **503** rather than serving
 unprotected — deliberate, so a forgotten variable fails closed.
+
+You type that password once and let the browser remember it, so length costs
+you nothing — and with a single shared secret and no lockout, length is what
+actually stops it being guessed. Changing it later takes effect only after a
+redeploy; editing the variable leaves the running deployment on the old value.
+
+**4. Add a rate limit** (optional, but cheap)
+
+Vercel dashboard → the project → Firewall → Custom Rules → Add Rule: match
+`Request Path` `Starts with` `/`, rate limit to 100 requests per 10 seconds
+keyed by IP address, action Deny (403). It applies without a redeploy. See
+"Access Control" in the design doc for why the threshold is generous and why
+this can't live in the repo.
 
 **Migrating existing local data.** If you've been using the app locally, the
 production database starts empty. Copy the tables across in dependency order
