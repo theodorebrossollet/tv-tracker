@@ -14,6 +14,21 @@ import type { TrackStatus } from "@/lib/types";
 // the top of each of these. Note that server actions are reachable by direct
 // POST, so this file is effectively public while the app is deployed without
 // auth; keep the deployment private until Phase 2 lands.
+//
+// What stops a malicious page from POSTing clearAllData on your behalf is not
+// the password gate. Basic auth is replayed automatically by the browser on
+// cross-site requests, so the gate would happily let that through. It's Next's
+// own CSRF check on server actions: the request's `Origin` is compared to the
+// `Host` (or `X-Forwarded-Host`) and mismatches are rejected. That control is
+// load-bearing and invisible, so two things follow:
+//
+//   - `experimental.serverActions.allowedOrigins` is the knob that widens it.
+//     It is absent from next.config.ts today, which is the safe default —
+//     same-origin only. Adding a domain there weakens exactly this protection.
+//   - Route handlers get none of it. The cron route is safe because it checks
+//     its own bearer token; any future route handler must bring its own auth,
+//     which is also why the proxy's matcher excludes `/api/cron/` by exact
+//     path rather than by prefix.
 
 export interface ActionResult {
   ok: boolean;
@@ -438,9 +453,14 @@ export async function updateCountry(country: string): Promise<ActionResult> {
  */
 export async function clearAllData(): Promise<ActionResult> {
   try {
-    await prisma.watchedEpisode.deleteMany();
-    await prisma.trackedShow.deleteMany();
-    await prisma.settings.deleteMany();
+    // One transaction, children first: a failure partway through used to leave
+    // watch history gone but the tracked shows still listed, which reads as
+    // "everything I watched was forgotten" rather than as a failed wipe.
+    await prisma.$transaction([
+      prisma.watchedEpisode.deleteMany(),
+      prisma.trackedShow.deleteMany(),
+      prisma.settings.deleteMany(),
+    ]);
   } catch (error) {
     return toResult(error);
   }

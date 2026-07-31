@@ -347,3 +347,25 @@ describe("stopping", () => {
     expect((await getUpcomingEpisodes()).map((e) => e.showId)).toEqual(["w"]);
   });
 });
+
+describe("clearing all data", () => {
+  // An invariant guard rather than a test of the transaction: the three
+  // deletes now run as one, but on the success path the result is the same
+  // either way. What is worth pinning is which tables it touches.
+  it("wipes tracking data but keeps the cached show and episodes", async () => {
+    await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
+    const { prisma } = await import("@/lib/prisma");
+    await prisma.settings.create({ data: { id: 1, country: "FR" } });
+
+    const { clearAllData } = await import("@/app/actions");
+    expect((await clearAllData()).ok).toBe(true);
+
+    expect(await prisma.trackedShow.count()).toBe(0);
+    expect(await prisma.watchedEpisode.count()).toBe(0);
+    expect(await prisma.settings.count()).toBe(0);
+
+    // Re-adding a show shouldn't have to re-download everything from TMDB.
+    expect(await prisma.show.count()).toBe(1);
+    expect(await prisma.episode.count()).toBe(2);
+  });
+});
