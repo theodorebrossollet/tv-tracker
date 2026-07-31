@@ -95,16 +95,20 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     }
   }
 
-  if (toCreate.size > 0) {
-    await prisma.episode.createMany({ data: [...toCreate.values()] });
+  // Chunked because SQLite caps bind variables per statement, and TMDB's
+  // daytime soaps run past 10,000 episodes — at 8 parameters a row, one
+  // unchunked createMany for General Hospital is a hard error, found only on
+  // the day someone tracks a soap.
+  for (const batch of chunk([...toCreate.values()], WRITE_BATCH_SIZE)) {
+    await prisma.episode.createMany({ data: batch });
   }
 
-  // One transaction for the whole batch. Episodes TMDB didn't change are
-  // skipped outright, so re-syncing a settled show writes nothing at all —
-  // which is the common case for a nightly run.
-  if (toUpdate.length > 0) {
+  // One transaction per batch. Episodes TMDB didn't change are skipped
+  // outright, so re-syncing a settled show writes nothing at all — which is
+  // the common case for a nightly run.
+  for (const batch of chunk(toUpdate, WRITE_BATCH_SIZE)) {
     await prisma.$transaction(
-      toUpdate.map(({ id, fields }) =>
+      batch.map(({ id, fields }) =>
         prisma.episode.update({ where: { id }, data: fields }),
       ),
     );
@@ -122,20 +126,39 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     .map((row) => row.id);
 
   if (removedIds.length > 0) {
-    const { count } = await prisma.episode.deleteMany({
-      where: { id: { in: removedIds }, watched: { is: null } },
-    });
+    let deleted = 0;
+    for (const batch of chunk(removedIds, WRITE_BATCH_SIZE)) {
+      const { count } = await prisma.episode.deleteMany({
+        where: { id: { in: batch }, watched: { is: null } },
+      });
+      deleted += count;
+    }
 
-    if (count > 0) {
+    if (deleted > 0) {
       logger.info("show.episodes_removed_upstream", {
         showId: tmdbShowId,
-        deleted: count,
-        keptBecauseWatched: removedIds.length - count,
+        deleted,
+        keptBecauseWatched: removedIds.length - deleted,
       });
     }
   }
 
   return { name: details.name, episodeCount: episodes.length };
+}
+
+/**
+ * Rows per statement. SQLite's default bind-variable cap is 32766; at 8
+ * parameters per episode row, 500 leaves an order of magnitude of headroom
+ * while keeping a 16,000-episode soap to ~32 statements.
+ */
+const WRITE_BATCH_SIZE = 500;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    batches.push(items.slice(i, i + size));
+  }
+  return batches;
 }
 
 /** The episode fields TMDB owns — everything a re-sync could change. */

@@ -12,8 +12,12 @@ password gate fails closed, Prisma parameterizes every query, and the TMDB key
 never leaves the server. The findings below are what remains, ordered by
 severity within each section.
 
-**Status: everything in this document is fixed** — all four steps of the work
-order, including the smaller notes.
+**Status: everything in this document is fixed.** An earlier revision of this
+header made that claim while #9 was still open — the suggested order of work
+at the bottom listed #1–#8 and the smaller notes but never included #9, and
+the implementation worked the list rather than the findings. The second-review
+section at the end records that gap and the handful of issues the fixes
+themselves introduced; all are now closed.
 
 Two of the fixes reach outside the repository, and one number is still owed:
 
@@ -235,3 +239,38 @@ on insert, or cap the map size.
 3. **#2, #4, #5** — a hardening pass, plus writing down the CSRF note while
    in those files.
 4. **#3 and the smaller notes**, opportunistically.
+
+Note: this list omits #9, which is how #9 was initially skipped — see below.
+
+## Second review, after the fixes landed
+
+A follow-up review of the implementation (PRs #3–#8), done against the full
+suite (150 tests, all green at the time). The fixes for #1–#8 were verified
+sound — the #8 rewrite in particular (read-diff-write with duplicate-id
+dedupe and watched-row-preserving deletion) is better than what this document
+proposed. Five issues remained, all since fixed:
+
+- **#9 had not been fixed, while this document claimed everything was.**
+  `src/lib/tmdb.ts` was untouched by the six PRs. The status header inherited
+  the omission from the work order above. Now closed: `getWatchProviders`
+  goes through `cached()` with a 6-hour TTL, and `cached()` sweeps expired
+  entries on insert so the map no longer grows monotonically.
+- **CI referenced a file that didn't exist.** `ci.yml` pins `node-version: 22`
+  with the comment "Matches .nvmrc" — there was no `.nvmrc`. One now exists.
+- **The cron route contradicted itself.** The timing block said the run "has a
+  deadline: maxDuration is 60s" while the loop comment fifteen lines down
+  still said "the cron has no deadline pressure". The loop comment now
+  acknowledges the deadline and names the next lever (parallel season fetches
+  within a show).
+- **The batched episode writes weren't chunked.** One `createMany` at 8 bind
+  parameters per row meets SQLite's 32,766-variable cap somewhere around a
+  4,000-episode show, and TMDB's daytime soaps run past 10,000. Creates,
+  updates, and deletes now go in batches of 500 (`WRITE_BATCH_SIZE` in
+  `src/lib/shows.ts`).
+- **The id-validation invariant was only enforced where TMDB is reached.**
+  `removeShow`, `pauseShow`/`stopShow`, `resumeShow`, and `setSeasonWatched`
+  accepted arbitrary strings that flowed into `revalidatePath` — harmless in
+  practice, but `show-id.ts` names `revalidatePath` as a reason the check
+  exists. All showId-taking actions now guard with `isTmdbShowId`, covered by
+  a test asserting the invariant is uniform. (The cron route's `===` bearer
+  compare also gained the accepted-trade comment #3 gave the proxy.)

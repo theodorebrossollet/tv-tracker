@@ -34,7 +34,7 @@ describe("promotion to watching", () => {
 
     await markEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("tracks an untracked show when an episode is marked", async () => {
@@ -45,7 +45,7 @@ describe("promotion to watching", () => {
 
     await markEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("keeps a show on watching when a further episode is marked", async () => {
@@ -57,8 +57,8 @@ describe("promotion to watching", () => {
 
     await markEpisodeWatched(episodeIds[1]);
 
-    expect(await statusOf("show-1")).toBe("watching");
-    expect(await watchedCount("show-1")).toBe(2);
+    expect(await statusOf("101")).toBe("watching");
+    expect(await watchedCount("101")).toBe(2);
   });
 });
 
@@ -74,8 +74,8 @@ describe("demotion back to the watchlist", () => {
 
     await unmarkEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBe("watchlist");
-    expect(await watchedCount("show-1")).toBe(0);
+    expect(await statusOf("101")).toBe("watchlist");
+    expect(await watchedCount("101")).toBe(0);
   });
 
   it("does not demote while other episodes remain watched", async () => {
@@ -87,7 +87,7 @@ describe("demotion back to the watchlist", () => {
 
     await unmarkEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("leaves an untracked show untracked rather than adding it", async () => {
@@ -95,7 +95,7 @@ describe("demotion back to the watchlist", () => {
 
     await unmarkEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBeNull();
+    expect(await statusOf("101")).toBeNull();
   });
 });
 
@@ -104,10 +104,10 @@ describe("marking a whole season", () => {
     // Two aired, two upcoming.
     await seedShow({ offsets: [-10, -3, 3, 10], status: "watchlist" });
 
-    await setSeasonWatched("show-1", 1, true);
+    await setSeasonWatched("101", 1, true);
 
-    expect(await watchedCount("show-1")).toBe(2);
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await watchedCount("101")).toBe(2);
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("does not double-count episodes that were already watched", async () => {
@@ -118,9 +118,9 @@ describe("marking a whole season", () => {
       watched: [0],
     });
 
-    await setSeasonWatched("show-1", 1, true);
+    await setSeasonWatched("101", 1, true);
 
-    expect(await watchedCount("show-1")).toBe(3);
+    expect(await watchedCount("101")).toBe(3);
   });
 
   it("unmarking a whole season demotes the show", async () => {
@@ -130,26 +130,24 @@ describe("marking a whole season", () => {
       watched: [0, 1],
     });
 
-    await setSeasonWatched("show-1", 1, false);
+    await setSeasonWatched("101", 1, false);
 
-    expect(await watchedCount("show-1")).toBe(0);
-    expect(await statusOf("show-1")).toBe("watchlist");
+    expect(await watchedCount("101")).toBe(0);
+    expect(await statusOf("101")).toBe("watchlist");
   });
 
   it("is a no-op for a season with nothing aired yet", async () => {
     await seedShow({ offsets: [3, 10], status: "watchlist" });
 
-    await setSeasonWatched("show-1", 1, true);
+    await setSeasonWatched("101", 1, true);
 
-    expect(await watchedCount("show-1")).toBe(0);
+    expect(await watchedCount("101")).toBe(0);
     // Nothing was watched, so nothing should have been promoted.
-    expect(await statusOf("show-1")).toBe("watchlist");
+    expect(await statusOf("101")).toBe("watchlist");
   });
 });
 
 describe("adding and removing", () => {
-  // These two use a numeric id because addToWatchlist validates the shape of
-  // one — real TMDB ids are decimal integers, and the seeded "show-1" isn't.
   it("adds to the watchlist, not to watching", async () => {
     await seedShow({ showId: "1399", offsets: [-10], status: null });
 
@@ -184,6 +182,24 @@ describe("adding and removing", () => {
     expect(await statusOf("1399/season/1")).toBeNull();
   });
 
+  it("every showId-taking action holds the id invariant, not just the TMDB ones", async () => {
+    // These never reach TMDB, but their showId still flows into
+    // revalidatePath — the guard is uniform on purpose (see removeShow).
+    await seedShow({ offsets: [-10], status: "watching", watched: [0] });
+
+    const { pauseShow, resumeShow, setSeasonWatched } = await import(
+      "@/app/actions"
+    );
+
+    expect((await removeShow("101/../102")).ok).toBe(false);
+    expect((await pauseShow("101/../102")).ok).toBe(false);
+    expect((await resumeShow("101/../102")).ok).toBe(false);
+    expect((await setSeasonWatched("101/../102", 1, true)).ok).toBe(false);
+
+    // The real row is untouched by any of the rejected calls.
+    expect(await statusOf("101")).toBe("watching");
+  });
+
   it("removing untracks the show but keeps the cached episodes", async () => {
     const { episodeIds } = await seedShow({
       offsets: [-10, -3],
@@ -191,12 +207,12 @@ describe("adding and removing", () => {
       watched: [0],
     });
 
-    await removeShow("show-1");
+    await removeShow("101");
 
-    expect(await statusOf("show-1")).toBeNull();
+    expect(await statusOf("101")).toBeNull();
 
     const { prisma } = await import("@/lib/prisma");
-    expect(await prisma.episode.count({ where: { showId: "show-1" } })).toBe(2);
+    expect(await prisma.episode.count({ where: { showId: "101" } })).toBe(2);
     // Watch history rides on the tracked row being gone, not the cache.
     expect(episodeIds).toHaveLength(2);
   });
@@ -207,10 +223,10 @@ describe("pausing", () => {
     await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
 
     const { pauseShow } = await import("@/app/actions");
-    expect((await pauseShow("show-1")).ok).toBe(true);
+    expect((await pauseShow("101")).ok).toBe(true);
 
-    expect(await statusOf("show-1")).toBe("paused");
-    expect(await watchedCount("show-1")).toBe(1);
+    expect(await statusOf("101")).toBe("paused");
+    expect(await watchedCount("101")).toBe(1);
   });
 
   it("refuses to pause a show that was never started", async () => {
@@ -218,10 +234,10 @@ describe("pausing", () => {
     await seedShow({ offsets: [-10], status: "watchlist" });
 
     const { pauseShow } = await import("@/app/actions");
-    const result = await pauseShow("show-1");
+    const result = await pauseShow("101");
 
     expect(result.ok).toBe(false);
-    expect(await statusOf("show-1")).toBe("watchlist");
+    expect(await statusOf("101")).toBe("watchlist");
   });
 
   it("refuses to pause an untracked show rather than tracking it", async () => {
@@ -229,8 +245,8 @@ describe("pausing", () => {
 
     const { pauseShow } = await import("@/app/actions");
 
-    expect((await pauseShow("show-1")).ok).toBe(false);
-    expect(await statusOf("show-1")).toBeNull();
+    expect((await pauseShow("101")).ok).toBe(false);
+    expect(await statusOf("101")).toBeNull();
   });
 
   it("marking an episode un-pauses the show", async () => {
@@ -244,7 +260,7 @@ describe("pausing", () => {
 
     await markEpisodeWatched(episodeIds[1]);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("resumes explicitly without marking anything watched", async () => {
@@ -253,10 +269,10 @@ describe("pausing", () => {
     await seedShow({ offsets: [-10, -3], status: "paused", watched: [0] });
 
     const { resumeShow } = await import("@/app/actions");
-    expect((await resumeShow("show-1")).ok).toBe(true);
+    expect((await resumeShow("101")).ok).toBe(true);
 
-    expect(await statusOf("show-1")).toBe("watching");
-    expect(await watchedCount("show-1")).toBe(1);
+    expect(await statusOf("101")).toBe("watching");
+    expect(await watchedCount("101")).toBe(1);
   });
 
   it("does not demote a paused show to the watchlist", async () => {
@@ -270,7 +286,7 @@ describe("pausing", () => {
 
     await unmarkEpisodeWatched(episodeIds[0]);
 
-    expect(await statusOf("show-1")).toBe("paused");
+    expect(await statusOf("101")).toBe("paused");
   });
 
   it("keeps paused shows out of the watching list", async () => {
@@ -289,10 +305,10 @@ describe("stopping", () => {
     await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
 
     const { stopShow } = await import("@/app/actions");
-    expect((await stopShow("show-1")).ok).toBe(true);
+    expect((await stopShow("101")).ok).toBe(true);
 
-    expect(await statusOf("show-1")).toBe("stopped");
-    expect(await watchedCount("show-1")).toBe(1);
+    expect(await statusOf("101")).toBe("stopped");
+    expect(await watchedCount("101")).toBe(1);
   });
 
   it("refuses to stop a show that was never started", async () => {
@@ -300,8 +316,8 @@ describe("stopping", () => {
 
     const { stopShow } = await import("@/app/actions");
 
-    expect((await stopShow("show-1")).ok).toBe(false);
-    expect(await statusOf("show-1")).toBe("watchlist");
+    expect((await stopShow("101")).ok).toBe(false);
+    expect(await statusOf("101")).toBe("watchlist");
   });
 
   it("switches between paused and stopped without going via watching", async () => {
@@ -310,11 +326,11 @@ describe("stopping", () => {
 
     const { stopShow, pauseShow } = await import("@/app/actions");
 
-    expect((await stopShow("show-1")).ok).toBe(true);
-    expect(await statusOf("show-1")).toBe("stopped");
+    expect((await stopShow("101")).ok).toBe(true);
+    expect(await statusOf("101")).toBe("stopped");
 
-    expect((await pauseShow("show-1")).ok).toBe(true);
-    expect(await statusOf("show-1")).toBe("paused");
+    expect((await pauseShow("101")).ok).toBe(true);
+    expect(await statusOf("101")).toBe("paused");
   });
 
   it("marking an episode brings a stopped show back", async () => {
@@ -326,16 +342,16 @@ describe("stopping", () => {
 
     await markEpisodeWatched(episodeIds[1]);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("resumes a stopped show explicitly", async () => {
     await seedShow({ offsets: [-10], status: "stopped", watched: [0] });
 
     const { resumeShow } = await import("@/app/actions");
-    expect((await resumeShow("show-1")).ok).toBe(true);
+    expect((await resumeShow("101")).ok).toBe(true);
 
-    expect(await statusOf("show-1")).toBe("watching");
+    expect(await statusOf("101")).toBe("watching");
   });
 
   it("keeps stopped shows out of upcoming episodes", async () => {

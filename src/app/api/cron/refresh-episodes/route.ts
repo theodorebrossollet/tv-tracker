@@ -24,6 +24,10 @@ function isAuthorized(request: Request): boolean {
   // so a misconfigured deployment fails closed rather than open.
   if (!secret) return process.env.NODE_ENV !== "production";
 
+  // Plain === rather than a constant-time compare — the same trade the proxy's
+  // `matches` documents: CRON_SECRET is a generated 32-byte value, and a
+  // timing oracle against a JS string compare buys nothing usable against
+  // that. Written down so it reads as a decision, not an oversight.
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
@@ -46,8 +50,10 @@ export async function GET(request: Request) {
   const refreshed: string[] = [];
   const failed: Array<{ showId: string; error: string }> = [];
 
-  // Sequential on purpose: a handful of shows at a time keeps us well under
-  // TMDB's rate limit, and the cron has no deadline pressure.
+  // Sequential on purpose: one show at a time keeps us well under TMDB's rate
+  // limit. That politeness spends the 60s deadline measured above — when the
+  // headroom runs out, parallelise the season fetches inside a show before
+  // giving this loop up.
   for (const { showId } of tracked) {
     try {
       await syncShowFromTmdb(showId);
