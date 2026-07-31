@@ -5,8 +5,11 @@ const src = fileURLToPath(new URL("./src", import.meta.url));
 
 export default defineConfig({
   test: {
+    // Node by default; component tests opt into jsdom with a
+    // `@vitest-environment jsdom` docblock, so the DB tests keep running in
+    // plain node where they're faster.
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     globalSetup: ["./tests/global-setup.ts"],
     // The database-backed tests share one SQLite file and truncate between
     // cases, so they must not run concurrently.

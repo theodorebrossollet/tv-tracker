@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Poster } from "@/components/poster";
+import { StatusBadge } from "@/components/status-badge";
 import { relativeAirDate } from "@/lib/format";
 import type { UpcomingEpisode } from "@/lib/queries";
 
@@ -47,10 +48,10 @@ export function UpcomingList({ episodes }: { episodes: UpcomingEpisode[] }) {
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-2 truncate text-sm font-medium">
                   {episode.showName}
+                  {/* Only worth flagging the ones you haven't started — a
+                      "Watching" badge on most rows would be noise. */}
                   {episode.status === "watchlist" ? (
-                    <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted">
-                      watchlist
-                    </span>
+                    <StatusBadge status={episode.status} />
                   ) : null}
                 </p>
                 <p className="truncate text-xs text-muted">

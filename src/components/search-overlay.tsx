@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { searchSuggestions, type SearchSuggestion } from "@/app/actions";
 import { AddButton } from "@/components/add-button";
 import { Poster } from "@/components/poster";
+import { StatusBadge } from "@/components/status-badge";
 
 /** How long to wait after the last keystroke before asking TMDB. */
 const DEBOUNCE_MS = 250;
@@ -180,16 +181,18 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
                       width={36}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {result.name}
+                      {/* Badge rather than trailing text in the subtitle: the
+                          point is to be readable at a glance while typing, and
+                          the old form silently said nothing for two of the four
+                          statuses. */}
+                      <span className="flex items-center gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          {result.name}
+                        </span>
+                        <StatusBadge status={result.status} />
                       </span>
                       <span className="block text-xs text-muted">
                         {result.firstAirYear ?? "Year unknown"}
-                        {result.status === "watching"
-                          ? " · watching"
-                          : result.status === "watchlist"
-                            ? " · on watchlist"
-                            : ""}
                       </span>
                     </span>
                   </button>

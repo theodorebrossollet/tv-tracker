@@ -379,6 +379,19 @@ DATABASE_URL="libsql://…" npm run db:deploy  # applies it to Turso
 Keeping this out of the Vercel build is deliberate: a build step that mutates
 the production database is easy to trigger accidentally and hard to undo.
 
+### Long lists
+
+`ShowList` (Watchlist, Archive) renders 10 rows and offers the rest behind a
+button; `UpcomingList` does the same with 15. Every row is already on the page,
+so expanding costs no request — the server-side cap is what bounds the payload.
+
+Each list instance holds its own count rather than sharing one, so a long
+Finished section can't bury the Stopped section beneath it. That falls out of
+`useState` being per-instance; the test exists to document the intent.
+
+The Archive is the list that needed this: Watching and Watchlist churn, but
+finished shows accumulate forever.
+
 ## 12. Tests
 
 `npm test` (Vitest). 59 tests, no network and no dev server needed — TMDB is
@@ -397,6 +410,8 @@ Covered:
 - **Query aggregation** — aired vs upcoming counts, "fully watched", next-up,
   upcoming across both lists.
 - **Formatting** — timezone-stable dates, relative air dates.
+- **Components** (jsdom) — status badge covers all four statuses, list
+  pagination including the partial final page.
 
 These exist because the same class of bug shipped twice: state copied into
 `useState` instead of derived from props. Both instances were found by hand, in
