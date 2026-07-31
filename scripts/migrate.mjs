@@ -105,8 +105,23 @@ for (const { name, sql, checksum } of pending) {
   const startedAt = new Date().toISOString();
 
   // executeMultiple runs the whole file as a script, so multi-statement
-  // migrations work without splitting on semicolons by hand.
-  await client.executeMultiple(sql);
+  // migrations work without splitting on semicolons by hand. It is not
+  // transactional, though: a file that fails halfway leaves the statements
+  // before the failure applied, with no _prisma_migrations row to show for
+  // them. Say so loudly, because the next run will start this file from the
+  // top and hit "table already exists" on work that did land.
+  try {
+    await client.executeMultiple(sql);
+  } catch (error) {
+    console.error(
+      `\nFAILED partway through ${name}. The database is now in a ` +
+        `half-applied state that this script cannot repair: statements before ` +
+        `the failure were applied, but ${name} is NOT recorded as applied.\n` +
+        `Inspect the schema and either finish or undo ${name} by hand before ` +
+        `re-running.\n`,
+    );
+    throw error;
+  }
 
   await client.execute({
     sql: `INSERT INTO _prisma_migrations

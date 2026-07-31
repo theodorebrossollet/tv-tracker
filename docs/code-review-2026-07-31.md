@@ -12,8 +12,17 @@ password gate fails closed, Prisma parameterizes every query, and the TMDB key
 never leaves the server. The findings below are what remains, ordered by
 severity within each section.
 
-**Status:** step 1 of the work order below (#1 and #6) is fixed. Everything
-else is outstanding.
+**Status: everything in this document is fixed** — all four steps of the work
+order, including the smaller notes.
+
+Two things it could not close by itself:
+
+- **#2 carries only the delay-on-failure mitigation.** The actual rate limit
+  belongs at Vercel's edge and is dashboard configuration, not something this
+  repo can contain. Still worth turning on.
+- **The cron budget in `docs/technical-design.md` is unverified.** #8 removed
+  what that measurement was mostly measuring, so the ~1.1s/show figure is
+  stale rather than wrong. The next unattended run is the number to trust.
 
 ## Security findings
 

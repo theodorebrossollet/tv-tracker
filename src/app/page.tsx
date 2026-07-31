@@ -40,7 +40,7 @@ export default async function DashboardPage() {
         </h2>
         <p className="mt-1 text-sm text-muted">
           Across everything you&rsquo;re watching and everything on your
-          watchlist. Air dates come from TMDB and refresh twice a day.
+          watchlist. Air dates come from TMDB and refresh once a day.
         </p>
 
         {upcoming.length === 0 ? (

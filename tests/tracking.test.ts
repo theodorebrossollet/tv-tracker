@@ -347,3 +347,64 @@ describe("stopping", () => {
     expect((await getUpcomingEpisodes()).map((e) => e.showId)).toEqual(["w"]);
   });
 });
+
+describe("clearing all data", () => {
+  // An invariant guard rather than a test of the transaction: the three
+  // deletes now run as one, but on the success path the result is the same
+  // either way. What is worth pinning is which tables it touches.
+  it("wipes tracking data but keeps the cached show and episodes", async () => {
+    await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
+    const { prisma } = await import("@/lib/prisma");
+    await prisma.settings.create({ data: { id: 1, country: "FR" } });
+
+    const { clearAllData } = await import("@/app/actions");
+    expect((await clearAllData()).ok).toBe(true);
+
+    expect(await prisma.trackedShow.count()).toBe(0);
+    expect(await prisma.watchedEpisode.count()).toBe(0);
+    expect(await prisma.settings.count()).toBe(0);
+
+    // Re-adding a show shouldn't have to re-download everything from TMDB.
+    expect(await prisma.show.count()).toBe(1);
+    expect(await prisma.episode.count()).toBe(2);
+  });
+});
+
+describe("racing writes", () => {
+  it("treats a lost add race as success, not as a failure", async () => {
+    // Two clicks land together: the second one's findUnique still sees nothing,
+    // then its create hits the unique constraint. The show is tracked either
+    // way, so surfacing "Something went wrong" would be the actual bug.
+    await seedShow({ showId: "1399", offsets: [-10], status: null });
+
+    const { prisma } = await import("@/lib/prisma");
+    const create = vi
+      .spyOn(prisma.trackedShow, "create")
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+      );
+
+    const result = await addToWatchlist("1399");
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+
+    create.mockRestore();
+  });
+
+  it("still reports failures that aren't a lost race", async () => {
+    await seedShow({ showId: "1399", offsets: [-10], status: null });
+
+    const { prisma } = await import("@/lib/prisma");
+    const create = vi
+      .spyOn(prisma.trackedShow, "create")
+      .mockRejectedValueOnce(new Error("disk is on fire"));
+
+    const result = await addToWatchlist("1399");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Something went wrong. Please try again.");
+
+    create.mockRestore();
+  });
+});

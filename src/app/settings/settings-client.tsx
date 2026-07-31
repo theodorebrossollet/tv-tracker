@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 
 import {
   clearAllData,
@@ -23,8 +23,13 @@ export function SettingsClient({
   regions,
 }: SettingsClientProps) {
   const router = useRouter();
-  const [enabled, setEnabled] = useState(notifyEnabled);
-  const [selectedCountry, setSelectedCountry] = useState(country ?? "");
+  // Derived from the props via useOptimistic, not copied into useState. Both
+  // values change server-side — clearing all data resets them, and the row is
+  // recreated with defaults — and a useState copy initialises once and then
+  // ignores every later prop, so the display could never be corrected. Same
+  // reasoning as AddButton.
+  const [enabled, setEnabled] = useOptimistic(notifyEnabled);
+  const [selectedCountry, setSelectedCountry] = useOptimistic(country ?? "");
   const [countrySaved, setCountrySaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [cleared, setCleared] = useState(false);
@@ -32,29 +37,27 @@ export function SettingsClient({
   const [savingCountry, startCountry] = useTransition();
   const [clearing, startClear] = useTransition();
 
+  // The optimistic setters must be called inside the transition — that is what
+  // scopes them. No manual rollback anywhere below: when a transition ends the
+  // optimistic value is dropped and the prop wins, so a failed save reverts
+  // itself and a successful one has already been revalidated.
   function toggleNotifications() {
     const next = !enabled;
-    setEnabled(next);
 
     startPrefs(async () => {
-      const result = await updateNotificationPrefs(next);
-      if (!result.ok) setEnabled(!next);
+      setEnabled(next);
+      await updateNotificationPrefs(next);
     });
   }
 
   function changeCountry(next: string) {
-    const previous = selectedCountry;
-    setSelectedCountry(next);
     setCountrySaved(false);
 
     startCountry(async () => {
+      setSelectedCountry(next);
       const result = await updateCountry(next);
 
-      if (result.ok) {
-        setCountrySaved(true);
-      } else {
-        setSelectedCountry(previous);
-      }
+      if (result.ok) setCountrySaved(true);
     });
   }
 
@@ -65,8 +68,6 @@ export function SettingsClient({
       if (result.ok) {
         setCleared(true);
         setConfirming(false);
-        setSelectedCountry("");
-        setEnabled(false);
         router.refresh();
       }
     });

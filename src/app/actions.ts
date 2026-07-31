@@ -14,10 +14,39 @@ import type { TrackStatus } from "@/lib/types";
 // the top of each of these. Note that server actions are reachable by direct
 // POST, so this file is effectively public while the app is deployed without
 // auth; keep the deployment private until Phase 2 lands.
+//
+// What stops a malicious page from POSTing clearAllData on your behalf is not
+// the password gate. Basic auth is replayed automatically by the browser on
+// cross-site requests, so the gate would happily let that through. It's Next's
+// own CSRF check on server actions: the request's `Origin` is compared to the
+// `Host` (or `X-Forwarded-Host`) and mismatches are rejected. That control is
+// load-bearing and invisible, so two things follow:
+//
+//   - `experimental.serverActions.allowedOrigins` is the knob that widens it.
+//     It is absent from next.config.ts today, which is the safe default —
+//     same-origin only. Adding a domain there weakens exactly this protection.
+//   - Route handlers get none of it. The cron route is safe because it checks
+//     its own bearer token; any future route handler must bring its own auth,
+//     which is also why the proxy's matcher excludes `/api/cron/` by exact
+//     path rather than by prefix.
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+}
+
+/**
+ * Prisma's "unique constraint failed". Two writers raced and the second one
+ * lost — which, for a write whose whole point is "make this row exist", means
+ * the work is done rather than failed.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 /** Turns an unexpected failure into a message safe to show the user. */
@@ -57,7 +86,9 @@ export interface SearchSuggestion {
 export async function searchSuggestions(
   query: string,
 ): Promise<{ results?: SearchSuggestion[]; error?: string }> {
-  const trimmed = query.trim();
+  // Capped rather than rejected: TMDB has nothing useful to say about a pasted
+  // wall of text, and sending it verbatim helps no one.
+  const trimmed = query.trim().slice(0, 200);
   if (!trimmed) return { results: [] };
 
   let results: TmdbSearchResult[];
@@ -121,6 +152,12 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
       data: { showId: tmdbShowId, status: "watchlist" },
     });
   } catch (error) {
+    // The check above and this create aren't atomic, so a double-click can
+    // lose the race and hit the unique constraint. The show is tracked either
+    // way, which is all the caller asked for — reporting "something went
+    // wrong" for a successful add is the actual bug.
+    if (isUniqueConstraintError(error)) return { ok: true };
+
     return toResult(error);
   }
 
@@ -356,12 +393,18 @@ export async function setSeasonWatched(
       });
 
       const seen = new Set(alreadyWatched.map((row) => row.episodeId));
+      const missing = episodeIds.filter((episodeId) => !seen.has(episodeId));
 
-      await prisma.watchedEpisode.createMany({
-        data: episodeIds
-          .filter((episodeId) => !seen.has(episodeId))
-          .map((episodeId) => ({ episodeId })),
-      });
+      // Same race as addToWatchlist: another click can mark an episode between
+      // the read above and this insert. The season ends up fully marked either
+      // way, so a lost race isn't a failure worth reporting.
+      try {
+        await prisma.watchedEpisode.createMany({
+          data: missing.map((episodeId) => ({ episodeId })),
+        });
+      } catch (error) {
+        if (!isUniqueConstraintError(error)) throw error;
+      }
 
       // Same promotion rule as marking a single episode.
       if (episodeIds.length > 0) {
@@ -438,9 +481,14 @@ export async function updateCountry(country: string): Promise<ActionResult> {
  */
 export async function clearAllData(): Promise<ActionResult> {
   try {
-    await prisma.watchedEpisode.deleteMany();
-    await prisma.trackedShow.deleteMany();
-    await prisma.settings.deleteMany();
+    // One transaction, children first: a failure partway through used to leave
+    // watch history gone but the tracked shows still listed, which reads as
+    // "everything I watched was forgotten" rather than as a failed wipe.
+    await prisma.$transaction([
+      prisma.watchedEpisode.deleteMany(),
+      prisma.trackedShow.deleteMany(),
+      prisma.settings.deleteMany(),
+    ]);
   } catch (error) {
     return toResult(error);
   }

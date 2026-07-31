@@ -41,15 +41,33 @@ export async function getTrackedShows(
 ): Promise<TrackedShowSummary[]> {
   const now = new Date();
 
+  // Selected field by field rather than `include`d: this runs on the home,
+  // watchlist and archive pages via getShowBuckets, and it reads every episode
+  // of every tracked show. Pulling whole rows meant shipping each episode's
+  // `overview` and `runtime` over Turso's network protocol to compute counts
+  // and find one episode name — the payload grew with shows × episodes for
+  // data nothing below ever reads.
   const tracked = await prisma.trackedShow.findMany({
     where: status ? { status } : undefined,
     orderBy: { addedAt: "desc" },
-    include: {
+    select: {
+      showId: true,
+      status: true,
+      addedAt: true,
       show: {
-        include: {
+        select: {
+          name: true,
+          posterPath: true,
+          status: true,
           episodes: {
             orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-            include: { watched: true },
+            select: {
+              seasonNumber: true,
+              episodeNumber: true,
+              name: true,
+              airDate: true,
+              watched: { select: { watchedAt: true } },
+            },
           },
         },
       },

@@ -20,8 +20,33 @@ import { NextResponse, type NextRequest } from "next/server";
 const REALM = 'Basic realm="TV Tracker", charset="UTF-8"';
 
 /**
- * Length-independent comparison, so a wrong password can't be narrowed down by
- * how long the check takes. Cheap enough to be worth doing properly.
+ * How long a wrong password waits before being told so.
+ *
+ * This is a mitigation, not a control, and the distinction matters: it slows a
+ * *serial* guesser and does nothing to one opening requests in parallel. The
+ * real control is rate limiting at the platform edge (Vercel's firewall),
+ * which is configuration rather than code. An in-memory counter here would be
+ * worse than nothing — the proxy runs across many short-lived instances, so
+ * the count resets constantly and would read as protection while providing
+ * none.
+ *
+ * Only wrong passwords pay it. A request with no credentials at all is the
+ * normal opening move of every browser, and delaying that would put half a
+ * second on the first load of every session.
+ */
+const WRONG_PASSWORD_DELAY_MS = 500;
+
+function pause(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Constant-time for equal-length inputs. It returns early when the lengths
+ * differ, so it leaks the password's *length* through timing and nothing else.
+ *
+ * That was a deliberate trade rather than an oversight: hiding the length of a
+ * single shared secret from a network-timing attacker is worth close to
+ * nothing, and a digest-then-compare rewrite buys only that.
  */
 function matches(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -41,7 +66,7 @@ function unauthorized() {
   });
 }
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const password = process.env.APP_PASSWORD;
 
   // No password set: fine locally, but a deployed app without one would be
@@ -73,7 +98,10 @@ export function proxy(request: NextRequest) {
   // insist on both fields still work.
   const supplied = decoded.slice(decoded.indexOf(":") + 1);
 
-  return matches(supplied, password) ? NextResponse.next() : unauthorized();
+  if (matches(supplied, password)) return NextResponse.next();
+
+  await pause(WRONG_PASSWORD_DELAY_MS);
+  return unauthorized();
 }
 
 export const config = {
@@ -82,11 +110,17 @@ export const config = {
      * Everything except:
      *  - /api/cron/*  — Vercel Cron sends its own `Authorization: Bearer
      *    $CRON_SECRET` header, which this gate would reject, stopping the
-     *    twice-daily refresh from ever running. That route authenticates
-     *    itself.
+     *    daily refresh from ever running. That route authenticates itself,
+     *    and so must anything else ever placed under /api/cron/: this
+     *    exclusion is the password gate's only hole, and nothing behind it is
+     *    covered.
+     *
+     *    The trailing slash is load-bearing. Written as `api/cron` the
+     *    lookahead matches by prefix, so a later `/api/cron-debug` would fall
+     *    outside the gate by accident rather than by decision.
      *  - /_next/static and /favicon.ico — no data in them, and keeping them
      *    open avoids a redundant challenge on every asset.
      */
-    "/((?!api/cron|_next/static|favicon.ico).*)",
+    "/((?!api/cron/|_next/static|favicon.ico).*)",
   ],
 };
