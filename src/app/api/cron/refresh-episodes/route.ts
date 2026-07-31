@@ -33,6 +33,12 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Timed because the run has a deadline: maxDuration is 60s, and the cost per
+  // show is what decides how many tracked shows fit inside it. An estimate in
+  // a design doc goes stale silently; a number in every run's log doesn't.
+  // See "Runtime headroom" in docs/technical-design.md.
+  const startedAt = Date.now();
+
   const tracked = await prisma.trackedShow.findMany({
     select: { showId: true },
   });
@@ -58,10 +64,16 @@ export async function GET(request: Request) {
     }
   }
 
+  const durationMs = Date.now() - startedAt;
+
   logger.info("cron.refresh.completed", {
     checked: tracked.length,
     refreshed: refreshed.length,
     failed: failed.length,
+    durationMs,
+    // Pre-divided: this is the figure the timeout headroom is read off, and
+    // doing the arithmetic by hand at 6am is how it stops being read at all.
+    msPerShow: tracked.length ? Math.round(durationMs / tracked.length) : null,
   });
 
   return Response.json({

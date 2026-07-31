@@ -334,6 +334,11 @@ episode TMDB didn't change is not written at all, so re-syncing a settled show
 does no episode writes. The ~1.1s/show figure above predates that change and
 has not been re-measured; the next unattended run is the number to trust.
 
+It no longer has to be worked out by hand. `cron.refresh.completed` carries
+`durationMs` and `msPerShow`, so every run reports its own cost — read the
+latest one rather than this paragraph, and update the numbers above when they
+have drifted enough to matter.
+
 Fetching a show's seasons in parallel remains available if the budget gets
 tight again — they're independent requests, and the sequential loop was chosen
 for politeness, not correctness. A timeout here fails quietly: the cron just
@@ -446,7 +451,16 @@ no accounts *and* server actions are reachable by direct POST, `clearAllData`
 included. A public URL would therefore let anyone erase the data. Running
 before routing means the gate covers action POSTs, not just pages.
 
-Two details that matter if this is ever edited:
+**The password must be generated, not chosen** (`openssl rand -hex 32`). With
+one shared secret and no lockout, entropy is the control — 64 hex characters
+put guessing out of reach whatever the request rate. The 500ms delay on a wrong
+password is secondary: it slows a serial guesser and does nothing to one
+issuing requests in parallel, and no delay rescues a memorable password. Rate
+limiting belongs at the platform edge (Vercel's firewall allows custom rules on
+every plan, three of them on Hobby) and is worth turning on, but it protects
+the rate limit and the bill more than it protects the data.
+
+Three details that matter if this is ever edited:
 
 - `/api/cron/*` is excluded from the matcher, by exact path — `api/cron/` with
   the trailing slash, so that a future `/api/cron-debug` doesn't fall outside

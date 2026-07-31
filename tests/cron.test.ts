@@ -160,6 +160,45 @@ describe("what the refresh covers", () => {
     expect(body.failed).toEqual([{ showId: "1", error: "Unexpected error" }]);
   });
 
+  it("reports what the run cost, so the headroom stays measured", async () => {
+    // docs/technical-design.md reads the timeout budget off this. An estimate
+    // in a doc goes stale silently; a number in every run's log doesn't.
+    await seedShow({ showId: "1", offsets: [-1], status: "watching" });
+    await seedShow({ showId: "2", offsets: [-1], status: "watching" });
+
+    const { logger } = await import("@/lib/logger");
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    await authorized();
+
+    const [, fields] = info.mock.calls.find(
+      ([event]) => event === "cron.refresh.completed",
+    )!;
+
+    expect(typeof fields!.durationMs).toBe("number");
+    expect(fields!.msPerShow).toBe(
+      Math.round((fields!.durationMs as number) / 2),
+    );
+
+    info.mockRestore();
+  });
+
+  it("reports no per-show cost when there was nothing to check", async () => {
+    // Rather than dividing by zero and logging Infinity.
+    const { logger } = await import("@/lib/logger");
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    await authorized();
+
+    const [, fields] = info.mock.calls.find(
+      ([event]) => event === "cron.refresh.completed",
+    )!;
+
+    expect(fields!.msPerShow).toBeNull();
+
+    info.mockRestore();
+  });
+
   it("succeeds with nothing tracked", async () => {
     const body = await (await authorized()).json();
 
