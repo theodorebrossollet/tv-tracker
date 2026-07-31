@@ -321,6 +321,16 @@ Twice daily without paying is still possible: point any external scheduler at
 the same endpoint with the `CRON_SECRET` bearer token. The route has no Vercel
 dependency.
 
+**Runtime headroom.** Measured on the first unattended run (31 Jul 2026): 28
+tracked shows took ~32s, about 1.1s each, because `getAllEpisodes` fetches
+seasons sequentially to stay inside TMDB's rate limits. The route sets
+`maxDuration = 60`, so the schedule starts timing out somewhere near 50 shows.
+
+When that gets close, fetch a show's seasons in parallel — they're independent
+requests and the sequential loop was chosen for politeness, not correctness.
+A timeout here fails quietly: the cron just stops refreshing air dates, and
+nothing in the UI says so.
+
 ```json
 {
   "crons": [
