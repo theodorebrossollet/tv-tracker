@@ -49,7 +49,8 @@ src/app/          routes; actions.ts holds every write
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger
 prisma/           schema + migrations
-scripts/          migrate + one-off backfills
+scripts/          migrate, backup, one-off backfills, icon generation
+public/sw.js      service worker: caches the app shell ONLY (see below)
 tests/            vitest
 ```
 
@@ -102,6 +103,13 @@ returns. Both halves are required. The gate goes *above* each `try` block —
 `Episode.watched` are lists, one entry per user, so a read that forgets its
 `userId` filter returns someone else's rows and still type-checks.
 `tests/isolation.test.ts` covers this; add to it when adding a query.
+
+**The service worker must never cache a page.** Every route is
+`force-dynamic` and renders per-account watch state, so a cached page is
+served to whoever asks next — including a different signed-in user.
+`public/sw.js` allow-lists `/_next/static/` and the icons and refuses anything
+that isn't a clean same-origin 200. `tests/service-worker.test.ts` runs the
+real file in a fake worker scope; extend it before widening what gets cached.
 
 **TMDB caching is in-process, not Next's.** These pages are
 `dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and
