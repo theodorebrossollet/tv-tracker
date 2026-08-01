@@ -321,11 +321,14 @@ swallowed: the user sees a generic error toast instead of a login redirect, and
 every routine expired session pollutes `action.failed`. So the gate goes above
 the `try`, uniformly, in every action.
 
-The alternative — teaching `toResult` to re-throw auth and redirect errors —
-also works, but it depends on how Next 16 implements `redirect()`'s control
-flow. Check `node_modules/next/dist/docs/` at implementation time if you take
-that route. The above-the-`try` placement doesn't depend on the answer, and is
-equally correct for a plain `throw new Error("Unauthorized")`.
+This isn't a workaround — it's what Next 16 documents. Per
+`next/dist/docs/01-app/03-api-reference/04-functions/redirect.md`: *"`redirect`
+throws an error so it should be called **outside** the `try` block when using
+`try/catch` statements"*, called out twice, specifically for Server Actions and
+Route Handlers. It throws `NEXT_REDIRECT` and, from a Server Action, serves a
+303. Teaching `toResult` to re-throw it would also work, but there's no reason
+to reach for the fragile version when the documented placement is free — and
+above-the-`try` is equally correct for a plain `throw new Error("Unauthorized")`.
 
 ### Session lifetime and cleanup
 
@@ -434,16 +437,44 @@ failure path, which is the natural place to be tempted to log the input.
 
 ## 6. PWA
 
-- Manifest: verify against `node_modules/next/dist/docs` at implementation
-  time before choosing between a static `public/manifest.json` and the App
-  Router's `app/manifest.ts` convention — Next 16 has already renamed
-  Middleware to Proxy, per `AGENTS.md`, so don't assume the metadata API
-  matches an older version's docs.
-- Icons: 192×192, 512×512, a maskable variant, plus an `apple-touch-icon` —
+Checked against this version's bundled docs
+(`next/dist/docs/01-app/02-guides/progressive-web-apps.md` and
+`.../03-api-reference/03-file-conventions/01-metadata/manifest.md`), so the
+choices below are settled rather than deferred.
+
+- **Manifest: a static `app/manifest.json`.** Next 16 wants it in the root of
+  `app/`, not `public/`. The alternative, `app/manifest.ts`, is a generated
+  Route Handler — useful when the manifest depends on request-time data, which
+  ours doesn't. Nothing here varies per request, so the static file is the
+  simpler of the two and skips the caching semantics the generated version
+  carries.
+- Icons live in `public/` and are referenced by absolute path from the
+  manifest: 192×192, 512×512, a maskable variant, plus an `apple-touch-icon` —
   iOS ignores the web manifest's icons for the home-screen icon and wants its
   own tag.
 - `display: "standalone"`, `theme_color`/`background_color` matching the
   existing Tailwind theme.
+- **Service worker: a hand-written `public/sw.js`**, registered as
+  `navigator.serviceWorker.register("/sw.js", { scope: "/" })`. The docs
+  suggest Serwist for anyone wanting real offline support, but note it
+  "currently requires webpack configuration" — and Next 16 builds with
+  Turbopack. Since §6's whole point is that this project caches the shell and
+  nothing else, taking on a webpack config to get a library we'd use a tenth of
+  is the wrong trade. The guide hand-writes `public/sw.js` too.
+- **Add a `headers()` block to `next.config.ts` for `/sw.js`** — it has none
+  today. Specifically `Cache-Control: no-cache, no-store, must-revalidate`:
+  without it, a cached service worker is how users get permanently stuck on an
+  old one, which is the failure mode that makes people hate PWAs. The guide
+  also suggests `Content-Type: application/javascript; charset=utf-8` and
+  `Content-Security-Policy: default-src 'self'; script-src 'self'` on that
+  path.
+- **Install criteria are just a valid manifest plus HTTPS.** Confirmed in the
+  guide: install prompts do not require offline support. That is what makes the
+  shell-only decision below viable rather than a compromise.
+- **Don't build a custom install button.** The guide explicitly recommends
+  against `beforeinstallprompt` — it doesn't work on Safari iOS, which is half
+  of `scope-v2.md`'s success criteria. iOS needs a short instructional message
+  ("Share → Add to Home Screen") instead.
 - Service worker scope is deliberately narrow: cache the static app shell
   (JS/CSS chunks, icons) only. **Do not** cache TMDB-backed page responses —
   those routes are `dynamic = "force-dynamic"` / `fetchCache:
@@ -460,6 +491,19 @@ failure path, which is the natural place to be tempted to log the input.
   behavior has historically diverged from spec and from Android Chrome.
 - No push notifications in v2. Not precluded later by this groundwork, but
   out of scope now (see `docs/scope-v2.md`).
+
+### Don't punch a hole in the proxy matcher to test the PWA early
+
+`proxy.ts`'s matcher is `/((?!api/cron/|_next/static|favicon.ico).*)`, so
+`/manifest.json`, `/sw.js` and the icons in `public/` all sit behind
+`APP_PASSWORD`. Anyone trying the PWA before the gate comes off will hit 401s
+on exactly those files and be tempted to add them to the exclusion list.
+
+Don't. That list is documented in `proxy.ts` as "the password gate's only
+hole", and widening it to cover the app shell during a rollout is a real
+weakening for a temporary convenience. The ordering in `scope.md` already
+solves this: the gate is removed *before* the PWA work starts. Build it in that
+order and the problem never appears.
 
 ## 7. Tests
 
@@ -515,7 +559,20 @@ verified on real devices before calling the PWA piece done.
 
 ## 9. Open Questions
 
-None. The two implementation-time calls that were previously open —
-how case-insensitive uniqueness gets built, and how `Settings` survives its
-primary-key change — are both decided above (`nicknameKey` column; nullable
-`userId` added in Phase A so Prisma's table rebuild carries the row across).
+None, and nothing is deferred to "check the docs at implementation time"
+either — Next 16.2.12's bundled docs were read while writing this pass, and
+both questions that depended on them (`redirect()`'s interaction with
+`try/catch`, and the manifest convention) are answered in §4 and §6.
+
+The two design calls previously left open are also decided: case-insensitive
+uniqueness uses a `nicknameKey` column (§2), and `Settings` survives its
+primary-key change by getting its nullable `userId` in Phase A so Prisma's
+table rebuild carries the row across (§3).
+
+What remains before building is not design work:
+
+1. **Schedule the Phase B window** and take the database copy (§3). This is the
+   only step in v2 that can lose data TMDB can't re-supply.
+2. **Real devices for the PWA** — an iPhone and an Android handset. Per
+   `scope-v2.md`'s success criteria, a desktop browser's device emulator
+   doesn't count.
