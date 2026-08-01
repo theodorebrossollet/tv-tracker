@@ -34,9 +34,10 @@ model User {
   codeHash  String   @unique   // hash of the account code, never the code itself
   /// Chosen on first login, not at account creation — null until then. Required
   /// before the account can use anything else (see "Nickname setup" below).
-  /// Displayed on a future profile page and used to find the account once
-  /// social features exist; collected now so that feature never needs a
-  /// backfill or a forced-rename migration on existing accounts.
+  /// Permanent once set — no rename support in v2 (see roadmap). Unique,
+  /// case-insensitively. Displayed on a future profile page and used to find
+  /// the account once social features exist; collected now so that feature
+  /// never needs a backfill or a forced-rename migration on existing accounts.
   nickname  String?  @unique
   createdAt DateTime @default(now())
 
@@ -105,13 +106,26 @@ route but the nickname-setup one is reachable while it's `null`), not by a
 values by default, so several not-yet-onboarded accounts can coexist without
 a temporary placeholder value or collision.
 
-Case sensitivity is an open implementation decision: a plain `@unique` on
-`nickname` is case-sensitive, so `"Theo"` and `"theo"` would currently be
-allowed to coexist. If that's not wanted, the two options are SQLite's
-`COLLATE NOCASE` on the column, or a second normalized (lowercased) column
-that carries the actual unique constraint while `nickname` keeps the
-user's chosen casing for display. Left for implementation time — see
-Open Questions.
+Uniqueness is case-insensitive by decision — `"Theo"` and `"theo"` are the
+same nickname. A plain `@unique` on `nickname` is case-*sensitive*, so this
+needs one of two implementations: SQLite's `COLLATE NOCASE` on the column
+(native, but Prisma's schema DSL has no first-class way to declare it — it
+means hand-editing the generated migration SQL after `prisma migrate dev`,
+same as any Prisma limitation this project already routes around), or a
+second normalized (lowercased) column that carries the actual unique
+constraint while `nickname` keeps the user's chosen casing for display. Pick
+whichever is less friction once actually writing the migration; both give the
+same behavior.
+
+**Format:** 3–12 characters, from `[A-Za-z0-9]` plus a fixed set of special
+characters. Exact special-character set proposed as `@ # $ % & * ! _ . -`
+(covers the examples given, excludes anything with meaning in a URL path —
+`/ ? & % <space>` etc. — since a future profile page will very likely be
+addressed as `/u/<nickname>`; note `%` and `&` above are allowed as
+*content* but must be percent-encoded wherever the nickname is interpolated
+into a URL, same as any user-supplied path segment). Confirm the exact set
+before writing `setNickname`'s validation — this is one plausible reading of
+"@, #, $...", not a locked list.
 
 ### Why a `Session` table instead of a stateless signed cookie
 
@@ -189,11 +203,15 @@ practice this means a wrapper (e.g. `requireOnboardedSession()`) that calls
 `requireSession()` and then checks `user.nickname !== null`, used by every
 action except `setNickname` and `logout`.
 
-`setNickname(nickname)`: requires a valid session, validates a reasonable
-length and character set (exact bounds are an implementation call, not fixed
-here), checks uniqueness per the case-sensitivity decision above, and sets
-`User.nickname`. Whether it can be called again later to change an existing
-nickname, or only while it's still `null`, is an open question — see below.
+`setNickname(nickname)`: requires a valid session, validates length (3–12)
+and character set per the format above, checks case-insensitive uniqueness,
+and sets `User.nickname`. **Permanent by design** — the action itself must
+reject if `user.nickname` is already non-null, not just rely on the
+onboarding gate keeping the UI from reaching it. That matters because, per
+the existing rule in `AGENTS.md`, server actions are POST-able directly: a
+missing server-side check here would let a direct POST rename an account
+that's supposed to be locked. There is no rename support in v2 — see the
+roadmap in `docs/scope-v2.md`.
 
 ### `APP_PASSWORD` during the transition
 
@@ -270,15 +288,15 @@ verified on real devices before calling the PWA piece done.
   practical security gain.
 - **Nicknames are required (blocking) and unique**, chosen on first login —
   see "Nickname setup" above.
+- **Nickname uniqueness is case-insensitive**, format is 3–12 characters from
+  `[A-Za-z0-9]` plus a proposed special-character set (see "Why `nickname` is
+  nullable despite being required" for the exact list and reasoning).
+- **Nicknames are permanent** — no edit/rename support in v2. Enforced
+  server-side in `setNickname`, not just by hiding the UI. Renaming is
+  deferred; see the roadmap in `docs/scope-v2.md`.
 
 ## 9. Open Questions (carry into exec plan)
 
-- **Nickname case sensitivity.** Plain `@unique` is case-sensitive; decide
-  between SQLite `COLLATE NOCASE` and a normalized shadow column before
-  writing the migration — see "Why `nickname` is nullable despite being
-  required" above.
-- **Nickname length/character-set bounds** — not fixed here, needs a decision
-  before `setNickname`'s validation is written.
-- **Nickname editability.** Assumed changeable later via Settings, not locked
-  to a one-time choice — confirm before deciding whether `setNickname` stays
-  callable after onboarding or becomes onboarding-only.
+None remaining from this design pass. The one implementation-time call left
+is *how* case-insensitive uniqueness gets built (`COLLATE NOCASE` vs. a
+normalized shadow column) — not *whether*, which is decided.
