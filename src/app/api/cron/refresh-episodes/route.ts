@@ -1,3 +1,4 @@
+import { deleteExpiredSessions } from "@/lib/auth";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
@@ -70,12 +71,20 @@ export async function GET(request: Request) {
     }
   }
 
+  // Piggy-backing on the daily run rather than adding a second schedule:
+  // nothing else deletes expired sessions, so without this they accumulate for
+  // the lifetime of the database. Done after the refresh so a TMDB outage
+  // can't stop it, and outside the loop's error handling because it shares
+  // nothing with it.
+  const expiredSessions = await deleteExpiredSessions();
+
   const durationMs = Date.now() - startedAt;
 
   logger.info("cron.refresh.completed", {
     checked: tracked.length,
     refreshed: refreshed.length,
     failed: failed.length,
+    expiredSessions,
     durationMs,
     // Pre-divided: this is the figure the timeout headroom is read off, and
     // doing the arithmetic by hand at 6am is how it stops being read at all.

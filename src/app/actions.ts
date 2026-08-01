@@ -2,7 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  createSession,
+  destroySession,
+  hashCode,
+  requireSession,
+} from "@/lib/auth";
 import { describeError, logger } from "@/lib/logger";
+import { validateNickname } from "@/lib/nickname";
 import { prisma } from "@/lib/prisma";
 import { isTmdbShowId } from "@/lib/show-id";
 import { syncShowFromTmdb } from "@/lib/shows";
@@ -65,6 +72,117 @@ function revalidateShowViews(showId?: string) {
   revalidatePath("/watchlist");
   revalidatePath("/archive");
   if (showId) revalidatePath(`/show/${showId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Accounts
+//
+// These three are the only actions that may run without a completed account.
+// Everything below them gets `requireOnboardedSession()` in the next stage,
+// once queries are scoped by user — adding the gate before the data is
+// partitioned would lock the app without making anything private.
+//
+// Note where the session check sits in `setNickname`: above the `try`, not
+// inside it. `requireSession` redirects by throwing, and `toResult` would
+// swallow that into a generic error toast.
+// ---------------------------------------------------------------------------
+
+export interface LoginResult extends ActionResult {
+  /** Where the client should navigate on success. */
+  next?: string;
+}
+
+/**
+ * Exchanges an account code for a session.
+ *
+ * Returns the destination rather than redirecting, so the redirect happens on
+ * the client after the cookie is set — a `redirect()` here would have to live
+ * outside the try block that catches database failures, which is more
+ * ceremony than a one-line navigation on the caller's side.
+ */
+export async function login(code: string): Promise<LoginResult> {
+  const trimmed = code.trim();
+
+  if (!trimmed) return { ok: false, error: "Enter your account code." };
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { codeHash: hashCode(trimmed) },
+      select: { id: true, nickname: true },
+    });
+
+    // Deliberately the same message whether the code is malformed or simply
+    // wrong. There is nothing useful to distinguish, and no account enumeration
+    // to enable.
+    if (!user) return { ok: false, error: "That code isn't recognised." };
+
+    await createSession(user.id);
+
+    // The code itself is never logged — see the note in lib/logger.ts about
+    // TMDB URLs, which applies with more force to a credential that cannot be
+    // rotated by its owner.
+    logger.info("auth.login", { userId: user.id });
+
+    return { ok: true, next: user.nickname === null ? "/welcome" : "/" };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Revokes the current session. Succeeds even when there isn't one. */
+export async function logout(): Promise<ActionResult> {
+  try {
+    await destroySession();
+  } catch (error) {
+    return toResult(error);
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Claims a nickname, once, for the account that's logged in.
+ *
+ * Permanent by design, and enforced here rather than by hiding the UI: server
+ * actions are POST-able directly, so a missing check would let a direct POST
+ * rename an account that is supposed to be locked.
+ */
+export async function setNickname(raw: string): Promise<ActionResult> {
+  // Above the try. See the note at the top of this section.
+  const session = await requireSession();
+
+  const checked = validateNickname(raw);
+  if (!checked.ok) return { ok: false, error: checked.error };
+
+  try {
+    // `updateMany` with `nickname: null` in the filter makes "only if unset" a
+    // property of the write itself. Reading the current value and then updating
+    // would leave a window where two concurrent posts both see null.
+    const { count } = await prisma.user.updateMany({
+      where: { id: session.user.id, nickname: null },
+      data: { nickname: checked.nickname, nicknameKey: checked.key },
+    });
+
+    if (count === 0) {
+      return {
+        ok: false,
+        error: "Your nickname is already set and can't be changed.",
+      };
+    }
+
+    logger.info("auth.nickname_set", { userId: session.user.id });
+  } catch (error) {
+    // The unique index on `nicknameKey` is what actually decides this, rather
+    // than a lookup beforehand — two people claiming the same name at once
+    // would both pass a check-then-write.
+    if (isUniqueConstraintError(error)) {
+      return { ok: false, error: "That nickname is taken." };
+    }
+
+    return toResult(error);
+  }
+
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
