@@ -503,5 +503,5 @@ point a drain at the same stream rather than changing call sites.
 
 ## 15. Open Technical Questions (carry into exec plan)
 
-- Phase 2 login method: Google OAuth vs. anonymous account-code — still undecided, needs a decision before Phase 2 build starts
+- ~~Phase 2 login method: Google OAuth vs. anonymous account-code~~ — decided for v2: anonymous account-code. See `docs/technical-design-v2.md`.
 - Exact cron time (currently 6am/6pm — adjust if a different schedule fits your viewing habits better)

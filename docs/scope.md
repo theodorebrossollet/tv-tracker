@@ -41,7 +41,13 @@ You can search for and track a show, mark episodes watched, and see an accurate 
 - ~~Data resets on redeploy are accepted for v1 (SQLite on Vercel doesn't persist across deploys)~~ — no longer applies: v1 uses Turso, so data persists. See technical design doc, section 10.
 
 ## Phase 2 (after MVP works)
-- **Account system** — multi-user support, so friends/family can each have their own private tracking data. **Open question, not yet decided:** Google OAuth login vs. anonymous account-code login (Mullvad-style) — evaluate trade-offs (convenience vs. privacy/no-recovery) before building
+
+**v2 scope is decided and narrower than the list below: accounts (anonymous
+account-code login) and a PWA, and nothing else.** See `docs/scope-v2.md` and
+`docs/technical-design-v2.md`. Everything else in this section is deferred
+past v2 — kept here as the original brainstorm, not as a build plan.
+
+- **Account system** — multi-user support, so friends/family can each have their own private tracking data. ~~Open question, not yet decided: Google OAuth login vs. anonymous account-code login~~ **Decided for v2: anonymous account-code login** (Mullvad-style) — prioritizes staying data-minimal over self-serve recovery, since this is a closed group of friends/family, not public signup. See `docs/scope-v2.md`.
 - ~~**Persistent database** — move from local SQLite file to a hosted SQLite-compatible service (e.g., Turso), so data survives redeploys~~ **Done in v1** — had to be pulled forward, since a local SQLite file isn't writable on Vercel at all. See the technical design doc, section 10.
 - Movies (search, tracking, watchlist)
 - Ratings — 1–5 rating per show/movie
@@ -94,10 +100,10 @@ without doing that would leave the app less protected than it is today.
 
 ## Explicitly Out of Scope (for now)
 - Public sign-ups / arbitrary strangers using it
-- Native mobile app
+- ~~Native mobile app~~ — v2 adds a PWA instead (installable, no app store); a true native app remains out of scope, see `docs/scope-v2.md`
 - Social features beyond friends/family (comments, follows, etc.)
 - Payment/subscription anything
-- Any login/multi-user support in v1 (deferred to Phase 2 entirely)
+- Any login/multi-user support in v1 (deferred to v2, see `docs/scope-v2.md`)
 
 ## Security & Privacy Best Practices
 **Secrets**
@@ -118,7 +124,7 @@ without doing that would leave the app less protected than it is today.
 ## Assumptions & Open Risks
 - TMDB's free API tier is assumed sufficient — not yet verified against their rate limits
 - "Upcoming episodes" accuracy depends entirely on TMDB's data being correct/up to date — no fallback if it's wrong or delayed
-- Phase 2 login method (Google vs. anonymous) is still undecided — needs a decision before Phase 2 build starts
+- ~~Phase 2 login method (Google vs. anonymous) is still undecided~~ — decided for v2: anonymous account-code. See `docs/scope-v2.md`.
 
 ## Next Steps
 1. Get a free TMDB API key (themoviedb.org → API settings)

@@ -11,7 +11,10 @@ App Router, Prisma 7 over SQLite (local file in dev, Turso in production), TMDB
 for show data, deployed on Vercel.
 
 Read `docs/technical-design.md` for the reasoning behind anything below, and
-`docs/scope.md` for what's in v1 versus what Phase 2 owns.
+`docs/scope.md` for what's in v1 versus what's deferred. v2 (accounts + a PWA,
+nothing else) is scoped separately in `docs/scope-v2.md` and
+`docs/technical-design-v2.md` — read those before touching auth, per-user data,
+or the manifest/service worker.
 
 ## Commands
 
