@@ -258,6 +258,27 @@ describe("loginWithCode", () => {
     await expect(loginWithCode("   ")).resolves.toMatchObject({ ok: false });
   });
 
+  it("ends only the session it was called with, not the account's others", async () => {
+    // The point of a stored session table: one device can be cut off without
+    // disturbing the rest. A logout that cleared every row would make "sign out
+    // from a device that isn't mine" mean "sign out everywhere".
+    const user = await makeOnboardedUser();
+    await prisma.session.create({
+      data: {
+        id: "other-device",
+        userId: user.id,
+        expiresAt: new Date(Date.now() + DAY_MS),
+      },
+    });
+
+    await createSession(user.id);
+    expect(await redirectedTo(logout)).toBe("/login");
+
+    await expect(
+      prisma.session.findMany({ select: { id: true } }),
+    ).resolves.toEqual([{ id: "other-device" }]);
+  });
+
   it("clears the session on logout", async () => {
     await makeUser(null, "correct-horse");
     await redirectedTo(() => loginWithCode("correct-horse"));
