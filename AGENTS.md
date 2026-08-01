@@ -25,7 +25,13 @@ npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally
 npm run db:deploy  # apply migrations to whatever DATABASE_URL points at
+npm run db:backup  # dump DATABASE_URL to a restorable .sql file
 ```
+
+Run `db:backup` before any migration that rewrites a table holding real data.
+`db:deploy` applies migration files non-transactionally, so a file that fails
+halfway leaves a state it cannot repair — and watch history, unlike the
+Show/Episode cache, exists nowhere else to re-fetch from.
 
 `lint`, `test` and `build` also run on every pull request
 (`.github/workflows/ci.yml`). Vercel's preview deploy is a separate check and
