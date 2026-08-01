@@ -32,7 +32,13 @@ SQLite via Prisma (Turso in production) — User/Session tables added
 model User {
   id        String   @id @default(cuid())
   codeHash  String   @unique   // hash of the account code, never the code itself
-  name      String?            // optional label for telling accounts apart in logs/admin use — not used at login
+  /// Chosen on first login, not at account creation — null until then. Required
+  /// before the account can use anything else (see "Nickname setup" below).
+  /// Permanent once set — no rename support in v2 (see roadmap). Unique,
+  /// case-insensitively. Displayed on a future profile page and used to find
+  /// the account once social features exist; collected now so that feature
+  /// never needs a backfill or a forced-rename migration on existing accounts.
+  nickname  String?  @unique
   createdAt DateTime @default(now())
 
   trackedShows    TrackedShow[]
@@ -90,6 +96,37 @@ model Settings {
 tracking the same show should not fetch or store it twice; only the
 *relationship* to a show (tracked/watched/settings) is per-user.
 
+### Why `nickname` is nullable despite being required
+
+It has to start `null` — a code exists before its owner has chosen a nickname,
+and the admin-bootstrap script (see migration path below) creates a `User`
+row with no nickname at all. "Required" is enforced by the application (no
+route but the nickname-setup one is reachable while it's `null`), not by a
+`NOT NULL` column. SQLite's unique index treats multiple `NULL`s as distinct
+values by default, so several not-yet-onboarded accounts can coexist without
+a temporary placeholder value or collision.
+
+Uniqueness is case-insensitive by decision — `"Theo"` and `"theo"` are the
+same nickname. A plain `@unique` on `nickname` is case-*sensitive*, so this
+needs one of two implementations: SQLite's `COLLATE NOCASE` on the column
+(native, but Prisma's schema DSL has no first-class way to declare it — it
+means hand-editing the generated migration SQL after `prisma migrate dev`,
+same as any Prisma limitation this project already routes around), or a
+second normalized (lowercased) column that carries the actual unique
+constraint while `nickname` keeps the user's chosen casing for display. Pick
+whichever is less friction once actually writing the migration; both give the
+same behavior.
+
+**Format:** 3–12 characters, from `[A-Za-z0-9]` plus a fixed set of special
+characters. Exact special-character set proposed as `@ # $ % & * ! _ . -`
+(covers the examples given, excludes anything with meaning in a URL path —
+`/ ? & % <space>` etc. — since a future profile page will very likely be
+addressed as `/u/<nickname>`; note `%` and `&` above are allowed as
+*content* but must be percent-encoded wherever the nickname is interpolated
+into a URL, same as any user-supplied path segment). Confirm the exact set
+before writing `setNickname`'s validation — this is one plausible reading of
+"@, #, $...", not a locked list.
+
 ### Why a `Session` table instead of a stateless signed cookie
 
 A stateless cookie (sign `userId` into a JWT/iron-session payload) needs no
@@ -116,9 +153,11 @@ rows that already exist.
    initially nullable/unconstrained so existing rows don't break).
 2. One-off script (`scripts/create-admin-user.mjs`, following the pattern of
    `scripts/backfill-air-dates.mjs`): creates a single `User` row for the
-   existing account, generates its code, and **prints it once to the
-   terminal** — never logged via `logger.ts`, per the existing rule that
-   nothing which might carry a secret gets logged.
+   existing account (`nickname` left `null`) and generates its code, and
+   **prints it once to the terminal** — never logged via `logger.ts`, per the
+   existing rule that nothing which might carry a secret gets logged. The
+   admin picks a nickname the same way everyone else does: through the
+   first-login flow in the UI, not the script.
 3. Backfill script: sets `userId` on every existing `TrackedShow` and
    `WatchedEpisode` row, and on the single existing `Settings` row, to point at
    that new user.
@@ -152,6 +191,28 @@ it to Turso by hand."
   `scripts/create-user.mjs` (same shape as the admin-user script above)
   against production `DATABASE_URL`, which prints a new code once.
 
+### Nickname setup (first login)
+
+A valid session with `nickname === null` can reach exactly one place: a
+`/welcome`-style page and its backing `setNickname(nickname)` action.
+Everything else — every other page and every other server action — redirects
+or rejects until the nickname is set. This is a second gate layered on top of
+`requireSession()`, not a replacement for it: session validity and
+"onboarding complete" are different checks, and both need to pass. In
+practice this means a wrapper (e.g. `requireOnboardedSession()`) that calls
+`requireSession()` and then checks `user.nickname !== null`, used by every
+action except `setNickname` and `logout`.
+
+`setNickname(nickname)`: requires a valid session, validates length (3–12)
+and character set per the format above, checks case-insensitive uniqueness,
+and sets `User.nickname`. **Permanent by design** — the action itself must
+reject if `user.nickname` is already non-null, not just rely on the
+onboarding gate keeping the UI from reaching it. That matters because, per
+the existing rule in `AGENTS.md`, server actions are POST-able directly: a
+missing server-side check here would let a direct POST rename an account
+that's supposed to be locked. There is no rename support in v2 — see the
+roadmap in `docs/scope-v2.md`.
+
 ### `APP_PASSWORD` during the transition
 
 Left in place, per `scope.md`'s existing "Last step of Phase 2" checklist,
@@ -163,11 +224,13 @@ until every route and action is session-checked and verified in production.
 
 - `src/lib/queries.ts` — every function (`getShowBuckets` and everything it
   composes) takes/threads a `userId`.
-- `src/app/actions.ts` — every action calls `requireSession()` first and
-  scopes its Prisma calls by the resulting `userId`. This is the highest-risk
-  part of the migration: a forgotten `userId` filter on a read leaks another
-  user's data, and on a write corrupts it. Worth a dedicated review pass
-  action-by-action rather than trusting a find-and-replace.
+- `src/app/actions.ts` — every action calls `requireOnboardedSession()` (or
+  `requireSession()`, for the two actions exempt from the nickname gate) first
+  and scopes its Prisma calls by the resulting `userId`. This is the
+  highest-risk part of the migration: a forgotten `userId` filter on a read
+  leaks another user's data, and on a write corrupts it. Worth a dedicated
+  review pass action-by-action rather than trusting a find-and-replace.
+- `setNickname(nickname)` — new action, see "Nickname setup" above.
 - `clearAllData()` — scopes to the calling user's `TrackedShow` /
   `WatchedEpisode` / `Settings` rows only. Never touches `Show`/`Episode`,
   same as v1, but now the `userId` filter is the only thing preventing it from
@@ -214,14 +277,26 @@ SQLite file from real migrations:
 Manual, not automated: install-to-homescreen on iOS Safari and Android Chrome,
 verified on real devices before calling the PWA piece done.
 
-## 8. Open Questions (carry into exec plan)
+## 8. Decisions Made
 
-- **Session lifetime.** No default has been chosen yet — balance "don't make
-  people re-enter a long code often" against "a stolen device stays logged in
-  forever." A sliding expiration (extend on activity, e.g. 90 days idle
-  timeout) is a reasonable default to propose, not a locked decision.
-- **Code format/length.** Proposing `openssl rand -hex 16` (32 hex chars),
-  matching `APP_PASSWORD`'s existing generation method — confirm before
-  building the generation script.
-- Whether `User.name` is worth adding now (useful for telling accounts apart
-  in logs) or can wait until it's actually needed.
+- **Session lifetime: sliding 90-day idle expiration** — extends on activity,
+  expires after 90 days of inactivity.
+- **Code format: `openssl rand -hex 16`** (32 hex chars / 128 bits of
+  entropy). Deliberately shorter than `APP_PASSWORD`'s 64 chars: 128 bits is
+  already far beyond brute-force feasibility at any request rate, so matching
+  256 bits would cost usability (a longer string to copy/paste) for no
+  practical security gain.
+- **Nicknames are required (blocking) and unique**, chosen on first login —
+  see "Nickname setup" above.
+- **Nickname uniqueness is case-insensitive**, format is 3–12 characters from
+  `[A-Za-z0-9]` plus a proposed special-character set (see "Why `nickname` is
+  nullable despite being required" for the exact list and reasoning).
+- **Nicknames are permanent** — no edit/rename support in v2. Enforced
+  server-side in `setNickname`, not just by hiding the UI. Renaming is
+  deferred; see the roadmap in `docs/scope-v2.md`.
+
+## 9. Open Questions (carry into exec plan)
+
+None remaining from this design pass. The one implementation-time call left
+is *how* case-insensitive uniqueness gets built (`COLLATE NOCASE` vs. a
+normalized shadow column) — not *whether*, which is decided.
