@@ -121,6 +121,11 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
   // Watched ones are kept regardless: a row the user marked is a record of
   // something they did, and silently deleting it would rewrite their history
   // to fix a count. A stale episode is the smaller wrong.
+  //
+  // "Watched" here means *by anybody*, not by a particular user — `none: {}`
+  // rather than a userId filter. This runs from the cron with no session, and
+  // deleting the episode would cascade away every user's watch row for it, so
+  // one person's history is enough to keep it.
   const removedIds = existing
     .filter((row) => !fetchedIds.has(row.id))
     .map((row) => row.id);
@@ -129,7 +134,7 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     let deleted = 0;
     for (const batch of chunk(removedIds, WRITE_BATCH_SIZE)) {
       const { count } = await prisma.episode.deleteMany({
-        where: { id: { in: batch }, watched: { is: null } },
+        where: { id: { in: batch }, watched: { none: {} } },
       });
       deleted += count;
     }
@@ -237,11 +242,11 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
   }
 }
 
-/** Reads the single settings row, creating it on first access. */
-export async function getSettings() {
+/** Reads a user's settings row, creating it on first access. */
+export async function getSettings(userId: string) {
   return prisma.settings.upsert({
-    where: { id: 1 },
-    create: { id: 1 },
+    where: { userId },
+    create: { userId },
     update: {},
   });
 }

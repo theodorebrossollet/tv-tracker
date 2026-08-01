@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { ShowList } from "@/components/show-list";
+import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export const metadata = { title: "Archive · TV Tracker" };
  * existed only because finished shows had nowhere else to live.
  */
 export default async function ArchivePage() {
-  const { finished, stopped } = await getShowBuckets();
+  const { user } = await requireOnboardedSession();
+  const { finished, stopped } = await getShowBuckets(user.id);
 
   if (finished.length === 0 && stopped.length === 0) {
     return (

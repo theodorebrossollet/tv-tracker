@@ -1,6 +1,7 @@
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { ShowList } from "@/components/show-list";
+import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ export const metadata = { title: "Watchlist · TV Tracker" };
  * you mean to get to it. Shows given up on go to the Archive instead.
  */
 export default async function WatchlistPage() {
-  const { watchlist, paused } = await getShowBuckets();
+  const { user } = await requireOnboardedSession();
+  const { watchlist, paused } = await getShowBuckets(user.id);
 
   return (
     <div className="space-y-10">

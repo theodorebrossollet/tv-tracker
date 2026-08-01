@@ -2,6 +2,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { ShowGrid } from "@/components/show-grid";
 import { UpcomingList } from "@/components/upcoming-list";
+import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 
 // Everything on this page comes from the database and changes as soon as you
@@ -10,10 +11,12 @@ export const dynamic = "force-dynamic";
 
 
 export default async function DashboardPage() {
+  const { user } = await requireOnboardedSession();
+
   const [{ watching }, upcoming] = await Promise.all([
-    getShowBuckets(),
+    getShowBuckets(user.id),
     // Fetch well past the first page so "Load more" needs no round trip.
-    getUpcomingEpisodes(90),
+    getUpcomingEpisodes(user.id, 90),
   ]);
 
   return (
