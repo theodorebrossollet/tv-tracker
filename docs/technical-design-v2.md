@@ -267,6 +267,12 @@ deployed* v1 build, and a part that is not. That split is the whole plan.
    still serving and nothing is half-migrated. Write B's revert migration
    before starting it.
 
+   **Take a copy of the production database before Phase B**, and keep it until
+   the deployment is verified. A revert migration undoes a schema change; it
+   does not undo a table rebuild that dropped rows, and Phase B rebuilds three
+   tables including the one holding every watch record. This is the only step
+   in v2 that can lose data that TMDB cannot re-supply.
+
 5. **Verify in production**, then work the `APP_PASSWORD` removal checklist in
    `scope.md`, then the PWA.
 
@@ -383,6 +389,12 @@ until every route and action is session-checked and verified in production.
   `WatchedEpisode` / `Settings` rows only. Never touches `Show`/`Episode`,
   same as v1, but now the `userId` filter is the only thing preventing it from
   wiping everyone's data instead of just the caller's.
+- `removeShow()` is the same hazard in miniature: its
+  `deleteMany({ where: { showId } })` currently means "the one tracked row for
+  this show" and post-v2 means "every user's tracked row for this show". Two
+  actions in this file call `deleteMany` with a filter that used to be
+  incidentally unique — grep for every `deleteMany` before calling the review
+  pass done.
 
 ### The one that will silently leak: `getUpcomingEpisodes`
 
