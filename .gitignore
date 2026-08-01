@@ -49,3 +49,6 @@ next-env.d.ts
 
 # vitest scratch database
 /tests/.tmp
+
+# database dumps from scripts/backup-db.mjs — real data, never commit
+backup-*.sql

@@ -10,6 +10,7 @@
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "node scripts/migrate.mjs",
+    "db:backup": "node scripts/backup-db.mjs",
     "postinstall": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest"
