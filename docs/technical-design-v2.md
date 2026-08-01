@@ -210,12 +210,24 @@ rows that already exist.
 The steps split into a part that is safe to run against the *currently
 deployed* v1 build, and a part that is not. That split is the whole plan.
 
-### Phase A — additive, safe while v1 keeps serving
+### Phase A — schema-compatible with the running v1 build
 
 1. **Migration A.** Add `User` and `Session`. Add a **nullable** `userId` to
    `TrackedShow`, `WatchedEpisode`, *and* `Settings`. Leave every existing
    unique constraint alone. The running v1 build doesn't know these columns
-   exist and is unaffected.
+   exist and keeps working against them.
+
+   **Take the backup before this phase too, not just before Phase B.** This
+   section previously called Phase A "additive, safe" and put the backup
+   entirely in Phase B. The generated SQL says otherwise: SQLite cannot
+   `ALTER TABLE ADD COLUMN` when the column carries a foreign key, so Prisma
+   rebuilds `TrackedShow`, `WatchedEpisode` and `Settings` — create new table,
+   copy rows, `DROP TABLE`, rename. Three tables holding real data get dropped
+   and recreated, and `migrate.mjs` applies the file non-transactionally. The
+   *schema* claim was right; the "no data at risk" one was not, and they are
+   different claims.
+
+   Run `npm run db:backup` before both phases. It is one command.
 
    Adding the nullable `userId` to `Settings` in this phase is what makes
    `Settings` migrate cleanly later. Its primary key changes from
