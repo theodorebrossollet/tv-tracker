@@ -32,7 +32,12 @@ SQLite via Prisma (Turso in production) — User/Session tables added
 ```prisma
 model User {
   id        String   @id @default(cuid())
-  codeHash  String   @unique   // SHA-256 of the account code, never the code itself
+  /// SHA-256 of the account code. The code is an *invite* and the recovery
+  /// route, not the everyday credential — see §4.
+  codeHash  String   @unique
+  /// scrypt, salted, parameters stored in the record. Hashed completely
+  /// differently from codeHash, on purpose — see §4. Null until first login.
+  passwordHash String?
   /// Chosen on first login, not at account creation — null until then. Required
   /// before the account can use anything else (see "Nickname setup" below).
   /// Permanent once set — no rename support in v2 (see roadmap). Unique,
@@ -290,9 +295,35 @@ deployed* v1 build, and a part that is not. That split is the whole plan.
 
 ## 4. Auth Flow
 
-- `/login` — single code input, no username field. Posts to a `login(code)`
-  server action.
-- `login(code)`: SHA-256 the submitted code, look up `User` by `codeHash`
+**Revised during implementation.** The original design made the account code
+*the* credential, entered on every login. Pasting 32 hex characters on a phone
+every time was too much friction — and worse once installed to a home screen —
+so the code became an invite and users now choose a password. The code stays
+valid as the recovery route, which the original design had none of.
+
+Two credentials, hashed two different ways, and that asymmetry is the point:
+a 128-bit generated code justifies a fast indexed SHA-256 lookup, and a
+user-chosen password does not.
+
+- `/login` — asks which you have: an existing account, or a code. Sub-routes
+  `/login/password` (nickname + password) and `/login/code`.
+- Secrets render masked with a reveal toggle. Masking alone is wrong for a
+  32-character pasted code — a row of dots gives no way to tell a truncated
+  paste from a good one.
+- `loginWithPassword(nickname, password)`: look up by `nicknameKey`, verify
+  with scrypt. One message for every failure, and a scrypt-shaped delay even
+  when the nickname is unknown, so the response time doesn't say which half was
+  wrong.
+- `completeOnboarding(nickname, password)`: writes both in a single update
+  filtered on `nickname: <current>, passwordHash: null`. That filter is
+  load-bearing — without it the action re-hashes the password of an already
+  finished account, which is a password change that never had to know the
+  current one, on an endpoint that is POST-able directly.
+- Password rules: 8 characters minimum, 128 maximum, no composition rules
+  (they push people towards predictable substitutions; length is the control
+  that matters). scrypt at N=2^15, salted, parameters stored in the record so
+  they can be raised later without invalidating existing passwords.
+- `loginWithCode(code)`: SHA-256 the submitted code, look up `User` by `codeHash`
   (indexed, single lookup — this is why a deterministic hash was chosen over
   a per-row-comparison scheme like bcrypt: codes are high-entropy
   server-generated tokens, not low-entropy user passwords, so the usual
@@ -304,7 +335,7 @@ deployed* v1 build, and a part that is not. That split is the whole plan.
   than `Strict`: `Strict` would drop the cookie on any inbound link from
   another app, which for something launched from a phone home screen and
   shared by link is a logout that looks like a bug.
-- `logout()`: delete the `Session` row, clear the cookie.
+- `logout()`: delete the `Session` row, clear the cookie, redirect to `/login`.
 - `requireSession()`: a helper called at the **top of every server action**
   (per the existing rule in `AGENTS.md` and the removal checklist in
   `scope.md`) — reads the cookie, hashes the token, loads the `Session` +
@@ -316,10 +347,17 @@ deployed* v1 build, and a part that is not. That split is the whole plan.
   `scripts/create-user.mjs` (same shape as the admin-user script above)
   against production `DATABASE_URL`, which prints a new code once.
 
-**No rate limiting on `login()`, deliberately.** At 128 bits of entropy (§8)
-brute force is infeasible at any request rate, so the `WRONG_PASSWORD_DELAY_MS`
-mitigation in `proxy.ts` has no analogue worth building here. Written down
-because that precedent exists in the codebase and invites mirroring.
+**No rate limiting on `loginWithCode`, deliberately.** At 128 bits of entropy
+(§8) brute force is infeasible at any request rate, so the
+`WRONG_PASSWORD_DELAY_MS` mitigation in `proxy.ts` has no analogue worth
+building there.
+
+**`loginWithPassword` is a different question, and currently unanswered.**
+User-chosen passwords are guessable in a way codes are not, and nothing here
+throttles attempts. scrypt caps the rate at roughly ten guesses a second per
+request in flight, which for a closed group behind `APP_PASSWORD` is thin but
+not nothing. Worth revisiting when the shared gate comes off in stage 5 —
+that is the moment the login form becomes reachable by anyone.
 
 ### Call the session gate *outside* each action's `try` block
 

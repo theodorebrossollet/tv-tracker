@@ -31,7 +31,16 @@ model User {
   /// login is one indexed lookup rather than a scan comparing every row —
   /// defensible because codes are 128-bit server-generated tokens, not
   /// low-entropy user-chosen passwords.
+  ///
+  /// The code is an invite, not the day-to-day credential: it gets you through
+  /// first login, and remains valid afterwards as the only way back in if the
+  /// password is forgotten. There is no other recovery route.
   codeHash String @unique
+
+  /// scrypt, salted, with its parameters stored alongside — see lib/password.ts
+  /// for why this is hashed completely differently from `codeHash`. Null until
+  /// first login, like `nickname`; an account is only usable once both are set.
+  passwordHash String?
 
   /// Chosen on first login, not at account creation, so it starts null. The
   /// application enforces "required" by letting a session with no nickname
