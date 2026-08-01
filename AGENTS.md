@@ -6,9 +6,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # TV Tracker — orientation
 
-A personal TV tracker replacing TV Time. Single user, no accounts. Next.js 16
-App Router, Prisma 7 over SQLite (local file in dev, Turso in production), TMDB
-for show data, deployed on Vercel.
+A personal TV tracker replacing TV Time. Invite-only accounts — a handful of
+friends and family, no public sign-up. Next.js 16 App Router, Prisma 7 over
+SQLite (local file in dev, Turso in production), TMDB for show data, deployed
+on Vercel.
 
 Read `docs/technical-design.md` for the reasoning behind anything below, and
 `docs/scope.md` for what's in v1 versus what's deferred. v2 (accounts + a PWA,
@@ -46,8 +47,7 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 ```
 src/app/          routes; actions.ts holds every write
 src/components/   UI; search is an overlay here, NOT a route
-src/lib/          prisma, tmdb (server-only), queries, shows, format, logger
-src/proxy.ts      password gate (Next 16 renamed Middleware → Proxy)
+src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger
 prisma/           schema + migrations
 scripts/          migrate + one-off backfills
 tests/            vitest
@@ -92,10 +92,16 @@ deploy` cannot talk to Turso at all (it rejects `libsql://`), which is why
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date
 formatting (`lib/format.ts`) live apart from `lib/tmdb.ts`.
 
-**Server actions are POST-able directly.** There is no auth in v1 — only the
-shared password in `src/proxy.ts`, which covers action POSTs because it runs
-before routing. When Phase 2 adds accounts, the session check belongs at the top
-of *each action*, not only in page components.
+**Server actions are POST-able directly, and nothing sits in front of them.**
+The shared `APP_PASSWORD` gate is gone; every action opens with
+`requireOnboardedSession()` and scopes its Prisma calls by the userId it
+returns. Both halves are required. The gate goes *above* each `try` block —
+`redirect` throws, and `toResult` would swallow it into a generic error.
+
+**Per-user data is scoped by hand, not by the schema.** `Show.tracked` and
+`Episode.watched` are lists, one entry per user, so a read that forgets its
+`userId` filter returns someone else's rows and still type-checks.
+`tests/isolation.test.ts` covers this; add to it when adding a query.
 
 **TMDB caching is in-process, not Next's.** These pages are
 `dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and

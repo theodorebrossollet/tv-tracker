@@ -1,5 +1,6 @@
 import { SettingsClient } from "./settings-client";
 import { describeError, logger } from "@/lib/logger";
+import { SignOutButton } from "@/components/sign-out-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getSettings } from "@/lib/shows";
 import { getWatchRegions, TmdbError } from "@/lib/tmdb";
@@ -32,6 +33,19 @@ export default async function SettingsPage() {
         country={settings.country}
         regions={regions}
       />
+
+      <section className="mt-8">
+        <h2 className="font-medium">Account</h2>
+        <p className="mt-1 text-sm text-muted">
+          Signed in as{" "}
+          <span className="font-medium text-foreground">
+            {user.nickname}
+          </span>
+          . Signing out ends this session only — other devices stay signed in.
+        </p>
+
+        <SignOutButton />
+      </section>
     </div>
   );
 }

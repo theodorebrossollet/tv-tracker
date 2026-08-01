@@ -10,6 +10,11 @@ import {
   requireOnboardedSession,
   requireSession,
 } from "@/lib/auth";
+import {
+  describeWait,
+  isLockedOut,
+  lockoutMs,
+} from "@/lib/login-throttle";
 import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
 import { validatePassword } from "@/lib/password-rules";
 import { describeError, logger } from "@/lib/logger";
@@ -30,19 +35,18 @@ import type { TrackStatus } from "@/lib/types";
 // and `toResult` would swallow it into a generic error toast.
 //
 // What stops a malicious page from POSTing clearAllData on your behalf is not
-// the password gate. Basic auth is replayed automatically by the browser on
-// cross-site requests, so the gate would happily let that through. It's Next's
-// own CSRF check on server actions: the request's `Origin` is compared to the
-// `Host` (or `X-Forwarded-Host`) and mismatches are rejected. That control is
-// load-bearing and invisible, so two things follow:
+// the session cookie — it is SameSite=Lax plus Next's own CSRF check on server
+// actions, which compares the request's `Origin` to the `Host` (or
+// `X-Forwarded-Host`) and rejects mismatches. That control is load-bearing and
+// invisible, so two things follow:
 //
 //   - `experimental.serverActions.allowedOrigins` is the knob that widens it.
 //     It is absent from next.config.ts today, which is the safe default —
 //     same-origin only. Adding a domain there weakens exactly this protection.
-//   - Route handlers get none of it. The cron route is safe because it checks
-//     its own bearer token; any future route handler must bring its own auth,
-//     which is also why the proxy's matcher excludes `/api/cron/` by exact
-//     path rather than by prefix.
+//   - Route handlers get none of it, and none of the session gate either. The
+//     cron route is safe because it checks its own bearer token; any future
+//     route handler must bring its own auth. There is no longer a shared
+//     password sitting in front of everything to catch what a route forgets.
 
 export interface ActionResult {
   ok: boolean;
@@ -127,6 +131,15 @@ export async function loginWithCode(code: string): Promise<ActionResult> {
     // enumeration to enable.
     if (!user) return { ok: false, error: "That code isn't recognised." };
 
+    // The code proves ownership, so it clears any password lockout. That is
+    // what keeps a stranger from locking someone out of their own account by
+    // guessing at their nickname: the way back in never depended on the
+    // password.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: 0, lockedUntil: null },
+    });
+
     await createSession(user.id);
 
     // The code itself is never logged — see the note in lib/logger.ts about
@@ -160,7 +173,12 @@ export async function loginWithPassword(
   try {
     const user = await prisma.user.findUnique({
       where: { nicknameKey: key },
-      select: { id: true, passwordHash: true },
+      select: {
+        id: true,
+        passwordHash: true,
+        failedLogins: true,
+        lockedUntil: true,
+      },
     });
 
     // One message for every failure, and a matching amount of work for each.
@@ -172,9 +190,41 @@ export async function loginWithPassword(
       return { ok: false, error: "Wrong nickname or password." };
     }
 
+    // Checked before the hash, so a locked account costs an attacker nothing
+    // to discover but also gains them nothing: the wait is what stops them.
+    // Saying so plainly is the right trade — the alternative is a legitimate
+    // owner staring at "wrong password" for a password they know is right.
+    if (isLockedOut(user.lockedUntil)) {
+      logger.warn("auth.login_locked_out", { userId: user.id });
+      return {
+        ok: false,
+        error: `Too many attempts. Try again ${describeWait(user.lockedUntil!)}, or sign in with your code.`,
+      };
+    }
+
     if (!(await verifyPassword(password, user.passwordHash))) {
-      logger.warn("auth.login_failed", { userId: user.id });
+      const failedLogins = user.failedLogins + 1;
+      const lockFor = lockoutMs(failedLogins);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLogins,
+          lockedUntil: lockFor > 0 ? new Date(Date.now() + lockFor) : null,
+        },
+      });
+
+      logger.warn("auth.login_failed", { userId: user.id, failedLogins });
       return { ok: false, error: "Wrong nickname or password." };
+    }
+
+    // Cleared on success, so the counter measures a *run* of failures rather
+    // than accumulating over months of ordinary typos.
+    if (user.failedLogins > 0 || user.lockedUntil !== null) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLogins: 0, lockedUntil: null },
+      });
     }
 
     await createSession(user.id);

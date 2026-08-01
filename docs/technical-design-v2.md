@@ -17,8 +17,8 @@ Browser (installed PWA or regular tab)
   ▼
 Next.js App Router (Vercel)
   │
-  ├── proxy.ts ── APP_PASSWORD gate (kept until removal checklist is done)
-  ├── requireSession() ── new: called at the top of every server action
+  ├── requireOnboardedSession() ── at the top of every page and server action
+  │     (the APP_PASSWORD gate that used to sit in front of all this is gone)
   ├── Server Actions ── read/write via Prisma, now scoped by userId
   ├── TMDB API client ── unchanged, still global/shared cache
   ├── /api/cron/refresh-episodes ── stays deliberately user-agnostic (see §5)
@@ -352,12 +352,22 @@ user-chosen password does not.
 `WRONG_PASSWORD_DELAY_MS` mitigation in `proxy.ts` has no analogue worth
 building there.
 
-**`loginWithPassword` is a different question, and currently unanswered.**
-User-chosen passwords are guessable in a way codes are not, and nothing here
-throttles attempts. scrypt caps the rate at roughly ten guesses a second per
-request in flight, which for a closed group behind `APP_PASSWORD` is thin but
-not nothing. Worth revisiting when the shared gate comes off in stage 5 —
-that is the moment the login form becomes reachable by anyone.
+**`loginWithPassword` needed one, and has one.** User-chosen passwords are
+guessable in a way codes are not, and once the shared gate came off the form
+became reachable by anyone with the URL — roughly 860k attempts a day at
+scrypt's ~10/sec, which is thin against an 8-character minimum.
+
+`src/lib/login-throttle.ts` applies per-account backoff: five failures cost
+nothing, then the wait doubles from 30s to a 5-minute cap. Counted per account
+rather than per IP for the reason the old `proxy.ts` already documented — an
+in-process counter resets constantly across serverless instances and reads as
+protection while providing none.
+
+The cap and the escape hatch are what make locking safe. An uncapped doubling
+would eventually lock someone out for weeks, and a lockout with no way around
+it would let a stranger who knows your nickname deny you your own account.
+Signing in with the account code clears the lockout, so the way back in never
+depended on the password.
 
 ### Call the session gate *outside* each action's `try` block
 
@@ -419,12 +429,16 @@ server-side check here would let a direct POST rename an account that's
 supposed to be locked. There is no rename support in v2 — see the roadmap in
 `docs/scope-v2.md`.
 
-### `APP_PASSWORD` during the transition
+### `APP_PASSWORD` — removed
 
-Left in place, per `scope.md`'s existing "Last step of Phase 2" checklist,
-until every route and action is session-checked and verified in production.
-`/login` stays behind it too during rollout — removing the shared gate is the
-*last* step, not something to anticipate early.
+Kept through the rollout, per `scope.md`'s checklist, and deleted once every
+page and action had been audited as session-checked. `src/proxy.ts` and
+`tests/proxy.test.ts` are gone.
+
+The audit is worth repeating whenever a route is added, because the gate that
+used to catch an oversight no longer exists: a new page without
+`requireOnboardedSession()`, or a route handler without its own auth, is simply
+open.
 
 ## 5. Query / Action Layer Changes
 

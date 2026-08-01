@@ -3,10 +3,14 @@
 A personal web app for tracking TV shows — what you're watching, how far
 through you are, and what's airing next. A replacement for TV Time.
 
-**v1 is a single-user proof of concept.** There are no accounts. A deployed
-instance is protected by one shared password (`APP_PASSWORD`, HTTP Basic auth),
-which covers pages *and* server-action POSTs — without it anyone with the URL
-could erase the data. Real per-user login is Phase 2.
+**Accounts are invite-only.** There is no sign-up form: you generate a code
+with `scripts/create-user.mjs`, hand it over, and the recipient sets a nickname
+and password the first time they use it. The code stays valid afterwards as the
+only way back in if the password is forgotten — there is no email to send a
+reset to, so losing both loses the account.
+
+The shared `APP_PASSWORD` gate that protected v1 is gone; every page and server
+action now checks a real session.
 
 - [Project scope](docs/scope.md) — features, phases, what's out of scope
 - [Technical design](docs/technical-design.md) — architecture, data model, routes
@@ -136,28 +140,21 @@ environment variables:
 | `DATABASE_URL` | the **`libsql://`** URL — not the local file path |
 | `TURSO_AUTH_TOKEN` | the Turso token |
 | `CRON_SECRET` | `openssl rand -hex 32` |
-| `APP_PASSWORD` | `openssl rand -hex 32` — generate it, don't invent it |
 
 `DATABASE_URL` is the one to get right: locally it's `file:./dev.db`, in
 production it must be the Turso URL. Vercel's env var box accepts a pasted
 `.env`, so preparing a block with the production values avoids transcribing five
 secrets by hand.
 
-Without `APP_PASSWORD` the deployment returns **503** rather than serving
-unprotected — deliberate, so a forgotten variable fails closed.
-
-You type that password once and let the browser remember it, so length costs
-you nothing — and with a single shared secret and no lockout, length is what
-actually stops it being guessed. Changing it later takes effect only after a
-redeploy; editing the variable leaves the running deployment on the old value.
 
 **4. Add a rate limit** (optional, but cheap)
 
-Vercel dashboard → the project → Firewall → Custom Rules → Add Rule: match
-`Request Path` `Starts with` `/`, rate limit to 100 requests per 10 seconds
-keyed by IP address, action Deny (403). It applies without a redeploy. See
-"Access Control" in the design doc for why the threshold is generous and why
-this can't live in the repo.
+Password guessing is already throttled per account in the app itself (see
+`src/lib/login-throttle.ts`), so this is defence in depth rather than the
+control. A broad edge limit still costs nothing: Vercel dashboard → the project
+→ Firewall → Custom Rules → Add Rule: match `Request Path` `Starts with` `/`,
+rate limit to 100 requests per 10 seconds keyed by IP address, action Deny
+(403). It applies without a redeploy.
 
 **Migrating existing local data.** If you've been using the app locally, the
 production database starts empty. Copy the tables across in dependency order
