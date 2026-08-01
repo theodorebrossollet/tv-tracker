@@ -1,12 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { login } from "@/app/actions";
 
 export function LoginForm() {
-  const router = useRouter();
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -16,18 +14,15 @@ export function LoginForm() {
     setError(null);
 
     start(async () => {
+      // Only returns on failure — a successful sign-in redirects server-side,
+      // so there is no navigation to do here. Driving it from the client meant
+      // `router.replace` plus `router.refresh`, which deadlock together and
+      // leave this button reading "Signing in…" indefinitely.
       const result = await login(code);
 
-      if (!result.ok) {
-        setError(result.error ?? "Something went wrong.");
-        return;
+      if (!result?.ok) {
+        setError(result?.error ?? "Something went wrong.");
       }
-
-      // The session cookie is set by the action; this only moves the browser.
-      // `refresh` matters because the layout above this route was rendered for
-      // a signed-out visitor.
-      router.replace(result.next ?? "/");
-      router.refresh();
     });
   }
 

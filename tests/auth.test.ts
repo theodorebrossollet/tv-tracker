@@ -29,6 +29,10 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
+// Same stub the other action tests use: revalidatePath needs a request context
+// that doesn't exist here.
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
 const {
   SESSION_COOKIE,
   createSession,
@@ -190,29 +194,27 @@ describe("gates", () => {
 });
 
 describe("login", () => {
-  it("issues a session and routes by onboarding state", async () => {
+  it("issues a session and redirects by onboarding state", async () => {
     await makeUser(null, "correct-horse");
 
-    await expect(login("correct-horse")).resolves.toMatchObject({
-      ok: true,
-      next: "/welcome",
-    });
+    // Success redirects rather than returning. Navigating on the client
+    // instead needed router.replace plus router.refresh, and those two in one
+    // transition deadlock — the action returns 200, the destination renders,
+    // and the form sits on "Signing in…" forever.
+    expect(await redirectedTo(() => login("correct-horse"))).toBe("/welcome");
     await expect(prisma.session.count()).resolves.toBe(1);
   });
 
   it("sends an already-named account to the app", async () => {
     await makeUser("theo", "correct-horse");
 
-    await expect(login("correct-horse")).resolves.toMatchObject({
-      ok: true,
-      next: "/",
-    });
+    expect(await redirectedTo(() => login("correct-horse"))).toBe("/");
   });
 
   it("tolerates a pasted code with surrounding whitespace", async () => {
     await makeUser(null, "correct-horse");
 
-    await expect(login("  correct-horse\n")).resolves.toMatchObject({ ok: true });
+    expect(await redirectedTo(() => login("  correct-horse\n"))).toBe("/welcome");
   });
 
   it("rejects a wrong code without creating a session", async () => {
@@ -236,7 +238,7 @@ describe("login", () => {
 
   it("clears the session on logout", async () => {
     await makeUser(null, "correct-horse");
-    await login("correct-horse");
+    await redirectedTo(() => login("correct-horse"));
 
     await expect(logout()).resolves.toMatchObject({ ok: true });
     await expect(prisma.session.count()).resolves.toBe(0);
@@ -249,7 +251,7 @@ describe("setNickname", () => {
     const user = await makeUser(null);
     await createSession(user.id);
 
-    await expect(setNickname("ThEo")).resolves.toMatchObject({ ok: true });
+    expect(await redirectedTo(() => setNickname("ThEo"))).toBe("/");
 
     await expect(
       prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
@@ -259,7 +261,7 @@ describe("setNickname", () => {
   it("refuses a second nickname, because they are permanent", async () => {
     const user = await makeUser(null);
     await createSession(user.id);
-    await setNickname("theo");
+    await redirectedTo(() => setNickname("theo"));
 
     // The UI never offers this, but actions are POST-able directly, so the
     // action itself has to say no.

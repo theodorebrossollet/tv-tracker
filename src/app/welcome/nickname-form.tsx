@@ -1,13 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { setNickname } from "@/app/actions";
 import { NICKNAME_RULES, validateNickname } from "@/lib/nickname";
 
 export function NicknameForm() {
-  const router = useRouter();
   const [value, setValue] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,16 +33,14 @@ export function NicknameForm() {
     }
 
     start(async () => {
+      // Only returns on failure; success redirects server-side. See the note
+      // in login-form.tsx for why the navigation isn't done here.
       const result = await setNickname(value);
 
-      if (!result.ok) {
-        setError(result.error ?? "Something went wrong.");
+      if (!result?.ok) {
+        setError(result?.error ?? "Something went wrong.");
         setConfirming(false);
-        return;
       }
-
-      router.replace("/");
-      router.refresh();
     });
   }
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import {
   createSession,
@@ -87,23 +88,25 @@ function revalidateShowViews(showId?: string) {
 // swallow that into a generic error toast.
 // ---------------------------------------------------------------------------
 
-export interface LoginResult extends ActionResult {
-  /** Where the client should navigate on success. */
-  next?: string;
-}
-
 /**
- * Exchanges an account code for a session.
+ * Exchanges an account code for a session, then redirects.
  *
- * Returns the destination rather than redirecting, so the redirect happens on
- * the client after the cookie is set — a `redirect()` here would have to live
- * outside the try block that catches database failures, which is more
- * ceremony than a one-line navigation on the caller's side.
+ * The redirect is the action's, not the caller's. Navigating on the client
+ * instead means pairing `router.replace` with a `router.refresh` to pick up a
+ * layout that was rendered for a signed-out visitor — and those two together
+ * inside one transition deadlock: the action returns 200, the destination
+ * renders server-side, and the form sits on "Signing in…" forever. Measured,
+ * not assumed.
+ *
+ * Note the redirect sits after the try block, never inside it. `redirect`
+ * works by throwing, so `toResult` would swallow it into a generic error.
  */
-export async function login(code: string): Promise<LoginResult> {
+export async function login(code: string): Promise<ActionResult> {
   const trimmed = code.trim();
 
   if (!trimmed) return { ok: false, error: "Enter your account code." };
+
+  let destination: string;
 
   try {
     const user = await prisma.user.findUnique({
@@ -123,10 +126,15 @@ export async function login(code: string): Promise<LoginResult> {
     // rotated by its owner.
     logger.info("auth.login", { userId: user.id });
 
-    return { ok: true, next: user.nickname === null ? "/welcome" : "/" };
+    destination = user.nickname === null ? "/welcome" : "/";
   } catch (error) {
     return toResult(error);
   }
+
+  // Signing in changes what the layout should show, and the layout is cached
+  // per path — so it has to be invalidated explicitly, not just navigated past.
+  revalidatePath("/", "layout");
+  redirect(destination);
 }
 
 /** Revokes the current session. Succeeds even when there isn't one. */
@@ -182,7 +190,10 @@ export async function setNickname(raw: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  return { ok: true };
+  // Outside the try, same as login. Onboarding is what the app has been
+  // waiting on, so the layout it renders next is a different one.
+  revalidatePath("/", "layout");
+  redirect("/");
 }
 
 // ---------------------------------------------------------------------------
