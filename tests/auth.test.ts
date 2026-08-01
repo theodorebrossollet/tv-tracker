@@ -45,6 +45,7 @@ const {
 } = await import("@/lib/auth");
 const { completeOnboarding, loginWithCode, loginWithPassword, logout } =
   await import("@/app/actions");
+const { FAILURE_THRESHOLD } = await import("@/lib/login-throttle");
 const { hashPassword } = await import("@/lib/password");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase } = await import("./helpers");
@@ -350,6 +351,98 @@ describe("loginWithPassword", () => {
   it("rejects empty input", async () => {
     await expect(loginWithPassword("", "")).resolves.toMatchObject({ ok: false });
     await expect(loginWithPassword("theo", "")).resolves.toMatchObject({ ok: false });
+  });
+});
+
+describe("login throttling", () => {
+  const failTimes = async (n: number) => {
+    for (let i = 0; i < n; i++) {
+      await loginWithPassword("theo", "not-the-password");
+    }
+  };
+
+  it("counts consecutive failures on the account", async () => {
+    const user = await makeOnboardedUser();
+
+    await failTimes(3);
+
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).resolves.toMatchObject({ failedLogins: 3, lockedUntil: null });
+  });
+
+  it("locks the account once the threshold is crossed", async () => {
+    const user = await makeOnboardedUser();
+
+    await failTimes(FAILURE_THRESHOLD);
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.lockedUntil).not.toBeNull();
+    expect(after.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("refuses the right password while locked", async () => {
+    await makeOnboardedUser();
+    await failTimes(FAILURE_THRESHOLD);
+
+    // The password is correct. The lockout is the point.
+    const result = await loginWithPassword("theo", "hunter2hunter2");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/too many attempts/i);
+    await expect(prisma.session.count()).resolves.toBe(0);
+  });
+
+  it("lets the right password through once the lock expires", async () => {
+    const user = await makeOnboardedUser();
+    await failTimes(FAILURE_THRESHOLD);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lockedUntil: new Date(Date.now() - 1000) },
+    });
+
+    expect(
+      await redirectedTo(() => loginWithPassword("theo", "hunter2hunter2")),
+    ).toBe("/");
+  });
+
+  it("resets the counter on a successful sign-in", async () => {
+    const user = await makeOnboardedUser();
+
+    await failTimes(FAILURE_THRESHOLD - 1);
+    await redirectedTo(() => loginWithPassword("theo", "hunter2hunter2"));
+
+    // Without the reset the counter accrues across months of ordinary typos
+    // and eventually locks someone who never got anything wrong twice running.
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).resolves.toMatchObject({ failedLogins: 0, lockedUntil: null });
+  });
+
+  it("lets the account code clear a lockout", async () => {
+    // The escape hatch that makes locking safe: a stranger who trips someone
+    // else's lockout cannot keep them out, because the way back in never
+    // depended on the password.
+    const user = await makeOnboardedUser("theo", "correct-horse");
+    await failTimes(FAILURE_THRESHOLD);
+
+    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/");
+
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).resolves.toMatchObject({ failedLogins: 0, lockedUntil: null });
+  });
+
+  it("does not count failures against an unknown nickname", async () => {
+    await makeOnboardedUser();
+
+    await loginWithPassword("nobody-at-all", "whatever-password");
+
+    // Nothing to count against, and the real account must not be affected.
+    await expect(
+      prisma.user.findFirstOrThrow(),
+    ).resolves.toMatchObject({ failedLogins: 0 });
   });
 });
 

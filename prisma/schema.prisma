@@ -51,6 +51,18 @@ model User {
   /// tests build their database from these files, so nothing would catch it.
   nicknameKey String? @unique
 
+  /// Consecutive failed password attempts, reset on any successful sign-in.
+  /// Counted per account rather than per IP: an in-process counter is useless
+  /// across short-lived serverless instances (see the note in proxy.ts), and
+  /// the account is the thing actually being attacked.
+  failedLogins Int @default(0)
+
+  /// Set once `failedLogins` crosses the threshold; password sign-in is
+  /// refused until it passes. Signing in with the account code clears it, so a
+  /// stranger tripping someone else's lockout cannot keep them out — the code
+  /// is unguessable and is the documented way back in regardless.
+  lockedUntil DateTime?
+
   createdAt DateTime @default(now())
 
   trackedShows    TrackedShow[]

@@ -443,46 +443,14 @@ regressions and confirming each one fails a test.
 
 ## 13. Access Control
 
-`src/proxy.ts` (Next 16 renamed Middleware to Proxy) gates the whole app behind
-one shared password from `APP_PASSWORD`, sent as HTTP Basic auth.
+**Superseded by v2.** The shared `APP_PASSWORD` gate described here has been
+removed — see `docs/technical-design-v2.md` section 4 for what replaced it.
 
-This is not authentication — Phase 2 still owns that. It exists because v1 has
-no accounts *and* server actions are reachable by direct POST, `clearAllData`
-included. A public URL would therefore let anyone erase the data. Running
-before routing means the gate covers action POSTs, not just pages.
-
-**The password must be generated, not chosen** (`openssl rand -hex 32`). With
-one shared secret and no lockout, entropy is the control — 64 hex characters
-put guessing out of reach whatever the request rate. The 500ms delay on a wrong
-password is secondary: it slows a serial guesser and does nothing to one
-issuing requests in parallel, and no delay rescues a memorable password.
-
-Rate limiting sits at the platform edge rather than in this repo, because an
-in-process counter would reset constantly across Vercel's short-lived
-instances. A Vercel firewall custom rule, `Rate limit all paths 100/10s per
-IP`, matches every request path and denies (403) an IP that exceeds 100
-requests in a 10-second fixed window. It is configured in the Vercel
-dashboard, not here, so it will not survive moving the project to another
-host — and nothing in this repository will remind you. Note what it is *for*:
-with a generated password it protects the rate limit and the bill, not the
-data.
-
-Set the threshold generously. One cold page load pulls HTML, JS chunks and a
-screenful of posters, and the static assets the proxy leaves ungated still
-count, so a tight limit locks out a real visitor long before it inconveniences
-anyone else.
-
-Three details that matter if this is ever edited:
-
-- `/api/cron/*` is excluded from the matcher, by exact path — `api/cron/` with
-  the trailing slash, so that a future `/api/cron-debug` doesn't fall outside
-  the gate on a prefix match. Vercel Cron sends its own
-  `Authorization: Bearer $CRON_SECRET`, which Basic auth would reject — the
-  daily refresh would silently stop. That route authenticates itself, and so
-  must anything else ever put behind that exclusion.
-- With no `APP_PASSWORD` set, the app serves normally in development but
-  returns **503** in production rather than sitting open. It deliberately sends
-  no `WWW-Authenticate` in that case, since no password could satisfy it.
+In short: every page calls `requireOnboardedSession()`, every server action
+opens with it, and the cron route authenticates with its own `CRON_SECRET`.
+Password guessing is throttled per account rather than per IP, because an
+in-process counter is worthless across short-lived serverless instances — the
+one point from the original section worth carrying forward.
 
 ## 14. Logging
 
