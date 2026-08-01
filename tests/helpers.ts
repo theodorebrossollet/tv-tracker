@@ -7,6 +7,8 @@ export async function resetDatabase() {
   await prisma.episode.deleteMany();
   await prisma.show.deleteMany();
   await prisma.settings.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.user.deleteMany();
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
