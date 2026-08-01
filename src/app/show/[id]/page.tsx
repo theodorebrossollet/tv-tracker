@@ -8,6 +8,7 @@ import { Poster } from "@/components/poster";
 import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate, showMetaLine } from "@/lib/format";
+import { requireOnboardedSession } from "@/lib/auth";
 import { getShowDetail } from "@/lib/queries";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
@@ -28,20 +29,28 @@ interface ShowPageProps {
 
 export async function generateMetadata({ params }: ShowPageProps) {
   const { id } = await params;
-  const show = isTmdbShowId(id) ? await getShowDetail(id) : null;
+  // Also gated: metadata runs before the component and would otherwise read a
+  // show's tracked state without a session. `getShowDetail` is memoized per
+  // request, so this costs nothing the component doesn't already pay.
+  const { user } = await requireOnboardedSession();
+  const show = isTmdbShowId(id) ? await getShowDetail(user.id, id) : null;
 
   return { title: show ? `${show.name} · TV Tracker` : "Show · TV Tracker" };
 }
 
 export default async function ShowPage({ params }: ShowPageProps) {
   const { id } = await params;
+  const { user } = await requireOnboardedSession();
 
   // The route param is untrusted: it flows into a TMDB request path, the Show
   // cache key, and revalidatePath. Anything that isn't an id is a 404, not a
   // request worth making.
   if (!isTmdbShowId(id)) notFound();
 
-  const [show, settings] = await Promise.all([getShowDetail(id), getSettings()]);
+  const [show, settings] = await Promise.all([
+    getShowDetail(user.id, id),
+    getSettings(user.id),
+  ]);
 
   // getShowDetail falls back to TMDB for shows that aren't tracked, so a null
   // here means TMDB doesn't know this id either.
@@ -155,9 +164,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
           const aired = season.episodes.filter(
             (episode) => episode.airDate !== null && episode.airDate <= now,
           );
-          const watchedCount = aired.filter(
-            (episode) => episode.watched !== null,
-          ).length;
+          const watchedCount = aired.filter((episode) => episode.watched).length;
           const allWatched = aired.length > 0 && watchedCount === aired.length;
 
           return (
@@ -189,7 +196,7 @@ export default async function ShowPage({ params }: ShowPageProps) {
                     episodeNumber={episode.episodeNumber}
                     name={episode.name}
                     airDate={episode.airDate?.toISOString() ?? null}
-                    watched={episode.watched !== null}
+                    watched={episode.watched}
                     aired={episode.airDate !== null && episode.airDate <= now}
                     runtime={episode.runtime}
                     overview={episode.overview}

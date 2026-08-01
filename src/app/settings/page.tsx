@@ -1,5 +1,6 @@
 import { SettingsClient } from "./settings-client";
 import { describeError, logger } from "@/lib/logger";
+import { requireOnboardedSession } from "@/lib/auth";
 import { getSettings } from "@/lib/shows";
 import { getWatchRegions, TmdbError } from "@/lib/tmdb";
 
@@ -8,7 +9,8 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings · TV Tracker" };
 
 export default async function SettingsPage() {
-  const settings = await getSettings();
+  const { user } = await requireOnboardedSession();
+  const settings = await getSettings(user.id);
 
   // The country list comes from TMDB (cached for a day). If it can't be
   // fetched, the rest of the settings page should still work.

@@ -1,5 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+
+import { createClient } from "@libsql/client";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -40,7 +44,6 @@ function run(script: string): RunResult {
 }
 
 const createAdmin = () => run("create-admin-user.mjs");
-const backfill = () => run("backfill-user-ownership.mjs");
 
 /** The code is printed once and never stored — this is the only way to read it. */
 function codeFrom(stdout: string): string {
@@ -49,21 +52,82 @@ function codeFrom(stdout: string): string {
   return match[1];
 }
 
-/** Rows as v1 wrote them: real data, no owner. */
-async function seedV1Data() {
-  await prisma.show.create({ data: { id: "1396", name: "Breaking Bad" } });
-  await prisma.episode.createMany({
-    data: [
-      { id: "e1", showId: "1396", seasonNumber: 1, episodeNumber: 1 },
-      { id: "e2", showId: "1396", seasonNumber: 1, episodeNumber: 2 },
-    ],
-  });
-  await prisma.trackedShow.create({
-    data: { id: "t1", showId: "1396", status: "watching" },
-  });
-  await prisma.watchedEpisode.create({ data: { id: "w1", episodeId: "e1" } });
-  await prisma.settings.create({ data: { id: 1, country: "FR" } });
+// The backfill runs against the *pre-Phase-B* schema, where `userId` is
+// nullable — the state production sits in between the two migrations, and the
+// state this script exists to resolve. Phase B makes that state unreachable, so
+// these tests build their own database from the migration files up to (but not
+// including) Phase B rather than using the suite's shared one.
+//
+// The script still has one real production run left: it is re-run immediately
+// before Phase B to catch rows written in the gap. That is why this coverage is
+// worth keeping rather than deleting along with the schema it targets.
+const LEGACY_DB = "tests/.tmp/pre-phase-b.db";
+const LEGACY_URL = `file:./${LEGACY_DB}`;
+
+async function buildPrePhaseBDatabase() {
+  rmSync(LEGACY_DB, { force: true });
+
+  const client = createClient({ url: LEGACY_URL });
+
+  const migrations = readdirSync("prisma/migrations")
+    .filter((entry) => !entry.endsWith(".toml"))
+    .sort();
+
+  for (const name of migrations) {
+    if (name.includes("accounts_phase_b")) break;
+    await client.executeMultiple(
+      readFileSync(join("prisma/migrations", name, "migration.sql"), "utf8"),
+    );
+  }
+
+  return client;
 }
+
+/** Rows as v1 wrote them: real data, no owner. */
+async function seedV1Data(client: Awaited<ReturnType<typeof buildPrePhaseBDatabase>>) {
+  await client.execute(
+    `INSERT INTO Show (id, name, lastSynced) VALUES ('1396', 'Breaking Bad', '2026-01-01')`,
+  );
+  await client.execute(
+    `INSERT INTO Episode (id, showId, seasonNumber, episodeNumber) VALUES ('e1', '1396', 1, 1)`,
+  );
+  await client.execute(
+    `INSERT INTO TrackedShow (id, showId, status, addedAt) VALUES ('t1', '1396', 'watching', '2026-01-01')`,
+  );
+  await client.execute(
+    `INSERT INTO WatchedEpisode (id, episodeId, watchedAt) VALUES ('w1', 'e1', '2026-01-01')`,
+  );
+  await client.execute(
+    `INSERT INTO Settings (id, notifyEnabled, country) VALUES (1, 1, 'FR')`,
+  );
+}
+
+function runAgainstLegacy(script: string): RunResult {
+  try {
+    const stdout = execFileSync("node", [`scripts/${script}`], {
+      env: { ...process.env, DATABASE_URL: LEGACY_URL, TURSO_AUTH_TOKEN: "" },
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return { status: 0, stdout, stderr: "" };
+  } catch (error) {
+    const failure = error as { status: number; stdout: string; stderr: string };
+    return {
+      status: failure.status,
+      stdout: failure.stdout ?? "",
+      stderr: failure.stderr ?? "",
+    };
+  }
+}
+
+const ownerlessTrackedShows = async (
+  client: Awaited<ReturnType<typeof buildPrePhaseBDatabase>>,
+) => {
+  const rows = await client.execute(
+    "SELECT count(*) AS n FROM TrackedShow WHERE userId IS NULL",
+  );
+  return Number(rows.rows[0].n);
+};
 
 beforeEach(async () => {
   await resetDatabase();
@@ -111,90 +175,81 @@ describe("create-admin-user", () => {
 });
 
 describe("backfill-user-ownership", () => {
+  let db: Awaited<ReturnType<typeof buildPrePhaseBDatabase>>;
+
+  beforeEach(async () => {
+    db = await buildPrePhaseBDatabase();
+    await seedV1Data(db);
+  });
+
+  const userId = async () =>
+    String((await db.execute("SELECT id FROM User LIMIT 1")).rows[0].id);
+
   it("assigns every ownerless row to the single user", async () => {
-    await seedV1Data();
-    createAdmin();
+    runAgainstLegacy("create-admin-user.mjs");
 
-    expect(backfill().status).toBe(0);
+    expect(runAgainstLegacy("backfill-user-ownership.mjs").status).toBe(0);
 
-    const { id: userId } = await prisma.user.findFirstOrThrow();
+    const id = await userId();
+    for (const table of ["TrackedShow", "WatchedEpisode", "Settings"]) {
+      const rows = await db.execute(`SELECT userId FROM "${table}"`);
+      expect(rows.rows.map((row) => row.userId), table).toEqual([id]);
+    }
 
-    await expect(
-      prisma.trackedShow.findMany({ select: { userId: true } }),
-    ).resolves.toEqual([{ userId }]);
-    await expect(
-      prisma.watchedEpisode.findMany({ select: { userId: true } }),
-    ).resolves.toEqual([{ userId }]);
-    await expect(
-      prisma.settings.findMany({ select: { userId: true, country: true } }),
-    ).resolves.toEqual([{ userId, country: "FR" }]);
+    // Settings keeps its values — Phase B's rebuild copies this column across.
+    const settings = await db.execute("SELECT country FROM Settings");
+    expect(settings.rows[0].country).toBe("FR");
   });
 
   it("picks up rows written after an earlier run", async () => {
-    // The Phase A → Phase B gap: v1 stays live and keeps writing rows with no
-    // owner. Without a re-run immediately before Phase B, these are exactly the
-    // rows that make NOT NULL fail.
-    await seedV1Data();
-    createAdmin();
-    backfill();
+    // The Phase A → Phase B gap: the old build stays live and keeps writing
+    // rows with no owner. Without a re-run immediately before Phase B, these
+    // are exactly the rows that make NOT NULL fail.
+    runAgainstLegacy("create-admin-user.mjs");
+    runAgainstLegacy("backfill-user-ownership.mjs");
 
-    await prisma.show.create({ data: { id: "1399", name: "Thrones" } });
-    await prisma.trackedShow.create({
-      data: { id: "t2", showId: "1399", status: "watchlist" },
-    });
+    await db.execute(
+      `INSERT INTO Show (id, name, lastSynced) VALUES ('1399', 'Thrones', '2026-01-01')`,
+    );
+    await db.execute(
+      `INSERT INTO TrackedShow (id, showId, status, addedAt) VALUES ('t2', '1399', 'watchlist', '2026-01-01')`,
+    );
 
-    const second = backfill();
-    expect(second.status).toBe(0);
-
-    const { id: userId } = await prisma.user.findFirstOrThrow();
-    await expect(
-      prisma.trackedShow.count({ where: { userId: null } }),
-    ).resolves.toBe(0);
-    await expect(
-      prisma.trackedShow.findMany({ select: { userId: true } }),
-    ).resolves.toEqual([{ userId }, { userId }]);
+    expect(await ownerlessTrackedShows(db)).toBe(1);
+    expect(runAgainstLegacy("backfill-user-ownership.mjs").status).toBe(0);
+    expect(await ownerlessTrackedShows(db)).toBe(0);
   });
 
   it("is a no-op when everything already has an owner", async () => {
-    await seedV1Data();
-    createAdmin();
-    backfill();
+    runAgainstLegacy("create-admin-user.mjs");
+    runAgainstLegacy("backfill-user-ownership.mjs");
 
-    const before = await prisma.trackedShow.findMany();
-    const second = backfill();
+    const second = runAgainstLegacy("backfill-user-ownership.mjs");
 
     expect(second.status).toBe(0);
     expect(second.stdout).toContain("Nothing to do");
-    await expect(prisma.trackedShow.findMany()).resolves.toEqual(before);
   });
 
   it("refuses to run before an account exists", async () => {
-    await seedV1Data();
-
-    const result = backfill();
+    const result = runAgainstLegacy("backfill-user-ownership.mjs");
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("No users exist");
-    await expect(
-      prisma.trackedShow.count({ where: { userId: null } }),
-    ).resolves.toBe(1);
+    expect(await ownerlessTrackedShows(db)).toBe(1);
   });
 
   it("refuses to guess when more than one account exists", async () => {
-    await seedV1Data();
-    createAdmin();
+    runAgainstLegacy("create-admin-user.mjs");
+    await db.execute(
+      `INSERT INTO User (id, codeHash, createdAt) VALUES ('u2', 'another-hash', '2026-01-02')`,
+    );
 
-    // A second account, as create-user.mjs will later produce.
-    await prisma.user.create({ data: { id: "u2", codeHash: "another-hash" } });
-
-    const result = backfill();
+    const result = runAgainstLegacy("backfill-user-ownership.mjs");
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("refusing to guess");
-    // Nothing assigned — leaving it ownerless is recoverable, handing one
+    // Nothing assigned — leaving a row ownerless is recoverable, handing one
     // person's library to the wrong account is not.
-    await expect(
-      prisma.trackedShow.count({ where: { userId: null } }),
-    ).resolves.toBe(1);
+    expect(await ownerlessTrackedShows(db)).toBe(1);
   });
 });

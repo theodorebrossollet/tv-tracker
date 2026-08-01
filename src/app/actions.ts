@@ -7,6 +7,7 @@ import {
   createSession,
   destroySession,
   hashCode,
+  requireOnboardedSession,
   requireSession,
 } from "@/lib/auth";
 import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
@@ -19,11 +20,14 @@ import { syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
 import type { TrackStatus } from "@/lib/types";
 
-// v1 has no accounts, so there is no session to check here — every action
-// operates on the single implicit user's data. Phase 2 adds an auth check at
-// the top of each of these. Note that server actions are reachable by direct
-// POST, so this file is effectively public while the app is deployed without
-// auth; keep the deployment private until Phase 2 lands.
+// Every action below the account section starts with `requireOnboardedSession`,
+// and scopes its Prisma calls by the userId it returns. Both halves matter and
+// neither is optional: server actions are reachable by direct POST, so the gate
+// is the only thing standing in front of them — and a forgotten `userId` filter
+// leaks another account's data on a read, or corrupts it on a write.
+//
+// The gate goes ABOVE each `try`, never inside. `redirect` works by throwing,
+// and `toResult` would swallow it into a generic error toast.
 //
 // What stops a malicious page from POSTing clearAllData on your behalf is not
 // the password gate. Basic auth is replayed automatically by the browser on
@@ -293,6 +297,8 @@ export interface SearchSuggestion {
 export async function searchSuggestions(
   query: string,
 ): Promise<{ results?: SearchSuggestion[]; error?: string }> {
+  const { user } = await requireOnboardedSession();
+
   // Capped rather than rejected: TMDB has nothing useful to say about a pasted
   // wall of text, and sending it verbatim helps no one.
   const trimmed = query.trim().slice(0, 200);
@@ -307,7 +313,10 @@ export async function searchSuggestions(
 
   // One query for the whole page of results, rather than one per row.
   const tracked = await prisma.trackedShow.findMany({
-    where: { showId: { in: results.map((result) => String(result.id)) } },
+    where: {
+      userId: user.id,
+      showId: { in: results.map((result) => String(result.id)) },
+    },
     select: { showId: true, status: true },
   });
   const statusByShow = new Map(tracked.map((row) => [row.showId, row.status]));
@@ -337,6 +346,8 @@ export async function searchSuggestions(
 
 /** Adds a show to the watchlist, caching it from TMDB on the way in. */
 export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   // Actions are POST-able directly, so this is an entry point for untrusted
   // input regardless of what the UI sends. The id reaches a TMDB request path
   // from here, via syncShowFromTmdb.
@@ -346,7 +357,7 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
 
   try {
     const existing = await prisma.trackedShow.findUnique({
-      where: { showId: tmdbShowId },
+      where: { userId_showId: { userId: user.id, showId: tmdbShowId } },
       select: { id: true },
     });
 
@@ -356,7 +367,7 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
 
     await syncShowFromTmdb(tmdbShowId);
     await prisma.trackedShow.create({
-      data: { showId: tmdbShowId, status: "watchlist" },
+      data: { userId: user.id, showId: tmdbShowId, status: "watchlist" },
     });
   } catch (error) {
     // The check above and this create aren't atomic, so a double-click can
@@ -374,6 +385,8 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
 
 /** Removes a show from your lists. The cached show/episode rows stay. */
 export async function removeShow(showId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   // Never reaches TMDB, but the guard holds the invariant uniformly: every
   // showId an action accepts is an id, not just the ones that hit the network.
   // Real rows can't have a non-id key, so this rejects nothing legitimate.
@@ -382,7 +395,10 @@ export async function removeShow(showId: string): Promise<ActionResult> {
   }
 
   try {
-    await prisma.trackedShow.deleteMany({ where: { showId } });
+    // `userId` is what keeps this from removing the show for everyone who
+    // tracks it. In v1 the filter was incidentally unique; now it is the only
+    // thing scoping the delete.
+    await prisma.trackedShow.deleteMany({ where: { userId: user.id, showId } });
   } catch (error) {
     return toResult(error);
   }
@@ -410,6 +426,8 @@ export async function removeShow(showId: string): Promise<ActionResult> {
 export async function markEpisodeWatched(
   episodeId: string,
 ): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   try {
     const episode = await prisma.episode.findUnique({
       where: { id: episodeId },
@@ -419,24 +437,25 @@ export async function markEpisodeWatched(
     if (!episode) return { ok: false, error: "Unknown episode." };
 
     await prisma.watchedEpisode.upsert({
-      where: { episodeId },
-      create: { episodeId },
+      where: { userId_episodeId: { userId: user.id, episodeId } },
+      create: { userId: user.id, episodeId },
       update: {},
     });
 
     const previous = await prisma.trackedShow.findUnique({
-      where: { showId: episode.showId },
+      where: { userId_showId: { userId: user.id, showId: episode.showId } },
       select: { status: true },
     });
 
     await prisma.trackedShow.upsert({
-      where: { showId: episode.showId },
-      create: { showId: episode.showId, status: "watching" },
+      where: { userId_showId: { userId: user.id, showId: episode.showId } },
+      create: { userId: user.id, showId: episode.showId, status: "watching" },
       update: { status: "watching" },
     });
 
     if (previous?.status === "paused" || previous?.status === "stopped") {
       logger.info("show.resumed", {
+        userId: user.id,
         showId: episode.showId,
         via: "watched_episode",
         from: previous.status,
@@ -462,9 +481,9 @@ export async function markEpisodeWatched(
  * Shows already on the watchlist are untouched, and a show that isn't tracked
  * at all is left alone rather than being added.
  */
-async function demoteIfNothingWatched(showId: string) {
+async function demoteIfNothingWatched(userId: string, showId: string) {
   const remaining = await prisma.watchedEpisode.count({
-    where: { episode: { showId } },
+    where: { userId, episode: { showId } },
   });
 
   if (remaining > 0) return;
@@ -473,11 +492,11 @@ async function demoteIfNothingWatched(showId: string) {
   // left is a contradiction anyway, but silently moving it would undo an
   // explicit choice the user made — leave their decision alone.
   const { count } = await prisma.trackedShow.updateMany({
-    where: { showId, status: "watching" },
+    where: { userId, showId, status: "watching" },
     data: { status: "watchlist" },
   });
 
-  if (count > 0) logger.info("show.demoted_to_watchlist", { showId });
+  if (count > 0) logger.info("show.demoted_to_watchlist", { userId, showId });
 }
 
 /**
@@ -493,6 +512,7 @@ async function demoteIfNothingWatched(showId: string) {
  * would create a tracked row for something never added.
  */
 async function setAside(
+  userId: string,
   showId: string,
   status: "paused" | "stopped",
 ): Promise<ActionResult> {
@@ -505,7 +525,7 @@ async function setAside(
 
   try {
     const { count } = await prisma.trackedShow.updateMany({
-      where: { showId, status: { in: ["watching", other] } },
+      where: { userId, showId, status: { in: ["watching", other] } },
       data: { status },
     });
 
@@ -516,7 +536,7 @@ async function setAside(
       };
     }
 
-    logger.info(`show.${status}`, { showId });
+    logger.info(`show.${status}`, { userId, showId });
   } catch (error) {
     return toResult(error);
   }
@@ -527,12 +547,14 @@ async function setAside(
 
 /** Set aside, meaning to come back to it. */
 export async function pauseShow(showId: string): Promise<ActionResult> {
-  return setAside(showId, "paused");
+  const { user } = await requireOnboardedSession();
+  return setAside(user.id, showId, "paused");
 }
 
 /** Set aside for good. */
 export async function stopShow(showId: string): Promise<ActionResult> {
-  return setAside(showId, "stopped");
+  const { user } = await requireOnboardedSession();
+  return setAside(user.id, showId, "stopped");
 }
 
 /**
@@ -541,6 +563,8 @@ export async function stopShow(showId: string): Promise<ActionResult> {
  * pretending you've seen an episode.
  */
 export async function resumeShow(showId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   // Same uniform-invariant guard as removeShow.
   if (!isTmdbShowId(showId)) {
     return { ok: false, error: "Missing show id." };
@@ -548,7 +572,7 @@ export async function resumeShow(showId: string): Promise<ActionResult> {
 
   try {
     const { count } = await prisma.trackedShow.updateMany({
-      where: { showId, status: { in: ["paused", "stopped"] } },
+      where: { userId: user.id, showId, status: { in: ["paused", "stopped"] } },
       data: { status: "watching" },
     });
 
@@ -556,7 +580,7 @@ export async function resumeShow(showId: string): Promise<ActionResult> {
       return { ok: false, error: "That show isn't paused or stopped." };
     }
 
-    logger.info("show.resumed", { showId, via: "explicit" });
+    logger.info("show.resumed", { userId: user.id, showId, via: "explicit" });
   } catch (error) {
     return toResult(error);
   }
@@ -572,15 +596,19 @@ export async function resumeShow(showId: string): Promise<ActionResult> {
 export async function unmarkEpisodeWatched(
   episodeId: string,
 ): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   try {
     const episode = await prisma.episode.findUnique({
       where: { id: episodeId },
       select: { showId: true },
     });
 
-    await prisma.watchedEpisode.deleteMany({ where: { episodeId } });
+    await prisma.watchedEpisode.deleteMany({
+      where: { userId: user.id, episodeId },
+    });
 
-    if (episode) await demoteIfNothingWatched(episode.showId);
+    if (episode) await demoteIfNothingWatched(user.id, episode.showId);
 
     revalidateShowViews(episode?.showId);
   } catch (error) {
@@ -596,6 +624,8 @@ export async function setSeasonWatched(
   seasonNumber: number,
   watched: boolean,
 ): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   // Same uniform-invariant guard as removeShow.
   if (!isTmdbShowId(showId)) {
     return { ok: false, error: "Missing show id." };
@@ -617,7 +647,7 @@ export async function setSeasonWatched(
       // SQLite doesn't support `skipDuplicates`, so filter out the episodes
       // that are already marked instead of relying on conflict handling.
       const alreadyWatched = await prisma.watchedEpisode.findMany({
-        where: { episodeId: { in: episodeIds } },
+        where: { userId: user.id, episodeId: { in: episodeIds } },
         select: { episodeId: true },
       });
 
@@ -629,7 +659,7 @@ export async function setSeasonWatched(
       // way, so a lost race isn't a failure worth reporting.
       try {
         await prisma.watchedEpisode.createMany({
-          data: missing.map((episodeId) => ({ episodeId })),
+          data: missing.map((episodeId) => ({ userId: user.id, episodeId })),
         });
       } catch (error) {
         if (!isUniqueConstraintError(error)) throw error;
@@ -638,18 +668,18 @@ export async function setSeasonWatched(
       // Same promotion rule as marking a single episode.
       if (episodeIds.length > 0) {
         await prisma.trackedShow.upsert({
-          where: { showId },
-          create: { showId, status: "watching" },
+          where: { userId_showId: { userId: user.id, showId } },
+          create: { userId: user.id, showId, status: "watching" },
           update: { status: "watching" },
         });
       }
     } else {
       await prisma.watchedEpisode.deleteMany({
-        where: { episodeId: { in: episodeIds } },
+        where: { userId: user.id, episodeId: { in: episodeIds } },
       });
 
       // Same rule as unmarking a single episode.
-      await demoteIfNothingWatched(showId);
+      await demoteIfNothingWatched(user.id, showId);
     }
   } catch (error) {
     return toResult(error);
@@ -666,10 +696,12 @@ export async function setSeasonWatched(
 export async function updateNotificationPrefs(
   enabled: boolean,
 ): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   try {
     await prisma.settings.upsert({
-      where: { id: 1 },
-      create: { id: 1, notifyEnabled: enabled },
+      where: { userId: user.id },
+      create: { userId: user.id, notifyEnabled: enabled },
       update: { notifyEnabled: enabled },
     });
   } catch (error) {
@@ -682,6 +714,8 @@ export async function updateNotificationPrefs(
 
 /** Sets the default country for streaming availability. "" clears it. */
 export async function updateCountry(country: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   const value = country.trim().toUpperCase();
 
   if (value && !/^[A-Z]{2}$/.test(value)) {
@@ -690,8 +724,8 @@ export async function updateCountry(country: string): Promise<ActionResult> {
 
   try {
     await prisma.settings.upsert({
-      where: { id: 1 },
-      create: { id: 1, country: value || null },
+      where: { userId: user.id },
+      create: { userId: user.id, country: value || null },
       update: { country: value || null },
     });
   } catch (error) {
@@ -709,14 +743,19 @@ export async function updateCountry(country: string): Promise<ActionResult> {
  * re-adding a show doesn't have to re-download everything from TMDB.
  */
 export async function clearAllData(): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
   try {
     // One transaction, children first: a failure partway through used to leave
     // watch history gone but the tracked shows still listed, which reads as
     // "everything I watched was forgotten" rather than as a failed wipe.
+    // The `where` clauses are the only thing between "wipe my data" and "wipe
+    // everyone's". In v1 these were bare deleteMany calls on tables that held
+    // one user's rows; they are now shared.
     await prisma.$transaction([
-      prisma.watchedEpisode.deleteMany(),
-      prisma.trackedShow.deleteMany(),
-      prisma.settings.deleteMany(),
+      prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
+      prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
+      prisma.settings.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {
     return toResult(error);

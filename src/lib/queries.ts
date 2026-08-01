@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
 import type { TrackStatus } from "@/lib/types";
 
+// Every function here takes a userId, and every read through `Show.tracked` or
+// `Episode.watched` filters by it. Those two relations are lists now — one
+// entry per user — so an unfiltered read silently returns other people's rows
+// rather than failing. See docs/technical-design-v2.md section 5.
+
 export interface TrackedShowSummary {
   showId: string;
   name: string;
@@ -37,6 +42,7 @@ export interface TrackedShowSummary {
  * needs them all in order to apply precedence.
  */
 export async function getTrackedShows(
+  userId: string,
   status?: TrackStatus,
 ): Promise<TrackedShowSummary[]> {
   const now = new Date();
@@ -48,7 +54,7 @@ export async function getTrackedShows(
   // and find one episode name — the payload grew with shows × episodes for
   // data nothing below ever reads.
   const tracked = await prisma.trackedShow.findMany({
-    where: status ? { status } : undefined,
+    where: status ? { userId, status } : { userId },
     orderBy: { addedAt: "desc" },
     select: {
       showId: true,
@@ -66,7 +72,10 @@ export async function getTrackedShows(
               episodeNumber: true,
               name: true,
               airDate: true,
-              watched: { select: { watchedAt: true } },
+              // Scoped to the caller. Without this `where` the list carries
+              // every user's watch marks for the episode, and each count below
+              // would silently include them.
+              watched: { where: { userId }, select: { watchedAt: true } },
             },
           },
         },
@@ -81,14 +90,16 @@ export async function getTrackedShows(
     const aired = entry.show.episodes.filter(
       (episode) => episode.airDate !== null && episode.airDate <= now,
     );
-    const nextUnwatched = aired.find((episode) => episode.watched === null);
+    // `watched` is a list filtered to this user, so it holds at most one row —
+    // but it is still a list, and `=== null` would be true for every episode.
+    const nextUnwatched = aired.find((episode) => episode.watched.length === 0);
     const watchedCount = aired.filter(
-      (episode) => episode.watched !== null,
+      (episode) => episode.watched.length > 0,
     ).length;
 
-    const watchedTimes = entry.show.episodes
-      .map((episode) => episode.watched?.watchedAt)
-      .filter((at): at is Date => at != null);
+    const watchedTimes = entry.show.episodes.flatMap((episode) =>
+      episode.watched.map((mark) => mark.watchedAt),
+    );
 
     return {
       showId: entry.showId,
@@ -186,8 +197,8 @@ export interface ShowBuckets {
  * per-show episode data is the expensive part and fetching it repeatedly to
  * answer four questions would be wasteful at any real number of shows.
  */
-export async function getShowBuckets(): Promise<ShowBuckets> {
-  const all = await getTrackedShows();
+export async function getShowBuckets(userId: string): Promise<ShowBuckets> {
+  const all = await getTrackedShows(userId);
 
   const buckets: ShowBuckets = {
     watching: [],
@@ -226,18 +237,30 @@ export interface UpcomingEpisode {
  * started yet still tells you when its next episode lands.
  */
 export async function getUpcomingEpisodes(
+  userId: string,
   limit = 50,
 ): Promise<UpcomingEpisode[]> {
   const episodes = await prisma.episode.findMany({
     where: {
       airDate: { gt: new Date() },
+      // `userId` inside `some` is load-bearing, and its absence is the sharpest
+      // trap in this migration: `some: { status: {...} }` alone compiles, type
+      // checks, and returns episodes for shows that *anyone* tracks — so the
+      // home page would list episodes of a show only someone else follows.
+      //
       // Set-aside shows are excluded: if you've paused or stopped a show, its
       // next episode isn't something you're waiting for.
-      show: { tracked: { status: { in: ["watching", "watchlist"] } } },
+      show: {
+        tracked: {
+          some: { userId, status: { in: ["watching", "watchlist"] } },
+        },
+      },
     },
     orderBy: { airDate: "asc" },
     take: limit,
-    include: { show: { include: { tracked: true } } },
+    // Filtered again here. The `where` above decides which episodes come back;
+    // this decides which tracked rows are attached to them.
+    include: { show: { include: { tracked: { where: { userId } } } } },
   });
 
   return episodes.map((episode) => ({
@@ -245,8 +268,9 @@ export async function getUpcomingEpisodes(
     showId: episode.showId,
     showName: episode.show.name,
     posterPath: episode.show.posterPath,
-    // Safe: the query only returns episodes whose show is tracked.
-    status: episode.show.tracked!.status as TrackStatus,
+    // Safe: the query only returns episodes whose show this user tracks, and
+    // the include is filtered to that user's single row.
+    status: episode.show.tracked[0].status as TrackStatus,
     seasonNumber: episode.seasonNumber,
     episodeNumber: episode.episodeNumber,
     name: episode.name,
@@ -269,6 +293,7 @@ export async function getUpcomingEpisodes(
  * Next only deduplicates `fetch` on its own; everything else needs this.
  */
 export const getShowDetail = cache(async function getShowDetail(
+  userId: string,
   showId: string,
 ) {
   // Runs first so it can also refresh a cached-but-stale show, not just fetch
@@ -276,11 +301,22 @@ export const getShowDetail = cache(async function getShowDetail(
   const cached = await ensureShowCached(showId);
   if (!cached) return null;
 
-  const show = await loadShow(showId);
+  const show = await loadShow(userId, showId);
   if (!show) return null;
 
-  const seasons = new Map<number, typeof show.episodes>();
-  for (const episode of show.episodes) {
+  // `watched` is resolved to a boolean here rather than handed to the page as
+  // a relation. It is a *list* now — one row per user — so `!== null` is true
+  // for every episode, including unwatched ones, and TypeScript is happy to
+  // compare an array to null. That shipped: every episode on the show page
+  // rendered as watched, for everyone. Collapsing it at the query boundary
+  // means callers cannot make that mistake again.
+  const episodes = show.episodes.map(({ watched, ...episode }) => ({
+    ...episode,
+    watched: watched.length > 0,
+  }));
+
+  const seasons = new Map<number, typeof episodes>();
+  for (const episode of episodes) {
     const bucket = seasons.get(episode.seasonNumber);
     if (bucket) {
       bucket.push(episode);
@@ -295,7 +331,7 @@ export const getShowDetail = cache(async function getShowDetail(
     posterPath: show.posterPath,
     overview: show.overview,
     lastSynced: show.lastSynced,
-    status: (show.tracked?.status ?? null) as TrackStatus | null,
+    status: (show.tracked[0]?.status ?? null) as TrackStatus | null,
     firstAirDate: show.firstAirDate,
     lastAirDate: show.lastAirDate,
     showStatus: show.status,
@@ -307,14 +343,14 @@ export const getShowDetail = cache(async function getShowDetail(
   };
 });
 
-function loadShow(showId: string) {
+function loadShow(userId: string, showId: string) {
   return prisma.show.findUnique({
     where: { id: showId },
     include: {
-      tracked: true,
+      tracked: { where: { userId } },
       episodes: {
         orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-        include: { watched: true },
+        include: { watched: { where: { userId } } },
       },
     },
   });

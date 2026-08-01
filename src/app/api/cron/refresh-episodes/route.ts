@@ -44,7 +44,12 @@ export async function GET(request: Request) {
   // See "Runtime headroom" in docs/technical-design.md.
   const startedAt = Date.now();
 
+  // `distinct` because the same show tracked by N people is N rows — and each
+  // would otherwise cost its own identical TMDB sync inside the 60s budget.
+  // The cache being refreshed is global, so this route stays user-agnostic:
+  // there is no session here, and it must not acquire one.
   const tracked = await prisma.trackedShow.findMany({
+    distinct: ["showId"],
     select: { showId: true },
   });
 

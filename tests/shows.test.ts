@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
 
-import { resetDatabase } from "./helpers";
+import { TEST_USER_ID, resetDatabase, seedUser } from "./helpers";
 
 const SHOW_ID = "1399";
 
@@ -75,7 +75,7 @@ function countWrites() {
     /** Rows actually handed to createMany, which batches many per call. */
     get createdRows() {
       return created.mock.calls.reduce(
-        (total, [args]) => total + (args.data as unknown[]).length,
+        (total, [args]) => total + ((args?.data as unknown[]) ?? []).length,
         0,
       );
     },
@@ -84,6 +84,7 @@ function countWrites() {
 
 beforeEach(async () => {
   await resetDatabase();
+  await seedUser();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -180,7 +181,9 @@ describe("syncing a show from TMDB", () => {
     // WatchedEpisode references these rows.
     mockTmdb([{ id: 63056, episode_number: 1 }]);
     await syncShowFromTmdb(SHOW_ID);
-    await prisma.watchedEpisode.create({ data: { episodeId: "63056" } });
+    await prisma.watchedEpisode.create({
+      data: { userId: TEST_USER_ID, episodeId: "63056" },
+    });
 
     mockTmdb([{ id: 63056, episode_number: 1, name: "Winter Is Coming" }]);
     await syncShowFromTmdb(SHOW_ID);
@@ -231,7 +234,9 @@ describe("episodes removed upstream", () => {
       { id: 63057, episode_number: 2 },
     ]);
     await syncShowFromTmdb(SHOW_ID);
-    await prisma.watchedEpisode.create({ data: { episodeId: "63057" } });
+    await prisma.watchedEpisode.create({
+      data: { userId: TEST_USER_ID, episodeId: "63057" },
+    });
 
     mockTmdb([{ id: 63056, episode_number: 1 }]);
     await syncShowFromTmdb(SHOW_ID);

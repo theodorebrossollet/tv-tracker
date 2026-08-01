@@ -4,6 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // exist here. The cache behaviour isn't what these tests are about.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// Every action now opens with requireOnboardedSession. Sessions and cookies
+// have their own coverage in auth.test.ts; stubbing the gate here keeps these
+// tests about the tracking rules rather than re-testing login. Note the gate
+// itself is NOT bypassed in production by this — it is a test double.
+vi.mock("@/lib/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth")>()),
+  requireOnboardedSession: vi.fn(async () => ({
+    sessionId: "test-session",
+    user: { id: "test-user", nickname: "test-user", hasPassword: true },
+  })),
+}));
+
 // addToWatchlist fetches from TMDB; the tracking rules are what's under test,
 // so the sync is stubbed and the show is seeded directly instead.
 vi.mock("@/lib/shows", async (importOriginal) => ({
@@ -19,11 +31,13 @@ const {
   setSeasonWatched,
 } = await import("@/app/actions");
 
-const { resetDatabase, seedShow, statusOf, watchedCount } = await import(
-  "./helpers"
-);
+const { TEST_USER_ID, resetDatabase, seedShow, seedUser, statusOf, watchedCount } =
+  await import("./helpers");
 
-beforeEach(resetDatabase);
+beforeEach(async () => {
+  await resetDatabase();
+  await seedUser();
+});
 
 describe("promotion to watching", () => {
   it("moves a watchlist show to watching when an episode is marked", async () => {
@@ -295,8 +309,8 @@ describe("pausing", () => {
 
     const { getTrackedShows } = await import("@/lib/queries");
 
-    expect((await getTrackedShows("watching")).map((s) => s.showId)).toEqual(["w"]);
-    expect((await getTrackedShows("paused")).map((s) => s.showId)).toEqual(["p"]);
+    expect((await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId)).toEqual(["w"]);
+    expect((await getTrackedShows(TEST_USER_ID, "paused")).map((s) => s.showId)).toEqual(["p"]);
   });
 });
 
@@ -360,7 +374,9 @@ describe("stopping", () => {
 
     const { getUpcomingEpisodes } = await import("@/lib/queries");
 
-    expect((await getUpcomingEpisodes()).map((e) => e.showId)).toEqual(["w"]);
+    expect((await getUpcomingEpisodes(TEST_USER_ID)).map((e) => e.showId)).toEqual([
+      "w",
+    ]);
   });
 });
 
@@ -371,7 +387,9 @@ describe("clearing all data", () => {
   it("wipes tracking data but keeps the cached show and episodes", async () => {
     await seedShow({ offsets: [-10, -3], status: "watching", watched: [0] });
     const { prisma } = await import("@/lib/prisma");
-    await prisma.settings.create({ data: { id: 1, country: "FR" } });
+    await prisma.settings.create({
+      data: { userId: TEST_USER_ID, country: "FR" },
+    });
 
     const { clearAllData } = await import("@/app/actions");
     expect((await clearAllData()).ok).toBe(true);

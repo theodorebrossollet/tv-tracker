@@ -10,7 +10,7 @@ vi.mock("@/lib/shows", async (importOriginal) => ({
 const { GET } = await import("@/app/api/cron/refresh-episodes/route");
 const { syncShowFromTmdb } = await import("@/lib/shows");
 const { TmdbError } = await import("@/lib/tmdb");
-const { resetDatabase, seedShow } = await import("./helpers");
+const { resetDatabase, seedShow, seedUser } = await import("./helpers");
 
 function request(headers: Record<string, string> = {}) {
   return new Request("https://example.test/api/cron/refresh-episodes", {
@@ -20,6 +20,7 @@ function request(headers: Record<string, string> = {}) {
 
 beforeEach(async () => {
   await resetDatabase();
+  await seedUser();
   vi.unstubAllEnvs();
   vi.mocked(syncShowFromTmdb).mockClear();
   vi.mocked(syncShowFromTmdb).mockImplementation(async () => ({

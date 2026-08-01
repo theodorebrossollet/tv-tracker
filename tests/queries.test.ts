@@ -10,9 +10,14 @@ vi.mock("@/lib/shows", async (importOriginal) => ({
 const { getShowDetail, getTrackedShows, getUpcomingEpisodes } = await import(
   "@/lib/queries"
 );
-const { resetDatabase, seedShow } = await import("./helpers");
+const { TEST_USER_ID, resetDatabase, seedShow, seedUser } = await import(
+  "./helpers"
+);
 
-beforeEach(resetDatabase);
+beforeEach(async () => {
+  await resetDatabase();
+  await seedUser();
+});
 
 describe("watch progress", () => {
   it("counts only aired episodes, so upcoming ones don't drag progress down", async () => {
@@ -23,7 +28,7 @@ describe("watch progress", () => {
       watched: [0],
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     expect(show.airedCount).toBe(3);
     expect(show.watchedCount).toBe(1);
@@ -36,7 +41,7 @@ describe("watch progress", () => {
       watched: [0, 1],
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     // The upcoming episode must not stop it counting as finished.
     expect(show.fullyWatched).toBe(true);
@@ -49,7 +54,7 @@ describe("watch progress", () => {
       watched: [0],
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     expect(show.fullyWatched).toBe(false);
   });
@@ -57,7 +62,7 @@ describe("watch progress", () => {
   it("is not finished when nothing has aired yet", async () => {
     await seedShow({ offsets: [5, 10], status: "watching" });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     expect(show.airedCount).toBe(0);
     expect(show.fullyWatched).toBe(false);
@@ -70,7 +75,7 @@ describe("watch progress", () => {
       watched: [0],
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     expect(show.nextUnwatched?.episodeNumber).toBe(2);
   });
@@ -82,7 +87,7 @@ describe("watch progress", () => {
       watched: [0, 1],
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     expect(show.nextUnwatched).toBeNull();
   });
@@ -102,7 +107,7 @@ describe("watch progress", () => {
       },
     });
 
-    const [show] = await getTrackedShows("watching");
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
 
     // Counting it would leave progress permanently short of 100%.
     expect(show.airedCount).toBe(1);
@@ -112,10 +117,10 @@ describe("watch progress", () => {
     await seedShow({ showId: "a", offsets: [-1], status: "watching" });
     await seedShow({ showId: "b", offsets: [-1], status: "watchlist" });
 
-    expect((await getTrackedShows("watching")).map((s) => s.showId)).toEqual([
+    expect((await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId)).toEqual([
       "a",
     ]);
-    expect((await getTrackedShows("watchlist")).map((s) => s.showId)).toEqual([
+    expect((await getTrackedShows(TEST_USER_ID, "watchlist")).map((s) => s.showId)).toEqual([
       "b",
     ]);
   });
@@ -126,7 +131,7 @@ describe("upcoming episodes", () => {
     await seedShow({ showId: "w", offsets: [5], status: "watching" });
     await seedShow({ showId: "l", offsets: [7], status: "watchlist" });
 
-    const upcoming = await getUpcomingEpisodes();
+    const upcoming = await getUpcomingEpisodes(TEST_USER_ID);
 
     expect(upcoming.map((episode) => episode.showId).sort()).toEqual(["l", "w"]);
   });
@@ -134,13 +139,13 @@ describe("upcoming episodes", () => {
   it("excludes shows that aren't tracked at all", async () => {
     await seedShow({ showId: "untracked", offsets: [5], status: null });
 
-    expect(await getUpcomingEpisodes()).toEqual([]);
+    expect(await getUpcomingEpisodes(TEST_USER_ID)).toEqual([]);
   });
 
   it("excludes episodes that have already aired", async () => {
     await seedShow({ offsets: [-5, 5], status: "watching" });
 
-    const upcoming = await getUpcomingEpisodes();
+    const upcoming = await getUpcomingEpisodes(TEST_USER_ID);
 
     expect(upcoming).toHaveLength(1);
     expect(upcoming[0].episodeNumber).toBe(2);
@@ -150,7 +155,7 @@ describe("upcoming episodes", () => {
     await seedShow({ showId: "far", offsets: [30], status: "watching" });
     await seedShow({ showId: "soon", offsets: [2], status: "watching" });
 
-    const upcoming = await getUpcomingEpisodes();
+    const upcoming = await getUpcomingEpisodes(TEST_USER_ID);
 
     expect(upcoming.map((episode) => episode.showId)).toEqual(["soon", "far"]);
   });
@@ -158,7 +163,7 @@ describe("upcoming episodes", () => {
   it("labels which list each episode came from", async () => {
     await seedShow({ showId: "l", offsets: [3], status: "watchlist" });
 
-    const [episode] = await getUpcomingEpisodes();
+    const [episode] = await getUpcomingEpisodes(TEST_USER_ID);
 
     expect(episode.status).toBe("watchlist");
   });
@@ -166,7 +171,7 @@ describe("upcoming episodes", () => {
   it("respects the limit", async () => {
     await seedShow({ offsets: [1, 2, 3, 4, 5], status: "watching" });
 
-    expect(await getUpcomingEpisodes(2)).toHaveLength(2);
+    expect(await getUpcomingEpisodes(TEST_USER_ID, 2)).toHaveLength(2);
   });
 });
 
@@ -191,7 +196,7 @@ describe("show detail", () => {
       });
     }
 
-    const show = await getShowDetail(showId);
+    const show = await getShowDetail(TEST_USER_ID, showId);
 
     expect(show?.seasons.map((season) => season.seasonNumber)).toEqual([
       1, 2, 3,
@@ -202,8 +207,8 @@ describe("show detail", () => {
     await seedShow({ showId: "tracked", offsets: [-1], status: "watchlist" });
     await seedShow({ showId: "loose", offsets: [-1], status: null });
 
-    expect((await getShowDetail("tracked"))?.status).toBe("watchlist");
-    expect((await getShowDetail("loose"))?.status).toBeNull();
+    expect((await getShowDetail(TEST_USER_ID, "tracked"))?.status).toBe("watchlist");
+    expect((await getShowDetail(TEST_USER_ID, "loose"))?.status).toBeNull();
   });
 });
 
@@ -224,7 +229,7 @@ describe("watching order", () => {
       watched: [0],
     });
 
-    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+    const order = (await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId);
 
     expect(order).toEqual(["behind", "caughtup"]);
   });
@@ -247,7 +252,7 @@ describe("watching order", () => {
       showStatus: "Ended",
     });
 
-    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+    const order = (await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId);
 
     expect(order).toEqual(["active", "finished"]);
   });
@@ -271,7 +276,7 @@ describe("watching order", () => {
     await setWatchedAt(a.episodeIds[0], 90);
     await setWatchedAt(b.episodeIds[0], 1);
 
-    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+    const order = (await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId);
 
     expect(order).toEqual(["fresh", "stale"]);
   });
@@ -280,7 +285,7 @@ describe("watching order", () => {
     await seedShow({ showId: "older", offsets: [-10], status: "watching" });
     await seedShow({ showId: "newer", offsets: [-10], status: "watching" });
 
-    const order = (await getTrackedShows("watching")).map((s) => s.showId);
+    const order = (await getTrackedShows(TEST_USER_ID, "watching")).map((s) => s.showId);
 
     // Both are equally actionable and unwatched, so the later addition wins.
     expect(order).toEqual(["newer", "older"]);
@@ -299,7 +304,7 @@ describe("upcoming excludes paused shows", () => {
       watched: [],
     });
 
-    const upcoming = await getUpcomingEpisodes();
+    const upcoming = await getUpcomingEpisodes(TEST_USER_ID);
 
     expect(upcoming.map((e) => e.showId)).toEqual(["w"]);
   });
@@ -315,7 +320,7 @@ describe("bucketing", () => {
     await seedShow({ showId: "d", offsets: [-10], status: "watching", watched: [0] });
     await seedShow({ showId: "e", offsets: [-10], status: "stopped", watched: [0] });
 
-    const buckets = await getShowBuckets();
+    const buckets = await getShowBuckets(TEST_USER_ID);
     const ids = (list: { showId: string }[]) => list.map((s) => s.showId);
 
     expect(ids(buckets.watching)).toEqual(["a"]);
@@ -337,7 +342,7 @@ describe("bucketing", () => {
     await seedShow({ offsets: [-10], status: "paused", watched: [0] });
 
     const { getShowBuckets } = await import("@/lib/queries");
-    const buckets = await getShowBuckets();
+    const buckets = await getShowBuckets(TEST_USER_ID);
 
     expect(buckets.finished.map((s) => s.showId)).toEqual(["101"]);
     expect(buckets.paused).toEqual([]);
@@ -349,7 +354,7 @@ describe("bucketing", () => {
     await seedShow({ offsets: [-10], status: "stopped", watched: [0] });
 
     const { getShowBuckets } = await import("@/lib/queries");
-    const buckets = await getShowBuckets();
+    const buckets = await getShowBuckets(TEST_USER_ID);
 
     expect(buckets.stopped.map((s) => s.showId)).toEqual(["101"]);
     expect(buckets.finished).toEqual([]);
@@ -362,7 +367,7 @@ describe("bucketing", () => {
 
     const { getShowBuckets } = await import("@/lib/queries");
 
-    expect((await getShowBuckets()).watching.map((s) => s.showId)).toEqual(["going"]);
+    expect((await getShowBuckets(TEST_USER_ID)).watching.map((s) => s.showId)).toEqual(["going"]);
   });
 
   it("returns a finished show to Watching when a new episode airs", async () => {
@@ -375,7 +380,7 @@ describe("bucketing", () => {
     });
 
     const { getShowBuckets } = await import("@/lib/queries");
-    expect((await getShowBuckets()).finished.map((s) => s.showId)).toEqual([showId]);
+    expect((await getShowBuckets(TEST_USER_ID)).finished.map((s) => s.showId)).toEqual([showId]);
 
     const { prisma } = await import("@/lib/prisma");
     await prisma.episode.create({
@@ -389,7 +394,7 @@ describe("bucketing", () => {
       },
     });
 
-    const after = await getShowBuckets();
+    const after = await getShowBuckets(TEST_USER_ID);
     expect(after.finished).toEqual([]);
     expect(after.watching.map((s) => s.showId)).toEqual([showId]);
   });

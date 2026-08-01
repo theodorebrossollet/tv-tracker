@@ -1,15 +1,11 @@
-// TV Tracker — schema, mid-migration to v2 accounts.
-// See docs/technical-design.md section 2, and docs/technical-design-v2.md
-// section 3 for the two-phase migration this file is halfway through.
+// TV Tracker — schema with per-user data (v2).
+// See docs/technical-design.md section 2 and docs/technical-design-v2.md.
 //
-// **Phase A (this file): additive only.** `User` and `Session` exist, and
-// `userId` has been added to the three per-user tables — but it is nullable,
-// and every v1 unique constraint is untouched. That is deliberate: the running
-// v1 app doesn't know these columns exist and keeps working against them, so
-// Phase A can be applied to production long before the v2 code deploys.
-//
-// Phase B tightens all of it. See the note at the bottom before changing
-// anything here.
+// **Phase B is applied.** `userId` is required on the three per-user tables,
+// and their unique constraints are composite. The consequence worth knowing
+// before touching a query: `Show.tracked` and `Episode.watched` are **lists**,
+// not single rows — one entry per user tracking that show. A query that reads
+// them without filtering by userId returns other people's data.
 
 generator client {
   provider = "prisma-client"
@@ -106,7 +102,7 @@ model Show {
   genres       String?
 
   episodes Episode[]
-  tracked  TrackedShow?
+  tracked  TrackedShow[]
 }
 
 /// A single episode of a cached show, including its air date.
@@ -123,7 +119,7 @@ model Episode {
   overview      String?
 
   show    Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
-  watched WatchedEpisode?
+  watched WatchedEpisode[]
 
   @@index([showId])
   @@index([airDate])
@@ -131,64 +127,53 @@ model Episode {
 
 /// A show the user has added to "watching" or their watchlist.
 model TrackedShow {
-  id     String @id @default(cuid())
-  /// Still unique on its own in Phase A — Phase B moves this to
-  /// @@unique([userId, showId]). Until then `Show.tracked` stays one-to-one
-  /// and the v1 queries reading through it keep compiling.
-  showId String @unique
-  /// Nullable in Phase A so existing rows survive the migration; the backfill
-  /// fills it in and Phase B makes it required.
-  userId  String?
-  status  String // "watching" | "watchlist"
+  id      String   @id @default(cuid())
+  showId  String
+  userId  String
+  status  String // "watching" | "watchlist" | "paused" | "stopped"
   addedAt DateTime @default(now())
 
-  show Show  @relation(fields: [showId], references: [id], onDelete: Cascade)
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show Show @relation(fields: [showId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Two people may track the same show; one person may not track it twice.
+  @@unique([userId, showId])
+  /// The cron reads every tracked showId across all users.
+  @@index([showId])
 }
 
 /// Marks one episode as watched. Presence of the row is the "watched" flag.
 model WatchedEpisode {
-  id String @id @default(cuid())
-  /// Same as TrackedShow.showId: unique alone until Phase B pairs it with
-  /// userId, which keeps `Episode.watched` one-to-one for now.
-  episodeId String  @unique
-  userId    String?
+  id        String   @id @default(cuid())
+  episodeId String
+  userId    String
   watchedAt DateTime @default(now())
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  user    User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@index([episodeId])
 }
 
-/// Single-row table (id is always 1) holding user preferences. A full settings
-/// table is overkill for one user, but it keeps prefs in the database rather
-/// than in a file that Vercel would wipe on redeploy.
+/// One row of preferences per account, keyed by the user it belongs to. Kept
+/// in the database rather than a file, which Vercel would wipe on redeploy.
 model Settings {
-  id Int @id @default(1)
-  /// Added in Phase A purely so Phase B's rebuild has something to copy.
-  /// Making `userId` the primary key changes the key's type, which SQLite can
-  /// only do by rebuilding the table — and that rebuild copies existing
-  /// columns across. Introduced as the new key in one step instead, there
-  /// would be nothing to copy from and this row's values would be lost.
-  userId        String? @unique
+  /// One row per user, replacing v1's fixed id=1 single row.
+  userId        String  @id
   notifyEnabled Boolean @default(false)
   /// ISO 3166-1 alpha-2 code (e.g. "FR"), used as the default region when
   /// showing where a series is available to stream. Null until you pick one.
   country       String?
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Phase B — still to do, and NOT safe to apply while the v1 build is serving:
-//   - Drop `showId @unique` / `episodeId @unique` in favour of
-//     `@@unique([userId, showId])` / `@@unique([userId, episodeId])`.
-//   - Make `userId` NOT NULL on all three tables.
-//   - Replace `Settings.id` with `userId` as the primary key.
+// Phase B is done. What it left behind, for anyone reading a query here:
 //
-// That first change flips `Show.tracked` and `Episode.watched` from one-to-one
-// to lists, which rewrites the shape of `getTrackedShows`,
-// `getUpcomingEpisodes` and `getShowDetail` — not just their filters. It also
-// invalidates the `where: { showId }` lookups the v1 build still issues, which
-// is why Phase B and the v2 deploy have to be adjacent.
-//
-// Run scripts/backfill-user-ownership.mjs immediately before Phase B, so any
-// row written since the last run has an owner when NOT NULL lands.
+//   - `Show.tracked` and `Episode.watched` are lists. Every read through them
+//     must filter by userId, or it returns rows belonging to someone else.
+//     `getUpcomingEpisodes` is the one where the wrong version still compiles.
+//   - `Settings` is keyed by userId; there is no id=1 row any more.
+//   - The global TMDB cache (`Show`, `Episode`) is deliberately NOT per-user.
+//     Two people tracking the same show share one cached copy.

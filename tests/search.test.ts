@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
+// Actions open with requireOnboardedSession; sessions have their own coverage
+// in auth.test.ts, so the gate is stubbed here rather than re-tested.
+vi.mock("@/lib/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth")>()),
+  requireOnboardedSession: vi.fn(async () => ({
+    sessionId: "test-session",
+    user: { id: "test-user", nickname: "test-user", hasPassword: true },
+  })),
+}));
+
 // Only the query handed to TMDB is under test here, so the request itself is
 // stubbed. importOriginal keeps TmdbError, which actions.ts checks against.
 vi.mock("@/lib/tmdb", async (importOriginal) => ({
@@ -11,10 +21,11 @@ vi.mock("@/lib/tmdb", async (importOriginal) => ({
 
 const { searchSuggestions } = await import("@/app/actions");
 const { searchTvShows } = await import("@/lib/tmdb");
-const { resetDatabase } = await import("./helpers");
+const { resetDatabase, seedUser } = await import("./helpers");
 
 beforeEach(async () => {
   await resetDatabase();
+  await seedUser();
   vi.mocked(searchTvShows).mockClear();
 });
 
