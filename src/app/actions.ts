@@ -9,6 +9,8 @@ import {
   hashCode,
   requireSession,
 } from "@/lib/auth";
+import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
+import { validatePassword } from "@/lib/password-rules";
 import { describeError, logger } from "@/lib/logger";
 import { validateNickname } from "@/lib/nickname";
 import { prisma } from "@/lib/prisma";
@@ -78,30 +80,32 @@ function revalidateShowViews(showId?: string) {
 // ---------------------------------------------------------------------------
 // Accounts
 //
-// These three are the only actions that may run without a completed account.
+// These four are the only actions that may run without a completed account.
 // Everything below them gets `requireOnboardedSession()` in the next stage,
 // once queries are scoped by user — adding the gate before the data is
 // partitioned would lock the app without making anything private.
 //
-// Note where the session check sits in `setNickname`: above the `try`, not
-// inside it. `requireSession` redirects by throwing, and `toResult` would
+// Two credentials, hashed two different ways on purpose: the account code is a
+// 128-bit invite (SHA-256, indexed lookup) and the password is user-chosen
+// (scrypt, salted, slow). lib/password.ts explains why one treatment would be
+// wrong for both.
+//
+// Note where the session check sits in `completeOnboarding`: above the `try`,
+// not inside it. `requireSession` redirects by throwing, and `toResult` would
 // swallow that into a generic error toast.
 // ---------------------------------------------------------------------------
 
 /**
- * Exchanges an account code for a session, then redirects.
+ * First login, and the only way back in after a forgotten password.
  *
- * The redirect is the action's, not the caller's. Navigating on the client
- * instead means pairing `router.replace` with a `router.refresh` to pick up a
- * layout that was rendered for a signed-out visitor — and those two together
- * inside one transition deadlock: the action returns 200, the destination
- * renders server-side, and the form sits on "Signing in…" forever. Measured,
- * not assumed.
+ * The code is an invite rather than the day-to-day credential: it survives
+ * onboarding precisely so that losing a password isn't losing the account.
+ * There is no other recovery route, and no email to send one to.
  *
  * Note the redirect sits after the try block, never inside it. `redirect`
  * works by throwing, so `toResult` would swallow it into a generic error.
  */
-export async function login(code: string): Promise<ActionResult> {
+export async function loginWithCode(code: string): Promise<ActionResult> {
   const trimmed = code.trim();
 
   if (!trimmed) return { ok: false, error: "Enter your account code." };
@@ -111,22 +115,23 @@ export async function login(code: string): Promise<ActionResult> {
   try {
     const user = await prisma.user.findUnique({
       where: { codeHash: hashCode(trimmed) },
-      select: { id: true, nickname: true },
+      select: { id: true, nickname: true, passwordHash: true },
     });
 
     // Deliberately the same message whether the code is malformed or simply
-    // wrong. There is nothing useful to distinguish, and no account enumeration
-    // to enable.
+    // wrong. There is nothing useful to distinguish, and no account
+    // enumeration to enable.
     if (!user) return { ok: false, error: "That code isn't recognised." };
 
     await createSession(user.id);
 
     // The code itself is never logged — see the note in lib/logger.ts about
-    // TMDB URLs, which applies with more force to a credential that cannot be
-    // rotated by its owner.
-    logger.info("auth.login", { userId: user.id });
+    // TMDB URLs, which applies with more force to a credential its owner
+    // cannot rotate.
+    logger.info("auth.login", { userId: user.id, via: "code" });
 
-    destination = user.nickname === null ? "/welcome" : "/";
+    destination =
+      user.nickname === null || user.passwordHash === null ? "/welcome" : "/";
   } catch (error) {
     return toResult(error);
   }
@@ -137,6 +142,47 @@ export async function login(code: string): Promise<ActionResult> {
   redirect(destination);
 }
 
+/** Everyday sign-in, once an account has finished onboarding. */
+export async function loginWithPassword(
+  nickname: string,
+  password: string,
+): Promise<ActionResult> {
+  const key = nickname.trim().toLowerCase();
+
+  if (!key || !password) {
+    return { ok: false, error: "Enter your nickname and password." };
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { nicknameKey: key },
+      select: { id: true, passwordHash: true },
+    });
+
+    // One message for every failure, and a matching amount of work for each.
+    // Skipping the hash when the nickname is unknown would make the response
+    // time say which half was wrong — and nicknames are meant to be publicly
+    // visible eventually, so they're the half an attacker already has.
+    if (!user?.passwordHash) {
+      await fakeVerify();
+      return { ok: false, error: "Wrong nickname or password." };
+    }
+
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      logger.warn("auth.login_failed", { userId: user.id });
+      return { ok: false, error: "Wrong nickname or password." };
+    }
+
+    await createSession(user.id);
+    logger.info("auth.login", { userId: user.id, via: "password" });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/");
+}
+
 /** Revokes the current session. Succeeds even when there isn't one. */
 export async function logout(): Promise<ActionResult> {
   try {
@@ -145,40 +191,73 @@ export async function logout(): Promise<ActionResult> {
     return toResult(error);
   }
 
-  return { ok: true };
+  revalidatePath("/", "layout");
+  redirect("/login");
 }
 
 /**
- * Claims a nickname, once, for the account that's logged in.
+ * Finishes an account: nickname and password, chosen together at first login.
  *
- * Permanent by design, and enforced here rather than by hiding the UI: server
- * actions are POST-able directly, so a missing check would let a direct POST
- * rename an account that is supposed to be locked.
+ * Both are written in one update. Setting them separately would leave an
+ * account that is half-configured if the second step is abandoned, and
+ * `requireOnboardedSession` would have to describe which half.
+ *
+ * The nickname is permanent, and enforced here rather than by hiding the UI:
+ * server actions are POST-able directly, so a missing check would let a direct
+ * POST rename an account that is supposed to be locked.
  */
-export async function setNickname(raw: string): Promise<ActionResult> {
-  // Above the try. See the note at the top of this section.
+export async function completeOnboarding(
+  rawNickname: string,
+  password: string,
+): Promise<ActionResult> {
+  // Above the try. `requireSession` redirects by throwing, and `toResult`
+  // would turn an expired session into "Something went wrong".
   const session = await requireSession();
 
-  const checked = validateNickname(raw);
-  if (!checked.ok) return { ok: false, error: checked.error };
+  // An account that already has a nickname is only here for the password —
+  // it keeps the name it chose, and the submitted one is ignored rather than
+  // silently applied.
+  const existing = session.user.nickname;
+
+  const checkedNickname = existing
+    ? ({ ok: true, nickname: existing, key: existing.toLowerCase() } as const)
+    : validateNickname(rawNickname);
+
+  if (!checkedNickname.ok) {
+    return { ok: false, error: checkedNickname.error };
+  }
+
+  const checkedPassword = validatePassword(password, {
+    nickname: checkedNickname.nickname,
+  });
+
+  if (!checkedPassword.ok) return { ok: false, error: checkedPassword.error };
 
   try {
-    // `updateMany` with `nickname: null` in the filter makes "only if unset" a
-    // property of the write itself. Reading the current value and then updating
-    // would leave a window where two concurrent posts both see null.
+    const passwordHash = await hashPassword(password);
+
+    // Both conditions live in the filter so they are properties of the write
+    // itself: reading first and then updating would leave a window where two
+    // concurrent posts both see the account unfinished.
+    //
+    // `passwordHash: null` is the load-bearing half. Without it this action
+    // re-hashes and overwrites the password of an *already finished* account —
+    // and since server actions are POST-able directly, that is a password
+    // change with no knowledge of the current one. Onboarding runs once.
     const { count } = await prisma.user.updateMany({
-      where: { id: session.user.id, nickname: null },
-      data: { nickname: checked.nickname, nicknameKey: checked.key },
+      where: { id: session.user.id, nickname: existing, passwordHash: null },
+      data: {
+        nickname: checkedNickname.nickname,
+        nicknameKey: checkedNickname.key,
+        passwordHash,
+      },
     });
 
     if (count === 0) {
-      return {
-        ok: false,
-        error: "Your nickname is already set and can't be changed.",
-      };
+      return { ok: false, error: "Your account has already been set up." };
     }
 
-    logger.info("auth.nickname_set", { userId: session.user.id });
+    logger.info("auth.onboarded", { userId: session.user.id });
   } catch (error) {
     // The unique index on `nicknameKey` is what actually decides this, rather
     // than a lookup beforehand — two people claiming the same name at once
@@ -190,8 +269,7 @@ export async function setNickname(raw: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  // Outside the try, same as login. Onboarding is what the app has been
-  // waiting on, so the layout it renders next is a different one.
+  // Outside the try, same as the logins above.
   revalidatePath("/", "layout");
   redirect("/");
 }

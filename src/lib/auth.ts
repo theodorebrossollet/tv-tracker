@@ -61,7 +61,17 @@ export function hashCode(code: string): string {
 
 export interface SessionContext {
   sessionId: string;
-  user: { id: string; nickname: string | null };
+  user: {
+    id: string;
+    nickname: string | null;
+    /** Whether a password has been chosen. The hash itself never leaves here. */
+    hasPassword: boolean;
+  };
+}
+
+/** Onboarding is finished only when both credentials exist. */
+export function isOnboarded(user: SessionContext["user"]): boolean {
+  return user.nickname !== null && user.hasPassword;
 }
 
 /**
@@ -117,7 +127,7 @@ export const getSession = cache(async function getSession(): Promise<SessionCont
     select: {
       id: true,
       expiresAt: true,
-      user: { select: { id: true, nickname: true } },
+      user: { select: { id: true, nickname: true, passwordHash: true } },
     },
   });
 
@@ -137,7 +147,15 @@ export const getSession = cache(async function getSession(): Promise<SessionCont
     });
   }
 
-  return { sessionId: session.id, user: session.user };
+  const { passwordHash, ...user } = session.user;
+
+  return {
+    sessionId: session.id,
+    // The hash is dropped here rather than passed along. Nothing above this
+    // layer needs it, and a value that never leaves can't be logged, returned
+    // from an action, or serialised into a client component by accident.
+    user: { ...user, hasPassword: passwordHash !== null },
+  };
 });
 
 /**
@@ -158,16 +176,16 @@ export async function requireSession(): Promise<SessionContext> {
 }
 
 /**
- * Requires a session that has finished onboarding.
+ * Requires a session that has finished onboarding — nickname *and* password.
  *
- * Session validity and "has a nickname" are separate checks and both have to
- * pass, so this wraps `requireSession` rather than replacing it. Every action
- * uses this one except `setNickname` and `logout`, which are the two that must
- * remain reachable while `nickname` is still null.
+ * Session validity and "onboarding complete" are separate checks and both have
+ * to pass, so this wraps `requireSession` rather than replacing it. Every
+ * action uses this one except `completeOnboarding` and `logout`, which are the
+ * two that must stay reachable before the account is finished.
  */
 export async function requireOnboardedSession(): Promise<SessionContext> {
   const session = await requireSession();
-  if (session.user.nickname === null) redirect("/welcome");
+  if (!isOnboarded(session.user)) redirect("/welcome");
 
   return session;
 }
