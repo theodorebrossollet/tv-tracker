@@ -10,6 +10,7 @@ could erase the data. Real per-user login is Phase 2.
 
 - [Project scope](docs/scope.md) — features, phases, what's out of scope
 - [Technical design](docs/technical-design.md) — architecture, data model, routes
+- [Roadmap](docs/roadmap.md) — future feature ideas, not yet scheduled
 
 ## Stack
 
