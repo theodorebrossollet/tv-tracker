@@ -293,11 +293,18 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
   }
 }
 
-/** Reads a user's settings row, creating it on first access. */
+/**
+ * Reads a user's settings, falling back to the defaults when they have none.
+ *
+ * A read, not an upsert. This runs on every show-page render, and an upsert is
+ * a write statement — it can't be served by a replica and goes to the Turso
+ * primary every time, to create a row of defaults that reading them would have
+ * given anyway. The two actions that actually change a setting
+ * (`updateNotificationPrefs`, `updateCountry`) upsert on their own, so the row
+ * still appears the moment anything about it is worth persisting.
+ */
 export async function getSettings(userId: string) {
-  return prisma.settings.upsert({
-    where: { userId },
-    create: { userId },
-    update: {},
-  });
+  const settings = await prisma.settings.findUnique({ where: { userId } });
+
+  return settings ?? { userId, notifyEnabled: false, country: null };
 }

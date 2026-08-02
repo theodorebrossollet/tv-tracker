@@ -84,35 +84,51 @@ export async function getTrackedShows(
   });
 
   const summaries = tracked.map((entry) => {
+    // One pass rather than four plus a flatMap. Episodes arrive in order, so
+    // the first unwatched aired one found is the next to watch.
+    //
     // "Aired" excludes episodes with no air date at all — TMDB leaves the date
     // empty for episodes that are announced but unscheduled, and counting those
     // as available would make progress look permanently incomplete.
-    const aired = entry.show.episodes.filter(
-      (episode) => episode.airDate !== null && episode.airDate <= now,
-    );
-    // `watched` is a list filtered to this user, so it holds at most one row —
-    // but it is still a list, and `=== null` would be true for every episode.
-    const nextUnwatched = aired.find((episode) => episode.watched.length === 0);
-    const watchedCount = aired.filter(
-      (episode) => episode.watched.length > 0,
-    ).length;
+    let airedCount = 0;
+    let watchedCount = 0;
+    let nextUnwatched: (typeof entry.show.episodes)[number] | undefined;
+    let lastWatchedMs = -Infinity;
 
-    const watchedTimes = entry.show.episodes.flatMap((episode) =>
-      episode.watched.map((mark) => mark.watchedAt),
-    );
+    for (const episode of entry.show.episodes) {
+      // `watched` is a list filtered to this user, so it holds at most one row
+      // — but it is still a list, and `=== null` would be true for every
+      // episode.
+      const isWatched = episode.watched.length > 0;
+
+      for (const mark of episode.watched) {
+        // Not `Math.max(...times)`: that spreads one argument per watch mark,
+        // and a long-running show tracked from the start would eventually blow
+        // the argument limit — slowly at first, then as a RangeError.
+        lastWatchedMs = Math.max(lastWatchedMs, mark.watchedAt.getTime());
+      }
+
+      if (episode.airDate === null || episode.airDate > now) continue;
+
+      airedCount += 1;
+      if (isWatched) {
+        watchedCount += 1;
+      } else if (!nextUnwatched) {
+        nextUnwatched = episode;
+      }
+    }
 
     return {
       showId: entry.showId,
       name: entry.show.name,
       posterPath: entry.show.posterPath,
       status: entry.status as TrackStatus,
-      airedCount: aired.length,
+      airedCount,
       watchedCount,
-      fullyWatched: aired.length > 0 && watchedCount === aired.length,
+      fullyWatched: airedCount > 0 && watchedCount === airedCount,
       showStatus: entry.show.status,
-      lastWatchedAt: watchedTimes.length
-        ? new Date(Math.max(...watchedTimes.map((at) => at.getTime())))
-        : null,
+      lastWatchedAt:
+        lastWatchedMs === -Infinity ? null : new Date(lastWatchedMs),
       addedAt: entry.addedAt,
       nextUnwatched: nextUnwatched
         ? {
@@ -258,9 +274,27 @@ export async function getUpcomingEpisodes(
     },
     orderBy: { airDate: "asc" },
     take: limit,
-    // Filtered again here. The `where` above decides which episodes come back;
-    // this decides which tracked rows are attached to them.
-    include: { show: { include: { tracked: { where: { userId } } } } },
+    // Field by field, for the same reason `getTrackedShows` above does it: an
+    // `include` here dragged every column of each episode's show — `overview`
+    // is 500-1500 bytes on its own, plus genres, network and dates — over the
+    // wire for up to `limit` rows, to read three values off them.
+    select: {
+      id: true,
+      showId: true,
+      seasonNumber: true,
+      episodeNumber: true,
+      name: true,
+      airDate: true,
+      show: {
+        select: {
+          name: true,
+          posterPath: true,
+          // Filtered again here. The `where` above decides which episodes come
+          // back; this decides which tracked rows are attached to them.
+          tracked: { where: { userId }, select: { status: true } },
+        },
+      },
+    },
   });
 
   return episodes.map((episode) => ({
@@ -350,7 +384,10 @@ function loadShow(userId: string, showId: string) {
       tracked: { where: { userId } },
       episodes: {
         orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-        include: { watched: { where: { userId } } },
+        // Only the id: the caller collapses these rows to `watched.length > 0`
+        // immediately, so `watchedAt` and the foreign keys were being fetched
+        // for every episode of the show to produce a boolean.
+        include: { watched: { where: { userId }, select: { id: true } } },
       },
     },
   });

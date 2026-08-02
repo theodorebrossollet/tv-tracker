@@ -149,6 +149,27 @@ describe("error handling", () => {
     await expect(searchTvShows("x")).rejects.toBeInstanceOf(TmdbError);
   });
 
+  it("doesn't repeat a transport error's own text back to the browser", async () => {
+    // `toResult` hands TmdbError.message straight to the client, and a
+    // transport failure's message isn't ours to vet — the request URL carries
+    // the v3 API key in its query string, so this is the one place a key could
+    // reach a visitor.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error(
+          "request to https://api.themoviedb.org/3/search/tv?api_key=SECRETKEY failed",
+        );
+      }),
+    );
+
+    const error = await searchTvShows("x").catch((caught: Error) => caught);
+
+    expect(error).toBeInstanceOf(TmdbError);
+    expect((error as Error).message).toBe("Could not reach TMDB. Please try again.");
+    expect((error as Error).message).not.toContain("SECRETKEY");
+  });
+
   it("returns nothing for a blank query without calling TMDB", async () => {
     const fetchMock = mockFetch({ results: [] });
 
@@ -220,6 +241,111 @@ describe("trailer selection", () => {
     await getShowTrailer("t5");
     await getShowTrailer("t5");
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("values TMDB supplies that end up in markup", () => {
+  it("drops a video id that isn't safe to sit in a URL", async () => {
+    // The id is interpolated into a thumbnail URL and an embed URL. A `/` or
+    // `?` in it doesn't sit quietly in the path — it repoints the request.
+    mockFetch({
+      results: [
+        {
+          type: "Trailer",
+          official: true,
+          site: "YouTube",
+          name: "Trailer",
+          key: "../../evil?x=",
+        },
+      ],
+    });
+
+    expect(await getShowTrailer("v-unsafe")).toBeNull();
+  });
+
+  it("keeps an ordinary video id, whatever its length", async () => {
+    // Charset is the security property; length is not. Pinning it to 11 would
+    // silently drop the trailer for anything unusual, with nothing logged.
+    mockFetch({
+      results: [
+        {
+          type: "Trailer",
+          official: true,
+          site: "YouTube",
+          name: "Trailer",
+          key: "dQw4w9WgXcQ_longer",
+        },
+      ],
+    });
+
+    expect(await getShowTrailer("v-long")).toMatchObject({
+      key: "dQw4w9WgXcQ_longer",
+    });
+  });
+
+  it("refuses a provider link that isn't https", async () => {
+    // This is rendered as an href, and React only *warns* about a
+    // `javascript:` URL — it renders it anyway.
+    mockFetch({
+      results: {
+        FR: {
+          link: "javascript:alert(document.cookie)",
+          flatrate: [
+            { provider_id: 1, provider_name: "Netflix", logo_path: "/n.jpg" },
+          ],
+        },
+      },
+    });
+
+    const countries = await getWatchProviders("p-hostile");
+
+    // The country still lists its providers; only the link is dropped.
+    expect(countries[0].link).toBeNull();
+    expect(countries[0].flatrate[0].name).toBe("Netflix");
+  });
+});
+
+describe("response cache", () => {
+  it("shares one request between callers that miss together", async () => {
+    // A cold instance rendering a show page fans out to providers, regions and
+    // a trailer per season at once. Caching the resolved value meant every
+    // concurrent viewer multiplied that whole burst.
+    const fetchMock = mockFetch({ results: {} });
+
+    await Promise.all([
+      getWatchProviders("p-stampede"),
+      getWatchProviders("p-stampede"),
+      getWatchProviders("p-stampede"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't serve a failure for the rest of the TTL", async () => {
+    // A cached rejection would turn one bad minute into a day without
+    // trailers, long after TMDB recovered.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      }),
+    );
+
+    await expect(getWatchProviders("p-recovers")).rejects.toBeInstanceOf(TmdbError);
+
+    const fetchMock = mockFetch({
+      results: {
+        FR: {
+          link: "https://example.test/fr",
+          flatrate: [
+            { provider_id: 1, provider_name: "Netflix", logo_path: null },
+          ],
+        },
+      },
+    });
+
+    expect((await getWatchProviders("p-recovers"))[0].code).toBe("FR");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

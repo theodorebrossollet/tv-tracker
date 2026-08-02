@@ -206,3 +206,71 @@ describe("what the refresh covers", () => {
     expect(body).toEqual({ checked: 0, refreshed: 0, failed: [] });
   });
 });
+
+describe("finishing inside the deadline", () => {
+  const authorized = async () => {
+    vi.stubEnv("CRON_SECRET", "s3cret");
+    return GET(request({ authorization: "Bearer s3cret" }));
+  };
+
+  it("visits the least recently synced shows first", async () => {
+    // Without an order this is whatever the database returns — stable enough
+    // that a run which can't finish would refresh the same prefix every night
+    // and never reach the tail. Oldest-first makes successive runs rotate.
+    const { prisma } = await import("@/lib/prisma");
+
+    for (const [showId, hoursAgo] of [
+      ["1", 1],
+      ["2", 72],
+      ["3", 24],
+    ] as const) {
+      await seedShow({ showId, offsets: [-1], status: "watching" });
+      await prisma.show.update({
+        where: { id: showId },
+        data: { lastSynced: new Date(Date.now() - hoursAgo * 3600_000) },
+      });
+    }
+
+    await authorized();
+
+    expect(
+      vi.mocked(syncShowFromTmdb).mock.calls.map(([showId]) => showId),
+    ).toEqual(["2", "3", "1"]);
+  });
+
+  it("stops before the timeout kills it, and says how many it skipped", async () => {
+    // Being terminated mid-loop takes the completion log and the session sweep
+    // with it — so the run leaves no record, and expired sessions quietly stop
+    // being deleted. Yielding early keeps both.
+    for (const showId of ["1", "2", "3"]) {
+      await seedShow({ showId, offsets: [-1], status: "watching" });
+    }
+
+    // Each show burns a minute of the budget, so only the first fits.
+    const realNow = Date.now;
+    let clock = realNow();
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+    vi.mocked(syncShowFromTmdb).mockImplementation(async () => {
+      clock += 60_000;
+      return { name: "Test Show", episodeCount: 3 };
+    });
+
+    const { logger } = await import("@/lib/logger");
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    const response = await authorized();
+
+    expect(syncShowFromTmdb).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(200);
+
+    const [, fields] = info.mock.calls.find(
+      ([event]) => event === "cron.refresh.completed",
+    )!;
+
+    expect(fields!.deadlineHit).toBe(true);
+    expect(fields!.skipped).toBe(2);
+
+    info.mockRestore();
+    vi.mocked(Date.now).mockRestore();
+  });
+});

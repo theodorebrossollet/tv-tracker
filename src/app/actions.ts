@@ -91,12 +91,22 @@ function toResult(error: unknown): ActionResult {
   return { ok: false, error: "Something went wrong. Please try again." };
 }
 
-/** Refreshes every route that can show a show's tracked state or progress. */
-function revalidateShowViews(showId?: string) {
-  revalidatePath("/");
-  revalidatePath("/watchlist");
-  revalidatePath("/archive");
-  if (showId) revalidatePath(`/show/${showId}`);
+/**
+ * Refreshes every route that can show a show's tracked state or progress.
+ *
+ * One layout-level call rather than four path-level ones. Note this is wider
+ * than what it replaced — it invalidates everything under the root layout, not
+ * three fixed paths plus one show — which is fine here only because every route
+ * in the app is `force-dynamic` and re-renders on request anyway. What these
+ * calls actually buy is purging the *client* router cache, which is what would
+ * otherwise show a stale count after navigating back.
+ *
+ * The narrow version was also easy to get wrong: each new route that displays
+ * progress had to remember to add itself here, and a missing line looks like
+ * nothing at all.
+ */
+function revalidateShowViews() {
+  revalidatePath("/", "layout");
 }
 
 // ---------------------------------------------------------------------------
@@ -553,7 +563,7 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
     return toResult(error);
   }
 
-  revalidateShowViews(tmdbShowId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -577,7 +587,7 @@ export async function removeShow(showId: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -610,16 +620,26 @@ export async function markEpisodeWatched(
 
     if (!episode) return { ok: false, error: "Unknown episode." };
 
-    await prisma.watchedEpisode.upsert({
-      where: { userId_episodeId: { userId: user.id, episodeId } },
-      create: { userId: user.id, episodeId },
-      update: {},
-    });
-
-    const previous = await prisma.trackedShow.findUnique({
-      where: { userId_showId: { userId: user.id, showId: episode.showId } },
-      select: { status: true },
-    });
+    // Concurrent, because they touch different rows and neither reads what the
+    // other writes. Turso is a network hop per statement, and this is the most
+    // tapped action in the app.
+    //
+    // The ordering that *does* matter is `previous` versus the upsert below:
+    // it exists to spot a show coming back from paused or stopped, and the
+    // upsert overwrites exactly the status it reads. Reading it after would
+    // report every resumed show as already "watching" and the log would
+    // silently stop firing — so it stays here, before the write.
+    const [, previous] = await Promise.all([
+      prisma.watchedEpisode.upsert({
+        where: { userId_episodeId: { userId: user.id, episodeId } },
+        create: { userId: user.id, episodeId },
+        update: {},
+      }),
+      prisma.trackedShow.findUnique({
+        where: { userId_showId: { userId: user.id, showId: episode.showId } },
+        select: { status: true },
+      }),
+    ]);
 
     await prisma.trackedShow.upsert({
       where: { userId_showId: { userId: user.id, showId: episode.showId } },
@@ -636,7 +656,7 @@ export async function markEpisodeWatched(
       });
     }
 
-    revalidateShowViews(episode.showId);
+    revalidateShowViews();
   } catch (error) {
     return toResult(error);
   }
@@ -715,7 +735,7 @@ async function setAside(
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -759,7 +779,7 @@ export async function resumeShow(showId: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -773,18 +793,21 @@ export async function unmarkEpisodeWatched(
   const { user } = await requireOnboardedSession();
 
   try {
-    const episode = await prisma.episode.findUnique({
-      where: { id: episodeId },
-      select: { showId: true },
-    });
-
-    await prisma.watchedEpisode.deleteMany({
-      where: { userId: user.id, episodeId },
-    });
+    // Independent: the delete is keyed by user and episode id, so it doesn't
+    // need the lookup's answer. Only the demotion check that follows does.
+    const [episode] = await Promise.all([
+      prisma.episode.findUnique({
+        where: { id: episodeId },
+        select: { showId: true },
+      }),
+      prisma.watchedEpisode.deleteMany({
+        where: { userId: user.id, episodeId },
+      }),
+    ]);
 
     if (episode) await demoteIfNothingWatched(user.id, episode.showId);
 
-    revalidateShowViews(episode?.showId);
+    revalidateShowViews();
   } catch (error) {
     return toResult(error);
   }
@@ -806,13 +829,20 @@ export async function setSeasonWatched(
   }
 
   try {
+    // The caller's own watch marks come back with the episodes rather than in
+    // a second query — which is what the separate "already watched" read below
+    // used to be. Scoped by userId, or it would carry everyone's marks and
+    // decide there was nothing left to insert.
     const episodes = await prisma.episode.findMany({
       where: {
         showId,
         seasonNumber,
         airDate: { not: null, lte: new Date() },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        watched: { where: { userId: user.id }, select: { id: true } },
+      },
     });
 
     const episodeIds = episodes.map((episode) => episode.id);
@@ -820,33 +850,40 @@ export async function setSeasonWatched(
     if (watched) {
       // SQLite doesn't support `skipDuplicates`, so filter out the episodes
       // that are already marked instead of relying on conflict handling.
-      const alreadyWatched = await prisma.watchedEpisode.findMany({
-        where: { userId: user.id, episodeId: { in: episodeIds } },
-        select: { episodeId: true },
-      });
+      const missing = episodes
+        .filter((episode) => episode.watched.length === 0)
+        .map((episode) => episode.id);
 
-      const seen = new Set(alreadyWatched.map((row) => row.episodeId));
-      const missing = episodeIds.filter((episodeId) => !seen.has(episodeId));
+      // Concurrent rather than sequential: different rows, and neither reads
+      // the other. Not a `$transaction` — the insert tolerates a lost race and
+      // the promotion must survive one, but a transaction would roll the
+      // promotion back along with it.
+      await Promise.all([
+        // Same race as addToWatchlist: another click can mark an episode
+        // between the read above and this insert. The season ends up fully
+        // marked either way, so a lost race isn't a failure worth reporting.
+        missing.length > 0
+          ? prisma.watchedEpisode
+              .createMany({
+                data: missing.map((episodeId) => ({
+                  userId: user.id,
+                  episodeId,
+                })),
+              })
+              .catch((error) => {
+                if (!isUniqueConstraintError(error)) throw error;
+              })
+          : null,
 
-      // Same race as addToWatchlist: another click can mark an episode between
-      // the read above and this insert. The season ends up fully marked either
-      // way, so a lost race isn't a failure worth reporting.
-      try {
-        await prisma.watchedEpisode.createMany({
-          data: missing.map((episodeId) => ({ userId: user.id, episodeId })),
-        });
-      } catch (error) {
-        if (!isUniqueConstraintError(error)) throw error;
-      }
-
-      // Same promotion rule as marking a single episode.
-      if (episodeIds.length > 0) {
-        await prisma.trackedShow.upsert({
-          where: { userId_showId: { userId: user.id, showId } },
-          create: { userId: user.id, showId, status: "watching" },
-          update: { status: "watching" },
-        });
-      }
+        // Same promotion rule as marking a single episode.
+        episodeIds.length > 0
+          ? prisma.trackedShow.upsert({
+              where: { userId_showId: { userId: user.id, showId } },
+              create: { userId: user.id, showId, status: "watching" },
+              update: { status: "watching" },
+            })
+          : null,
+      ]);
     } else {
       await prisma.watchedEpisode.deleteMany({
         where: { userId: user.id, episodeId: { in: episodeIds } },
@@ -859,7 +896,7 @@ export async function setSeasonWatched(
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
