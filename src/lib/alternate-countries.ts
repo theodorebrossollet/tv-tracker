@@ -12,6 +12,13 @@ interface CountryLike {
   free: { id: number }[];
 }
 
+/**
+ * How many services one account can claim. Enforced in `updateProviders` and
+ * in the picker both — the action is POST-able directly, and a cap the UI
+ * doesn't know about just fails a click with no explanation.
+ */
+export const MAX_PROVIDERS = 30;
+
 /** Parses the comma-separated `Settings.providerIds` column. */
 export function parseProviderIds(raw: string | null): number[] {
   if (!raw) return [];
@@ -48,13 +55,18 @@ export function coveredAtHome<C extends CountryLike>(
  * provider ids — subscription or free tiers only. Rent/buy is deliberately
  * excluded: that costs money in any country, so having the "service" doesn't
  * get it there for free the way a subscription or a free tier does.
+ *
+ * Empty without a `homeCode`. "Somewhere else has it" is only meaningful
+ * relative to a home, and the section's copy claims the show isn't available
+ * "where you are" — with no country set, that would be a claim about a place
+ * the app doesn't know, over a list nothing has been excluded from.
  */
 export function findAlternateCountries<C extends CountryLike>(
   countries: C[],
   providerIds: number[],
   homeCode: string | undefined,
 ): Array<{ code: string; providers: C["flatrate"][number][] }> {
-  if (providerIds.length === 0) return [];
+  if (!homeCode || providerIds.length === 0) return [];
 
   const owned = new Set(providerIds);
 

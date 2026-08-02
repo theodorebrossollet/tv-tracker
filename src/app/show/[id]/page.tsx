@@ -29,8 +29,9 @@ import {
   TmdbError,
 } from "@/lib/tmdb";
 
-/** Rows shown before "see more" in the alternate-countries list. */
+/** Search param the alternate-countries list reveals itself with. */
 const ALT_COUNTRY_PARAM = "altCountries";
+/** Rows shown before "show more" in the alternate-countries list. */
 const ALT_COUNTRY_PAGE_SIZE = 6;
 
 export const dynamic = "force-dynamic";
@@ -137,17 +138,18 @@ export default async function ShowPage({
     name: nameFor(country.code),
   }));
 
-  // Only worth surfacing when the country actually being shown doesn't
-  // already have the show on one of the user's own services — nothing to
-  // gain from pointing at another country otherwise.
+  // Measured against the settings country, NOT `selectedCountry`. The country
+  // switcher is a browsing affordance — "do I already have this at home"
+  // doesn't change when you peek at another region, and keying off the browsed
+  // country got it wrong both ways: peeking at GB while living in FR listed FR
+  // itself as somewhere to VPN to, and a show with no FR listing at all fell
+  // back to some arbitrary first country whose coverage then suppressed the
+  // section entirely. Undefined when no country is set, which yields nothing.
+  const homeCountry = settings.country ?? undefined;
   const providerIds = parseProviderIds(settings.providerIds);
-  const alternateCountries = coveredAtHome(
-    countries,
-    providerIds,
-    selectedCountry?.code,
-  )
+  const alternateCountries = coveredAtHome(countries, providerIds, homeCountry)
     ? []
-    : findAlternateCountries(countries, providerIds, selectedCountry?.code);
+    : findAlternateCountries(countries, providerIds, homeCountry);
 
   const altCountryLimit = limitFrom(
     params_,

@@ -23,6 +23,16 @@ const providerOptions = [
   { id: 350, name: "Apple TV+", logoPath: null },
 ];
 
+// Nothing left to reveal — the "show more" control is exercised in its own
+// tests; here it just needs to stay out of the way.
+const providerMore = {
+  param: "providers",
+  current: {},
+  step: 24,
+  shown: providerOptions.length,
+  remaining: 0,
+};
+
 afterEach(cleanup);
 
 describe("settings reflect server-side changes", () => {
@@ -38,6 +48,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        providerMore={providerMore}
       />,
     );
 
@@ -53,6 +64,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        providerMore={providerMore}
       />,
     );
 
@@ -67,6 +79,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        providerMore={providerMore}
       />,
     );
 
@@ -80,6 +93,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        providerMore={providerMore}
       />,
     );
 
@@ -94,6 +108,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        providerMore={providerMore}
       />,
     );
 
@@ -109,6 +124,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[8]}
+        providerMore={providerMore}
       />,
     );
 

@@ -5,6 +5,7 @@ import { describeError, logger } from "@/lib/logger";
 import { SignOutButton } from "@/components/sign-out-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { parseProviderIds } from "@/lib/alternate-countries";
+import { limitFrom } from "@/components/show-more-link";
 import { getSettings } from "@/lib/shows";
 import { getWatchProviderList, getWatchRegions, TmdbError } from "@/lib/tmdb";
 
@@ -12,8 +13,20 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Settings · TV Tracker" };
 
-export default async function SettingsPage() {
+/** Search param the service picker reveals itself with. */
+const PROVIDER_PARAM = "providers";
+/** Services shown before "show more", in TMDB's popularity order. */
+const PROVIDER_PAGE_SIZE = 24;
+
+interface SettingsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function SettingsPage({
+  searchParams,
+}: SettingsPageProps) {
   const { user } = await requireOnboardedSession();
+  const params_ = await searchParams;
   const settings = await getSettings(user.id);
 
   // The country list comes from TMDB (cached for a day). If it can't be
@@ -37,6 +50,24 @@ export default async function SettingsPage() {
     logger.warn("settings.providers_unavailable", describeError(error));
   }
 
+  // TMDB lists several hundred providers per region and every one sent here is
+  // serialised into the client payload, so only a slice crosses over — the
+  // same reasoning that stopped `Availability` shipping every country's
+  // provider list, and the same URL-driven reveal the show lists use.
+  const providerIds = parseProviderIds(settings.providerIds);
+  const providerLimit = limitFrom(params_, PROVIDER_PARAM, PROVIDER_PAGE_SIZE);
+  const head = providerOptions.slice(0, providerLimit);
+  // A service picked from a later page has to keep rendering once the list
+  // collapses again, or reloading settings would show it unchecked while the
+  // stored row still counts it.
+  const pinned = providerOptions
+    .slice(providerLimit)
+    .filter((provider) => providerIds.includes(provider.id));
+
+  const shownProviders = [...head, ...pinned].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+
   return (
     <div>
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
@@ -45,8 +76,15 @@ export default async function SettingsPage() {
         notifyEnabled={settings.notifyEnabled}
         country={settings.country}
         regions={regions}
-        providerOptions={providerOptions}
-        providerIds={parseProviderIds(settings.providerIds)}
+        providerOptions={shownProviders}
+        providerIds={providerIds}
+        providerMore={{
+          param: PROVIDER_PARAM,
+          current: params_,
+          step: PROVIDER_PAGE_SIZE,
+          shown: head.length,
+          remaining: providerOptions.length - head.length - pinned.length,
+        }}
       />
 
       <section className="mt-8">

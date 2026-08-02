@@ -48,6 +48,13 @@ describe("finding countries where your own services already have a show", () => 
     const result = findAlternateCountries(countries, [8, 350], "FR");
     expect(result.map((country) => country.code)).toEqual(["DE", "GB"]);
   });
+
+  // Without a home country there is nothing to be "elsewhere" from, and the
+  // section's copy claims the show isn't available where the user is — which
+  // would be a claim about a place the app doesn't know.
+  it("returns nothing when no home country is set", () => {
+    expect(findAlternateCountries(countries, [8, 350], undefined)).toEqual([]);
+  });
 });
 
 describe("deciding whether the home country already has it covered", () => {

@@ -39,7 +39,9 @@ export function AlternateAvailability({
       <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
         {shown.map((country) => (
           <div key={country.code} className="flex flex-wrap items-center gap-2">
-            <span className="w-14 shrink-0 text-xs text-muted">
+            {/* Wider than the `w-14` in `Availability`: that column holds
+                "Stream"/"Rent", this one holds "United Arab Emirates". */}
+            <span className="w-28 shrink-0 text-xs text-muted">
               {country.name}
             </span>
             {country.providers.map((provider) => (

@@ -11,6 +11,11 @@ interface ProviderSelectProps {
   /** Ids of the providers currently picked. */
   selected: number[];
   onToggle: (id: number) => void;
+  /**
+   * Set while a save is in flight. Locks the whole group, not just the chip
+   * being saved: each toggle sends the entire list, so a second click before
+   * the first lands races two full writes and the loser silently wins.
+   */
   disabled: boolean;
 }
 
@@ -19,6 +24,10 @@ interface ProviderSelectProps {
  * `availability.tsx` but interactive. Native checkboxes (visually hidden)
  * rather than plain buttons, so the group reads as a set of toggles to
  * assistive tech without extra ARIA bookkeeping.
+ *
+ * Hiding the input means the label has to carry the focus ring itself —
+ * without it, keyboard users tab through the group with nothing on screen
+ * saying where they are.
  */
 export function ProviderSelect({
   options,
@@ -41,7 +50,7 @@ export function ProviderSelect({
         return (
           <label
             key={provider.id}
-            className={`flex cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 transition-colors ${
+            className={`flex cursor-pointer items-center gap-1.5 rounded-full border py-1 pl-1 pr-2.5 transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent ${
               active
                 ? "border-accent bg-accent/10"
                 : "border-border hover:bg-surface"
