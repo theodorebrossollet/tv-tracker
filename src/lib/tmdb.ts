@@ -533,6 +533,48 @@ export async function getWatchRegions(): Promise<WatchRegion[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+interface RawProviderListResponse {
+  results?: RawProvider[];
+}
+
+/**
+ * Every TV streaming provider TMDB knows about for a region — for the
+ * settings page's "which services do you have" picker.
+ *
+ * Ranked by `display_priority`, same as `mapProviders`, and that ordering is
+ * load-bearing rather than cosmetic: TMDB lists several hundred providers per
+ * region, which is far more than belongs in one page's payload, so the picker
+ * renders a slice of the front of this list and reveals the rest by URL. The
+ * caller re-sorts what it actually shows into alphabetical order — popularity
+ * decides *which* services appear, name order makes them scannable once they
+ * do. Ties fall back to the name so the ranking is stable across requests.
+ *
+ * Cached for a day, same as `getWatchRegions` — provider catalogues change
+ * about as often as the country list does.
+ */
+export async function getWatchProviderList(
+  region: string,
+): Promise<WatchProvider[]> {
+  const data = await cached(`provider-list:${region}`, 60 * 60 * 24, () =>
+    tmdbFetch<RawProviderListResponse>("/watch/providers/tv", {
+      watch_region: region,
+      language: "en-US",
+    }),
+  );
+
+  return [...(data.results ?? [])]
+    .sort(
+      (a, b) =>
+        (a.display_priority ?? 999) - (b.display_priority ?? 999) ||
+        a.provider_name.localeCompare(b.provider_name),
+    )
+    .map((provider) => ({
+      id: provider.provider_id,
+      name: provider.provider_name,
+      logoPath: provider.logo_path,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Trailers
 // ---------------------------------------------------------------------------

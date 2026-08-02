@@ -16,9 +16,9 @@ A web app to track TV shows you've watched, replacing TV Time. **v1 is a single-
 2. **Track shows** — a single "+" adds a show to the watchlist; it moves to "watching" automatically once you mark an episode watched
 3. **Watchlist** — "want to watch" list
 4. **Upcoming episodes** — future episodes across *both* lists (via TMDB release dates)
-5. **Where to watch** — streaming availability per show, defaulting to your country with a dropdown for others
+5. **Where to watch** — streaming availability per show, defaulting to your country with a dropdown for others; if your own services don't have it at home, also flags other countries where they do
 6. **Episode detail** — runtime and a per-episode synopsis (collapsed by default), plus an inline trailer on each show page
-7. **Settings page** — country, notification preferences, option to clear all data
+7. **Settings page** — country, your streaming services, notification preferences, option to clear all data
 8. **Paused shows** — set a started show aside without losing its history; it leaves Watching and Upcoming but keeps its progress
 
 ### User Stories (v1)
@@ -30,6 +30,12 @@ A web app to track TV shows you've watched, replacing TV Time. **v1 is a single-
 - As a user, I want to open a show from a search result and read about it before deciding to add it.
 - As a user, I want to hide shows I've finished so my Watching list stays useful.
 - As a user, I want to know which service a show is on in my country.
+- As a user, I want to know when a show I don't have at home is already on
+  one of my services elsewhere, so I know a VPN would get me watching sooner.
+  This nudges toward using a VPN to reach another region's catalogue, which
+  is against most streaming services' terms — acceptable here because this is
+  an invite-only tool for friends and family, not a public product. Revisit
+  this feature (or at least the copy) if that audience ever changes.
 
 ### Success Criteria (v1 "done")
 You can search for and track a show, mark episodes watched, and see an accurate upcoming-episodes list — running reliably with no crashes during normal use.

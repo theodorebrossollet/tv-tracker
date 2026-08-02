@@ -1,14 +1,21 @@
 import { notFound } from "next/navigation";
 
 import { AddButton } from "@/components/add-button";
+import { AlternateAvailability } from "@/components/alternate-availability";
 import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import { PauseButton } from "@/components/pause-button";
 import { Poster } from "@/components/poster";
+import { limitFrom } from "@/components/show-more-link";
 import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate, showMetaLine } from "@/lib/format";
 import { requireOnboardedSession } from "@/lib/auth";
+import {
+  coveredAtHome,
+  findAlternateCountries,
+  parseProviderIds,
+} from "@/lib/alternate-countries";
 import { getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { isTmdbShowId } from "@/lib/show-id";
@@ -21,6 +28,11 @@ import {
   getWatchRegions,
   TmdbError,
 } from "@/lib/tmdb";
+
+/** Search param the alternate-countries list reveals itself with. */
+const ALT_COUNTRY_PARAM = "altCountries";
+/** Rows shown before "show more" in the alternate-countries list. */
+const ALT_COUNTRY_PAGE_SIZE = 6;
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +138,30 @@ export default async function ShowPage({
     name: nameFor(country.code),
   }));
 
+  // Measured against the settings country, NOT `selectedCountry`. The country
+  // switcher is a browsing affordance — "do I already have this at home"
+  // doesn't change when you peek at another region, and keying off the browsed
+  // country got it wrong both ways: peeking at GB while living in FR listed FR
+  // itself as somewhere to VPN to, and a show with no FR listing at all fell
+  // back to some arbitrary first country whose coverage then suppressed the
+  // section entirely. Undefined when no country is set, which yields nothing.
+  const homeCountry = settings.country ?? undefined;
+  const providerIds = parseProviderIds(settings.providerIds);
+  const alternateCountries = coveredAtHome(countries, providerIds, homeCountry)
+    ? []
+    : findAlternateCountries(countries, providerIds, homeCountry);
+
+  const altCountryLimit = limitFrom(
+    params_,
+    ALT_COUNTRY_PARAM,
+    ALT_COUNTRY_PAGE_SIZE,
+  );
+  const shownAlternateCountries = alternateCountries
+    .slice(0, altCountryLimit)
+    .map((country) => ({ ...country, name: nameFor(country.code) }));
+  const remainingAlternateCountries =
+    alternateCountries.length - shownAlternateCountries.length;
+
   const metaLine = showMetaLine(show);
   const now = new Date();
 
@@ -172,6 +208,16 @@ export default async function ShowPage({
               ? { code: settings.country, name: nameFor(settings.country) }
               : null
           }
+        />
+      ) : null}
+
+      {shownAlternateCountries.length > 0 ? (
+        <AlternateAvailability
+          shown={shownAlternateCountries}
+          remaining={remainingAlternateCountries}
+          param={ALT_COUNTRY_PARAM}
+          current={params_}
+          step={ALT_COUNTRY_PAGE_SIZE}
         />
       ) : null}
 

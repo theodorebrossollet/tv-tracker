@@ -185,6 +185,13 @@ model Settings {
   /// showing where a series is available to stream. Null until you pick one.
   country       String?
 
+  /// Comma-separated TMDB provider ids the user already subscribes to (e.g.
+  /// Netflix, Apple TV+). Used to point out other countries where a show is
+  /// already on one of these, for a "just VPN there" note on the show page —
+  /// see docs/scope.md for why that's currently left as UI copy rather than
+  /// gated behind anything, and revisit if this ever isn't friends and family.
+  providerIds   String?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

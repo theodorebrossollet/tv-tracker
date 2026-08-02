@@ -524,6 +524,35 @@ holds the precedence and validates both candidate codes against what's actually
 available, so a stale settings country or a hand-edited param falls back rather
 than rendering an empty panel.
 
+It covers the settings service picker too (`?providers=`). TMDB lists several
+hundred providers per region, and everything handed to `SettingsClient` is
+serialised into the client payload, so only a slice crosses over — ranked by
+TMDB's `display_priority` so the services people actually have are the ones on
+the first page, then re-sorted alphabetically for scanning. Anything already
+picked is pinned into view regardless of the slice, or collapsing the list
+would render a stored selection as an unchecked box.
+
+### "Also on your services"
+
+Cross-country availability (`lib/alternate-countries.ts`) is a plain in-memory
+filter: `getWatchProviders` already returns every country in one response, so
+matching the user's own provider ids against the other countries costs no extra
+request. Two things about it are easy to get wrong:
+
+- **The comparison is against the *settings* country, never the browsed one.**
+  The show page's country dropdown is for looking around; whether you already
+  have the show at home doesn't change while you look. Keying off the browsed
+  country is wrong in both directions — it will list your own country as
+  somewhere to VPN to, and it will hide the section entirely when the show has
+  no listing at home and `pickCountry` falls back to an arbitrary first country
+  that happens to be covered.
+- **No settings country means no section.** There is no "elsewhere" without a
+  home, and the copy asserts the show isn't available where the user is.
+
+Matching is subscription and free tiers only. Rent and buy cost money in every
+country, so owning the service doesn't get you the title the way a subscription
+does — the whole premise of the section is "you already pay for this".
+
 ## 12. Tests
 
 `npm test` (Vitest). 59 tests at the time this was written, no network and no

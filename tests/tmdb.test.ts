@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getSeasonEpisodes,
   getShowTrailer,
+  getWatchProviderList,
   getWatchProviders,
   searchTvShows,
   TmdbError,
@@ -421,5 +422,65 @@ describe("watch providers", () => {
       "First",
       "Second",
     ]);
+  });
+});
+
+describe("provider list for the settings picker", () => {
+  it("maps the raw TMDB fields", async () => {
+    mockFetch({
+      results: [
+        { provider_id: 8, provider_name: "Netflix", logo_path: "/n.jpg" },
+      ],
+    });
+
+    const [provider] = await getWatchProviderList("region-fields");
+
+    expect(provider).toEqual({ id: 8, name: "Netflix", logoPath: "/n.jpg" });
+  });
+
+  // The settings picker only renders a slice of this list, so the ranking
+  // decides which services a user can find at all — alphabetical order would
+  // put "AMC+" in front of Netflix and bury Netflix past the fold.
+  it("ranks by TMDB's display priority, not by name", async () => {
+    mockFetch({
+      results: [
+        { provider_id: 1, provider_name: "Alpha", logo_path: null, display_priority: 9 },
+        { provider_id: 2, provider_name: "Zeta", logo_path: null, display_priority: 0 },
+      ],
+    });
+
+    const providers = await getWatchProviderList("region-sort");
+
+    expect(providers.map((provider) => provider.name)).toEqual([
+      "Zeta",
+      "Alpha",
+    ]);
+  });
+
+  it("breaks priority ties by name, so the order is stable", async () => {
+    mockFetch({
+      results: [
+        { provider_id: 1, provider_name: "Zeta", logo_path: null, display_priority: 5 },
+        { provider_id: 2, provider_name: "Alpha", logo_path: null, display_priority: 5 },
+      ],
+    });
+
+    const providers = await getWatchProviderList("region-ties");
+
+    expect(providers.map((provider) => provider.name)).toEqual([
+      "Alpha",
+      "Zeta",
+    ]);
+  });
+
+  it("shares one request across concurrent callers for the same region", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    await Promise.all([
+      getWatchProviderList("region-stampede"),
+      getWatchProviderList("region-stampede"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

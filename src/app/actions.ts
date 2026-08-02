@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { MAX_PROVIDERS } from "@/lib/alternate-countries";
 import {
   createSession,
   destroySession,
@@ -987,6 +988,40 @@ export async function updateCountry(country: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Sets the streaming services the user already subscribes to — used to flag
+ * when a show is already on one of these in a country other than their own.
+ * An empty array clears the whole list.
+ */
+export async function updateProviders(ids: number[]): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (
+    !Array.isArray(ids) ||
+    ids.length > MAX_PROVIDERS ||
+    ids.some((id) => !Number.isInteger(id) || id <= 0)
+  ) {
+    return { ok: false, error: "Invalid provider selection." };
+  }
+
+  // Deduplicated: the picker can't produce repeats, but this is POST-able
+  // directly, and a stored "8,8,8" would burn the cap on one service.
+  const value = ids.length > 0 ? [...new Set(ids)].join(",") : null;
+
+  try {
+    await prisma.settings.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, providerIds: value },
+      update: { providerIds: value },
+    });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/show", "layout");
+  return { ok: true };
+}
 
 /**
  * Wipes the user's tracking data. The global Show/Episode cache is kept so

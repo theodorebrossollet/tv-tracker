@@ -102,7 +102,7 @@ export function Availability({
   );
 }
 
-function ProviderBadge({ provider }: { provider: WatchProvider }) {
+export function ProviderBadge({ provider }: { provider: WatchProvider }) {
   const logo = posterUrl(provider.logoPath, "w185");
 
   return (
