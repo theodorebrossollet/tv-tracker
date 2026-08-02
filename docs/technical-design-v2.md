@@ -208,6 +208,10 @@ throttled; §4 says how.
 
 ## 3. Migration Path (existing v1 data)
 
+**Both phases have run.** Kept below as the record of how the migration was
+actually planned and sequenced, not as a pending plan — see §9's "Next Steps"
+for the current-state pointer.
+
 The deployed app already has real data under the "one implicit user" model.
 This is the sharper version of the "adding a column needs a backfill" rule in
 `AGENTS.md` — it's not just blank fields, it's establishing data ownership on
@@ -653,8 +657,10 @@ table rebuild carries the row across (§3).
 
 What remains before building is not design work:
 
-1. **Schedule the Phase B window** and take the database copy (§3). This is the
-   only step in v2 that can lose data TMDB can't re-supply.
+1. ~~**Schedule the Phase B window** and take the database copy (§3).~~ **Done.**
+   Phase B has run against production — the composite unique constraints and
+   `NOT NULL userId` described in §2 are live on the real database, not just in
+   these tests' throwaway ones.
 2. **Real devices for the PWA** — an iPhone and an Android handset. Per
    `scope-v2.md`'s success criteria, a desktop browser's device emulator
-   doesn't count.
+   doesn't count. Not yet confirmed done as of this writing.
