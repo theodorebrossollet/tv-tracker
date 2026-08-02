@@ -133,7 +133,14 @@ model Episode {
   show    Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
   watched WatchedEpisode[]
 
-  @@index([showId])
+  /// Composite rather than `showId` alone: both episode-list reads filter by
+  /// show and order by season then episode, so with only the show column SQLite
+  /// fetched the rows and then sorted them in memory — on every dashboard,
+  /// watchlist, archive and show-page render. Leading with `showId` means this
+  /// also serves everything the bare index did, including `setSeasonWatched`'s
+  /// `showId + seasonNumber` filter, so keeping both would just be a second
+  /// index to maintain on every write.
+  @@index([showId, seasonNumber, episodeNumber])
   @@index([airDate])
 }
 
