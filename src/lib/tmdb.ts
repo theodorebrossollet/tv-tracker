@@ -1,5 +1,7 @@
 import "server-only";
 
+import { describeError, logger } from "@/lib/logger";
+
 // Thin wrapper around the TMDB API. Endpoints are listed in
 // docs/technical-design.md section 6.
 //
@@ -92,7 +94,10 @@ function buildRequest(path: string, params: Record<string, string>) {
 // Per-process, so a restart or a second serverless instance re-warms it. That's
 // fine for data measured in days, and it avoids a schema change for something
 // this peripheral.
-const responseCache = new Map<string, { value: unknown; expiresAt: number }>();
+const responseCache = new Map<
+  string,
+  { value: Promise<unknown>; expiresAt: number }
+>();
 
 async function cached<T>(
   key: string,
@@ -100,9 +105,7 @@ async function cached<T>(
   load: () => Promise<T>,
 ): Promise<T> {
   const hit = responseCache.get(key);
-  if (hit && hit.expiresAt > Date.now()) return hit.value as T;
-
-  const value = await load();
+  if (hit && hit.expiresAt > Date.now()) return hit.value as Promise<T>;
 
   // Expired entries are never read again, only replaced — so without this
   // sweep the map grows by one dead entry per show ever browsed, for the life
@@ -113,9 +116,19 @@ async function cached<T>(
     if (entry.expiresAt <= now) responseCache.delete(staleKey);
   }
 
-  responseCache.set(key, {
-    value,
-    expiresAt: now + ttlSeconds * 1000,
+  // The *promise* is cached, not the resolved value, and it goes in before
+  // anything is awaited — so concurrent callers that miss together share one
+  // request instead of each firing their own. A cold instance rendering a show
+  // page fans out to providers, regions and a trailer per season at once, and
+  // without this every simultaneous viewer multiplied that whole burst.
+  const value = load();
+  responseCache.set(key, { value, expiresAt: now + ttlSeconds * 1000 });
+
+  // A rejection evicts itself: caching a failure would serve it for the full
+  // TTL, turning one bad minute into a day of no trailers. Guarded so a later
+  // entry under the same key isn't deleted by an older promise's failure.
+  value.catch(() => {
+    if (responseCache.get(key)?.value === value) responseCache.delete(key);
   });
 
   return value;
@@ -134,7 +147,14 @@ async function tmdbFetch<T>(
     // calls for. Endpoints that aren't per-show go through `cached()` above.
     response = await fetch(url, { headers, cache: "no-store" });
   } catch (cause) {
-    throw new TmdbError(`Could not reach TMDB: ${(cause as Error).message}`);
+    // `TmdbError.message` is handed straight to the browser by `toResult`, and
+    // a transport failure's message is not ours to vet — undici doesn't
+    // normally put the URL in it, but the request URL carries the v3 API key in
+    // its query string, so this is the one place a key could reach a visitor.
+    // The detail goes to the log instead, where `describeError` keeps name and
+    // message only; the visitor gets a fixed string.
+    logger.warn("tmdb.unreachable", describeError(cause));
+    throw new TmdbError("Could not reach TMDB. Please try again.");
   }
 
   if (!response.ok) {
@@ -201,11 +221,29 @@ function zoneOffsetMs(at: Date): number {
  * calendar date still matches the broadcast date, and `formatAirDate` (which
  * formats in UTC) still shows the right day.
  */
+/**
+ * Parsed air dates, keyed by the bare `YYYY-MM-DD` string.
+ *
+ * Each parse runs `Intl.DateTimeFormat.formatToParts` twice and scans its
+ * output, and a sync parses every episode of every season — a 300-episode show
+ * on every nightly cron visit, for a value that can only ever be one thing.
+ *
+ * Timestamps rather than `Date` objects, so callers can't mutate a shared one.
+ * Bounded in practice by the number of distinct dates TV has ever aired on.
+ */
+const airDateCache = new Map<string, number | null>();
+
 function parseAirDate(value: string | null | undefined): Date | null {
   if (!value) return null;
 
+  const hit = airDateCache.get(value);
+  if (hit !== undefined) return hit === null ? null : new Date(hit);
+
   const midnightUtc = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(midnightUtc.getTime())) return null;
+  if (Number.isNaN(midnightUtc.getTime())) {
+    airDateCache.set(value, null);
+    return null;
+  }
 
   // local = utc + offset, and we want local to read as midnight, so shift the
   // UTC instant back by the offset.
@@ -214,6 +252,8 @@ function parseAirDate(value: string | null | undefined): Date | null {
   // Re-check at the result in case the first guess sat the other side of a
   // daylight-saving switch.
   const settled = new Date(midnightUtc.getTime() - zoneOffsetMs(firstPass));
+
+  airDateCache.set(value, settled.getTime());
 
   return settled;
 }
@@ -410,6 +450,29 @@ function mapProviders(list: RawProvider[] | undefined): WatchProvider[] {
 const PROVIDER_CACHE_SECONDS = 60 * 60 * 6;
 
 /**
+ * A provider link we're willing to render as an `href`, or null.
+ *
+ * These go straight into an anchor, and React only *warns* about a
+ * `javascript:` URL — it renders it anyway, one click from running script in
+ * the visitor's session. Requiring https rules that out along with every other
+ * scheme, and is what these links have always been in practice.
+ *
+ * Checked here rather than in the component so the guarantee holds for every
+ * consumer, and so the validation stays on the server side of the `server-only`
+ * boundary this codebase keeps.
+ */
+function httpsLinkOrNull(link: string | null | undefined): string | null {
+  if (!link) return null;
+
+  try {
+    return new URL(link).protocol === "https:" ? link : null;
+  } catch {
+    // Not a URL at all.
+    return null;
+  }
+}
+
+/**
  * Where a show can be streamed, keyed by country code. TMDB returns every
  * country it has data for in one response, so a country switcher costs no
  * extra requests.
@@ -427,7 +490,7 @@ export async function getWatchProviders(
   return Object.entries(data.results ?? {})
     .map(([code, entry]) => ({
       code,
-      link: entry.link ?? null,
+      link: httpsLinkOrNull(entry.link),
       flatrate: mapProviders(entry.flatrate),
       // TMDB splits "free" and "ads"; both mean "watchable without paying".
       free: [...mapProviders(entry.free), ...mapProviders(entry.ads)],
@@ -493,6 +556,21 @@ interface RawVideosResponse {
 }
 
 /**
+ * A usable YouTube video id.
+ *
+ * The value is interpolated into a thumbnail URL and an embed URL, so it has to
+ * be safe to sit inside a URL path — this charset excludes `/`, `?`, `#` and
+ * `.`, which is everything that could redirect the path or bolt on a query.
+ * That is the whole security property, and it's checked here rather than at the
+ * two render sites so a third one can't reintroduce the gap.
+ *
+ * Deliberately not `{11}`, though every id YouTube has ever issued is 11
+ * characters: pinning the length would buy no extra safety and would silently
+ * drop the trailer for anything unusual, with no error and nothing logged.
+ */
+const YOUTUBE_KEY = /^[A-Za-z0-9_-]+$/;
+
+/**
  * Picks the single best trailer out of a TMDB videos response.
  *
  * Only YouTube is handled: it's the overwhelming majority of what TMDB returns,
@@ -500,7 +578,7 @@ interface RawVideosResponse {
  */
 function pickBestTrailer(data: RawVideosResponse): TmdbVideo | null {
   const candidates = (data.results ?? []).filter(
-    (video) => video.site === "YouTube" && video.key,
+    (video) => video.site === "YouTube" && YOUTUBE_KEY.test(video.key),
   );
 
   if (candidates.length === 0) return null;

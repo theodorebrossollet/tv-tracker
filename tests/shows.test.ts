@@ -332,6 +332,37 @@ describe("keeping a cached show fresh", () => {
   });
 });
 
+describe("reading settings", () => {
+  it("returns defaults without writing a row", async () => {
+    // This runs on every show-page render. An upsert is a write statement — it
+    // can't be served by a replica and goes to the primary every time — to
+    // create a row of defaults that reading them gives anyway.
+    const { getSettings } = await import("@/lib/shows");
+    const create = vi.spyOn(prisma.settings, "upsert");
+
+    expect(await getSettings(TEST_USER_ID)).toMatchObject({
+      notifyEnabled: false,
+      country: null,
+    });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(await prisma.settings.count()).toBe(0);
+  });
+
+  it("returns the stored row once one exists", async () => {
+    await prisma.settings.create({
+      data: { userId: TEST_USER_ID, notifyEnabled: true, country: "FR" },
+    });
+
+    const { getSettings } = await import("@/lib/shows");
+
+    expect(await getSettings(TEST_USER_ID)).toMatchObject({
+      notifyEnabled: true,
+      country: "FR",
+    });
+  });
+});
+
 describe("episodes removed upstream", () => {
   it("deletes an episode TMDB no longer lists", async () => {
     // Schedule reshuffles do this. Left behind, the row keeps inflating the

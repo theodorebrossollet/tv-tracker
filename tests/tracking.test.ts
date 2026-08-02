@@ -263,6 +263,30 @@ describe("pausing", () => {
     expect(await statusOf("101")).toBeNull();
   });
 
+  it("reports the resume it just performed, not the state it wrote", async () => {
+    // The status read that feeds this log and the upsert that overwrites it
+    // are two separate statements against the same row. Batching them for
+    // speed is safe only while the read still happens first — do it the other
+    // way and every resumed show reads back as already "watching", so the log
+    // goes quiet and nothing else notices.
+    const { episodeIds } = await seedShow({
+      offsets: [-10, -3],
+      status: "paused",
+    });
+
+    const { logger } = await import("@/lib/logger");
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+
+    await markEpisodeWatched(episodeIds[0]);
+
+    expect(info).toHaveBeenCalledWith(
+      "show.resumed",
+      expect.objectContaining({ showId: "101", from: "paused" }),
+    );
+
+    info.mockRestore();
+  });
+
   it("marking an episode un-pauses the show", async () => {
     // The implicit resume: watching something is the clearest possible signal
     // you've picked it back up.

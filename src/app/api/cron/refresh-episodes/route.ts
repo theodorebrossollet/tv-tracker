@@ -14,6 +14,14 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
+ * When to stop starting new shows, leaving room inside `maxDuration` for the
+ * session sweep and the completion log that follow the loop. Ten seconds is
+ * generous for those, and the alternative — being killed mid-show — costs the
+ * whole record of the run.
+ */
+const DEADLINE_MS = 50_000;
+
+/**
  * Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when the env var is
  * set. Without this check the route is a public endpoint anyone could hammer,
  * burning through the TMDB rate limit.
@@ -51,16 +59,33 @@ export async function GET(request: Request) {
   const tracked = await prisma.trackedShow.findMany({
     distinct: ["showId"],
     select: { showId: true },
+    // Least recently synced first. Without an order this is whatever the
+    // database hands back — stable enough that a run which doesn't finish
+    // would refresh the same prefix every night and never reach the tail.
+    // Oldest-first makes successive runs rotate through the whole set on
+    // their own, and a truncated run still advances the shows furthest behind.
+    orderBy: { show: { lastSynced: "asc" } },
   });
 
   const refreshed: string[] = [];
   const failed: Array<{ showId: string; error: string }> = [];
+  let deadlineHit = false;
 
   // Sequential on purpose: one show at a time keeps us well under TMDB's rate
   // limit. That politeness spends the 60s deadline measured above — when the
   // headroom runs out, parallelise the season fetches inside a show before
   // giving this loop up.
   for (const { showId } of tracked) {
+    // Stopping early beats being killed mid-loop. At ~1.1s/show the 60s
+    // maxDuration runs out somewhere near 50 shows, and being terminated takes
+    // the completion log and the session sweep below with it — so the run
+    // leaves no record it happened, and expired sessions quietly stop being
+    // deleted. Yielding here keeps both.
+    if (Date.now() - startedAt > DEADLINE_MS) {
+      deadlineHit = true;
+      break;
+    }
+
     try {
       await syncShowFromTmdb(showId);
       refreshed.push(showId);
@@ -89,6 +114,11 @@ export async function GET(request: Request) {
     checked: tracked.length,
     refreshed: refreshed.length,
     failed: failed.length,
+    // How many the deadline left untouched. Non-zero is the signal that the
+    // library has outgrown one run — they'll be first in line tomorrow, but
+    // it's worth knowing before the backlog does something visible.
+    skipped: tracked.length - refreshed.length - failed.length,
+    deadlineHit,
     expiredSessions,
     durationMs,
     // Pre-divided: this is the figure the timeout headroom is read off, and
