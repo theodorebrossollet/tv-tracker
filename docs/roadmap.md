@@ -16,8 +16,11 @@ capture ideas as they come up, to revisit once the current phase is done.
   this gets prioritized)
 - **Calendar view** — a calendar showing upcoming episode releases across
   tracked shows, as an alternative to the existing upcoming-episodes list
-- **Password recovery** — a way to reset/recover a forgotten password (only
-  relevant once Phase 2 accounts/login exist — v1 has no per-user accounts)
+- **Password recovery** — a way to reset/recover a forgotten password without
+  the invite code (accounts now exist; today losing both the password and the
+  invite code loses the account for good, per the README)
+- **Export personal data as CSV** — download your own tracked shows/watched
+  episodes from Settings
 
 ## Already captured elsewhere
 
