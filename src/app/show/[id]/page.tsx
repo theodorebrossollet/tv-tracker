@@ -1,14 +1,21 @@
 import { notFound } from "next/navigation";
 
 import { AddButton } from "@/components/add-button";
+import { AlternateAvailability } from "@/components/alternate-availability";
 import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import { PauseButton } from "@/components/pause-button";
 import { Poster } from "@/components/poster";
+import { limitFrom } from "@/components/show-more-link";
 import { Trailer, type TrailerOption } from "@/components/trailer";
 import { SeasonActions } from "./season-actions";
 import { formatAirDate, showMetaLine } from "@/lib/format";
 import { requireOnboardedSession } from "@/lib/auth";
+import {
+  coveredAtHome,
+  findAlternateCountries,
+  parseProviderIds,
+} from "@/lib/alternate-countries";
 import { getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { isTmdbShowId } from "@/lib/show-id";
@@ -21,6 +28,10 @@ import {
   getWatchRegions,
   TmdbError,
 } from "@/lib/tmdb";
+
+/** Rows shown before "see more" in the alternate-countries list. */
+const ALT_COUNTRY_PARAM = "altCountries";
+const ALT_COUNTRY_PAGE_SIZE = 6;
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +137,29 @@ export default async function ShowPage({
     name: nameFor(country.code),
   }));
 
+  // Only worth surfacing when the country actually being shown doesn't
+  // already have the show on one of the user's own services — nothing to
+  // gain from pointing at another country otherwise.
+  const providerIds = parseProviderIds(settings.providerIds);
+  const alternateCountries = coveredAtHome(
+    countries,
+    providerIds,
+    selectedCountry?.code,
+  )
+    ? []
+    : findAlternateCountries(countries, providerIds, selectedCountry?.code);
+
+  const altCountryLimit = limitFrom(
+    params_,
+    ALT_COUNTRY_PARAM,
+    ALT_COUNTRY_PAGE_SIZE,
+  );
+  const shownAlternateCountries = alternateCountries
+    .slice(0, altCountryLimit)
+    .map((country) => ({ ...country, name: nameFor(country.code) }));
+  const remainingAlternateCountries =
+    alternateCountries.length - shownAlternateCountries.length;
+
   const metaLine = showMetaLine(show);
   const now = new Date();
 
@@ -172,6 +206,16 @@ export default async function ShowPage({
               ? { code: settings.country, name: nameFor(settings.country) }
               : null
           }
+        />
+      ) : null}
+
+      {shownAlternateCountries.length > 0 ? (
+        <AlternateAvailability
+          shown={shownAlternateCountries}
+          remaining={remainingAlternateCountries}
+          param={ALT_COUNTRY_PARAM}
+          current={params_}
+          step={ALT_COUNTRY_PAGE_SIZE}
         />
       ) : null}
 

@@ -306,5 +306,7 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
 export async function getSettings(userId: string) {
   const settings = await prisma.settings.findUnique({ where: { userId } });
 
-  return settings ?? { userId, notifyEnabled: false, country: null };
+  return (
+    settings ?? { userId, notifyEnabled: false, country: null, providerIds: null }
+  );
 }

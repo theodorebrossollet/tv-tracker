@@ -987,6 +987,39 @@ export async function updateCountry(country: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Sets the streaming services the user already subscribes to — used to flag
+ * when a show is already on one of these in a country other than their own.
+ * "" clears the whole list.
+ */
+export async function updateProviders(ids: number[]): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (
+    !Array.isArray(ids) ||
+    ids.length > 30 ||
+    ids.some((id) => !Number.isInteger(id) || id <= 0)
+  ) {
+    return { ok: false, error: "Invalid provider selection." };
+  }
+
+  const value = ids.length > 0 ? ids.join(",") : null;
+
+  try {
+    await prisma.settings.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, providerIds: value },
+      update: { providerIds: value },
+    });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/show", "layout");
+  return { ok: true };
+}
+
 
 /**
  * Wipes the user's tracking data. The global Show/Episode cache is kept so

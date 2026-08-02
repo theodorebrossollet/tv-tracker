@@ -2,20 +2,29 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 
-import { updateCountry, updateNotificationPrefs } from "@/app/actions";
+import {
+  updateCountry,
+  updateNotificationPrefs,
+  updateProviders,
+} from "@/app/actions";
+import { ProviderSelect } from "@/components/provider-select";
 import { Select } from "@/components/select";
-import type { WatchRegion } from "@/lib/tmdb";
+import type { WatchProvider, WatchRegion } from "@/lib/tmdb";
 
 interface SettingsClientProps {
   notifyEnabled: boolean;
   country: string | null;
   regions: WatchRegion[];
+  providerOptions: WatchProvider[];
+  providerIds: number[];
 }
 
 export function SettingsClient({
   notifyEnabled,
   country,
   regions,
+  providerOptions,
+  providerIds,
 }: SettingsClientProps) {
   // Derived from the props via useOptimistic, not copied into useState. Both
   // values change server-side — clearing all data resets them, and the row is
@@ -24,9 +33,11 @@ export function SettingsClient({
   // reasoning as AddButton.
   const [enabled, setEnabled] = useOptimistic(notifyEnabled);
   const [selectedCountry, setSelectedCountry] = useOptimistic(country ?? "");
+  const [selectedProviders, setSelectedProviders] = useOptimistic(providerIds);
   const [countrySaved, setCountrySaved] = useState(false);
   const [savingPrefs, startPrefs] = useTransition();
   const [savingCountry, startCountry] = useTransition();
+  const [savingProviders, startProviders] = useTransition();
 
   // The optimistic setters must be called inside the transition — that is what
   // scopes them. No manual rollback anywhere below: when a transition ends the
@@ -49,6 +60,17 @@ export function SettingsClient({
       const result = await updateCountry(next);
 
       if (result.ok) setCountrySaved(true);
+    });
+  }
+
+  function toggleProvider(id: number) {
+    const next = selectedProviders.includes(id)
+      ? selectedProviders.filter((existing) => existing !== id)
+      : [...selectedProviders, id];
+
+    startProviders(async () => {
+      setSelectedProviders(next);
+      await updateProviders(next);
     });
   }
 
@@ -87,6 +109,31 @@ export function SettingsClient({
             ) : countrySaved ? (
               <span className="text-xs text-accent">Saved</span>
             ) : null}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="font-medium">Your streaming services</h2>
+        <p className="mt-1 text-sm text-muted">
+          Also used to flag when a show you don&rsquo;t have at home is
+          already on one of these services elsewhere — useful with a VPN,
+          though that&rsquo;s against most streaming services&rsquo; terms.
+        </p>
+
+        {providerOptions.length === 0 ? (
+          <p className="mt-3 text-sm text-muted">
+            Couldn&rsquo;t load the service list from TMDB. Reload to try
+            again.
+          </p>
+        ) : (
+          <div className="mt-3">
+            <ProviderSelect
+              options={providerOptions}
+              selected={selectedProviders}
+              onToggle={toggleProvider}
+              disabled={savingProviders}
+            />
           </div>
         )}
       </section>

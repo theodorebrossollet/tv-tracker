@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getSeasonEpisodes,
   getShowTrailer,
+  getWatchProviderList,
   getWatchProviders,
   searchTvShows,
   TmdbError,
@@ -421,5 +422,46 @@ describe("watch providers", () => {
       "First",
       "Second",
     ]);
+  });
+});
+
+describe("provider list for the settings picker", () => {
+  it("maps the raw TMDB fields", async () => {
+    mockFetch({
+      results: [
+        { provider_id: 8, provider_name: "Netflix", logo_path: "/n.jpg" },
+      ],
+    });
+
+    const [provider] = await getWatchProviderList("region-fields");
+
+    expect(provider).toEqual({ id: 8, name: "Netflix", logoPath: "/n.jpg" });
+  });
+
+  it("sorts alphabetically by name, not TMDB's display priority", async () => {
+    mockFetch({
+      results: [
+        { provider_id: 1, provider_name: "Zeta", logo_path: null, display_priority: 0 },
+        { provider_id: 2, provider_name: "Alpha", logo_path: null, display_priority: 9 },
+      ],
+    });
+
+    const providers = await getWatchProviderList("region-sort");
+
+    expect(providers.map((provider) => provider.name)).toEqual([
+      "Alpha",
+      "Zeta",
+    ]);
+  });
+
+  it("shares one request across concurrent callers for the same region", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    await Promise.all([
+      getWatchProviderList("region-stampede"),
+      getWatchProviderList("region-stampede"),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

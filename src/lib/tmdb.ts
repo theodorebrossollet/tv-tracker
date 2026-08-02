@@ -533,6 +533,38 @@ export async function getWatchRegions(): Promise<WatchRegion[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+interface RawProviderListResponse {
+  results?: RawProvider[];
+}
+
+/**
+ * Every TV streaming provider TMDB knows about for a region — for the
+ * settings page's "which services do you have" picker. Unlike `mapProviders`,
+ * sorted alphabetically rather than by `display_priority`: this is a list to
+ * scan for a specific name, not a per-show "most popular first" ranking.
+ *
+ * Cached for a day, same as `getWatchRegions` — provider catalogues change
+ * about as often as the country list does.
+ */
+export async function getWatchProviderList(
+  region: string,
+): Promise<WatchProvider[]> {
+  const data = await cached(`provider-list:${region}`, 60 * 60 * 24, () =>
+    tmdbFetch<RawProviderListResponse>("/watch/providers/tv", {
+      watch_region: region,
+      language: "en-US",
+    }),
+  );
+
+  return (data.results ?? [])
+    .map((provider) => ({
+      id: provider.provider_id,
+      name: provider.provider_name,
+      logoPath: provider.logo_path,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // ---------------------------------------------------------------------------
 // Trailers
 // ---------------------------------------------------------------------------

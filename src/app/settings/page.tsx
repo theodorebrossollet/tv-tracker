@@ -4,8 +4,9 @@ import { SettingsClient } from "./settings-client";
 import { describeError, logger } from "@/lib/logger";
 import { SignOutButton } from "@/components/sign-out-button";
 import { requireOnboardedSession } from "@/lib/auth";
+import { parseProviderIds } from "@/lib/alternate-countries";
 import { getSettings } from "@/lib/shows";
-import { getWatchRegions, TmdbError } from "@/lib/tmdb";
+import { getWatchProviderList, getWatchRegions, TmdbError } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +19,22 @@ export default async function SettingsPage() {
   // The country list comes from TMDB (cached for a day). If it can't be
   // fetched, the rest of the settings page should still work.
   let regions: Awaited<ReturnType<typeof getWatchRegions>> = [];
+  let providerOptions: Awaited<ReturnType<typeof getWatchProviderList>> = [];
 
   try {
     regions = await getWatchRegions();
   } catch (error) {
     if (!(error instanceof TmdbError)) throw error;
     logger.warn("settings.regions_unavailable", describeError(error));
+  }
+
+  try {
+    // Falls back to US when no country is set yet — still a usable list to
+    // pick services from, just not tailored to a region yet.
+    providerOptions = await getWatchProviderList(settings.country ?? "US");
+  } catch (error) {
+    if (!(error instanceof TmdbError)) throw error;
+    logger.warn("settings.providers_unavailable", describeError(error));
   }
 
   return (
@@ -34,6 +45,8 @@ export default async function SettingsPage() {
         notifyEnabled={settings.notifyEnabled}
         country={settings.country}
         regions={regions}
+        providerOptions={providerOptions}
+        providerIds={parseProviderIds(settings.providerIds)}
       />
 
       <section className="mt-8">
