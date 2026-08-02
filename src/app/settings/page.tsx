@@ -110,6 +110,12 @@ export default async function SettingsPage() {
             regardless: it&rsquo;s still the only way back in if you forget
             whatever password you set here.
           </p>
+          <p className="mt-2 text-sm text-muted">
+            Changing your password signs you out everywhere else — your other
+            devices will need the new one. That&rsquo;s the point: it&rsquo;s
+            what makes changing it useful if you think someone else is in your
+            account.
+          </p>
           <ChangePasswordForm />
         </div>
       </section>

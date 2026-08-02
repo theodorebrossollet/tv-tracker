@@ -428,6 +428,37 @@ Nothing removes expired rows on its own. Fold a
 `session.deleteMany({ where: { expiresAt: { lt: new Date() } } })` into the
 existing daily cron run — that's what the `@@index([expiresAt])` is for.
 
+### Revocation — the reason §2 chose a `Session` table
+
+§2 argues for a table over a stateless cookie because sessions can then be
+killed individually. That capability went unused at first, and the gap was
+sharper than it looked: sliding expiry means a session that gets exercised never
+lapses, and sign-out only ends the session holding the cookie. So a stolen
+cookie was effectively permanent, and the documented recovery story — "lost your
+password? use your code" — didn't evict whoever prompted it. It just added a
+second person to the account.
+
+Both credential-change paths now revoke:
+
+- **`changePassword`** deletes every session for the user *except* the one making
+  the change. Signing someone out of the page they're standing on to tell them
+  their password changed is a worse experience than the threat justifies.
+- **`loginWithCode`**, on the recovery branch only, deletes all of them before
+  minting the new session. An account with no password set yet is mid-onboarding
+  rather than recovering, and has nothing worth evicting.
+
+Both log `sessionsRevoked`. The user-visible consequence — changing your
+password signs your other devices out — is stated in the settings copy, because
+otherwise it reads as a bug.
+
+There is still no *absolute* session lifetime; expiry remains sliding. With
+revocation in place that's a much smaller gap, but a cheap backstop remains
+available if it ever matters: refuse sessions whose `createdAt` is older than
+some ceiling. The column already exists.
+
+`scripts/reset-user-code.mjs` does not revoke on its own. It doesn't need to —
+the code login that necessarily follows it does.
+
 ### Nickname setup (first login)
 
 A valid session with `nickname === null` can reach exactly one place: a

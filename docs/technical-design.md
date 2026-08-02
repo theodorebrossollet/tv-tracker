@@ -70,6 +70,14 @@ model Episode {
 
   show          Show     @relation(fields: [showId], references: [id])
   watched       WatchedEpisode?
+
+  // Composite, not `showId` alone: every episode list filters by show and
+  // orders by season then episode, and with only the show column SQLite found
+  // the rows by index and then sorted them in memory on each render. Leading
+  // with showId means this also serves everything the bare index did, so
+  // keeping both would only be a second index to maintain on every write.
+  @@index([showId, seasonNumber, episodeNumber])
+  @@index([airDate])
 }
 
 model TrackedShow {
@@ -126,6 +134,25 @@ Viewing a show also re-syncs it if the cache is more than 24h old **and** the
 show isn't tracked. Tracked shows are left to the cron; untracked ones have no
 other refresh path, so without this a show cached from a search result would
 keep its first-seen data forever.
+
+The refresh happens **after the response**, via `after()` from `next/server`:
+the page renders from the cached copy and the re-sync runs once the HTML has
+gone. A full multi-season TMDB walk is seconds of work, and the data being
+served is at most a day old, so making the visitor wait for it buys nothing.
+Only a show with nothing cached at all still blocks, because there is nothing to
+serve. Two constraints follow from that shape: the `after()` callback must not
+touch request-time APIs (`cookies`, `headers` — they throw inside `after` in a
+Server Component), and refreshes are deduplicated by show id, because
+`lastSynced` only advances when a sync *finishes*, so back-to-back views would
+otherwise start concurrent syncs that collide on the episode primary key.
+
+This whole path was dead for the length of v2 and nobody noticed. `Show.tracked`
+became a **list** in the accounts migration, and the guard above the staleness
+check asked `if (existing.tracked)` — true for every cached show, empty array
+included. Every untracked show therefore short-circuited as "the cron's job"
+while the cron only ever visits tracked shows, so nothing refreshed them at all.
+The lesson generalises past this one line: a list relation is always truthy, the
+wrong version type checks, and the symptom is silence.
 
 **Gap worth knowing when adding a column to `Show` or `Episode`.** Both refresh
 paths key on *time*, not on completeness: the cron visits tracked shows on a
@@ -307,6 +334,30 @@ asks for. Setting `export const fetchCache = "default-cache"` does *not*
 override it — measured, not assumed. Before the in-process cache, one Game of
 Thrones page view cost 11 TMDB requests every single time; it is now 11 cold
 and 1 warm.
+
+The map stores the **in-flight promise**, not the resolved value. Storing the
+value meant every concurrent miss on a cold instance fired its own request — and
+a show page fans out to providers, regions and a trailer per season at once, so
+the whole burst was multiplied by every simultaneous viewer. A rejection evicts
+its own entry, because caching a failure would serve it for the full TTL and
+turn one bad minute into a day without trailers.
+
+**TMDB values are validated where the response is mapped**, in `lib/tmdb.ts`,
+rather than at the point they're rendered. Provider links must be `https` —
+React only *warns* about a `javascript:` href and renders it anyway — and
+YouTube video ids are charset-checked (`^[A-Za-z0-9_-]+$`), which is the
+property that makes them safe to interpolate into the thumbnail and embed URLs.
+Validating at the choke point covers every future consumer and keeps the check
+on the server side of the `server-only` boundary. The id rule is deliberately
+not length-pinned: requiring exactly 11 characters would add no safety, and a
+rejected id renders identically to a show with no trailer, so the failure would
+be invisible.
+
+**Transport failures don't quote themselves back to the browser.** `toResult`
+hands `TmdbError.message` to the client, and with a v3 key the request URL
+carries the key in its query string — so a transport error's own text is the one
+path a key could reach a visitor. The detail goes to `tmdb.unreachable` in the
+logs; the visitor gets a fixed string.
 - Streaming availability: `GET /tv/{id}/watch/providers` — returns **every** country in one response, so the country dropdown on a show page switches instantly without further requests
 - Country list: `GET /watch/providers/regions` — cached for 24h, it changes about never
 - Rate limits: TMDB's free tier is generous for this scale, but cache aggressively (don't refetch on every page view)
@@ -353,6 +404,22 @@ It no longer has to be worked out by hand. `cron.refresh.completed` carries
 `durationMs` and `msPerShow`, so every run reports its own cost — read the
 latest one rather than this paragraph, and update the numbers above when they
 have drifted enough to matter.
+
+**The loop yields at 50s rather than being killed at 60.** Running past
+`maxDuration` doesn't just truncate the refresh: the completion log and the
+expired-session sweep both sit *after* the loop, so a killed run left no record
+it had happened and quietly stopped deleting expired sessions. The run now stops
+starting new shows at `DEADLINE_MS`, leaving headroom for both, and reports
+`skipped` and `deadlineHit` alongside the timings. **A non-zero `skipped` is the
+signal that the library has outgrown a single run** — nothing is broken, the
+missed shows lead the next run, but that is the moment to act on the paragraph
+below.
+
+Shows are visited **least-recently-synced first**. With no ordering the database
+returns them in an order stable enough that a truncated run would refresh the
+same prefix every night and never reach the tail. Oldest-first makes successive
+runs rotate through the whole set on their own, and a truncated run advances the
+shows furthest behind.
 
 Fetching a show's seasons in parallel remains available if the budget gets
 tight again — they're independent requests, and the sequential loop was chosen
@@ -472,6 +539,45 @@ Password guessing is throttled per account rather than per IP, because an
 in-process counter is worthless across short-lived serverless instances — the
 one point from the original section worth carrying forward.
 
+**A backstop for the gate.** Route protection is per-file convention with
+nothing above it enforcing the convention, so a new page or route handler
+without a gate is silently public and reads normally in review.
+`tests/route-gates.test.ts` walks `src/app/**/{page.tsx,route.ts}` and fails on
+any file that doesn't name a gate, allow-listing the login flow and the cron
+route (which brings its own auth), plus a third case that fails if an allow-list
+entry stops matching a real file — a stale entry would wave through a new page
+at the old path. It checks the gate is *named*, not called: it catches "someone
+forgot entirely", not "someone gated the wrong branch".
+
+**Length caps on the login path.** `PASSWORD_MAX` exists to bound scrypt's
+input, but originally ran only when *setting* a password — not on
+`loginWithPassword`, the one path an unauthenticated caller can drive. Every
+attempt costs ~100ms of CPU and 32MB, unknown nicknames included, because
+`fakeVerify` runs to keep the timing flat, so the caller chose how much work to
+ask for. Nickname and password length are now checked before the user lookup,
+returning the same message as any other failed login.
+
+Still no per-IP ceiling, and deliberately so: it needs an external store to mean
+anything across serverless instances, which is out of proportion for an
+invite-only app. The length cap removes the amplification, which is the cheap
+part of the problem.
+
+**Security headers** are set for `/(.*)` in `next.config.ts`: `frame-ancestors
+'none'` plus `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, HSTS and a
+`Permissions-Policy` denying camera, microphone and geolocation. Framing is the
+gap `SameSite=Lax` doesn't close — a framed page carries the cookie and clicks
+inside it are same-origin — and the Danger Zone is two clicks from wiping an
+account.
+
+The CSP here is *only* `frame-ancestors`. A real `default-src`/`script-src`
+policy needs a nonce for Next's inline bootstrap and is a separate project.
+
+Note the ordering trap: matching `headers()` entries do **not** merge per key —
+the last one to set a key wins. The catch-all is listed first and the `/sw.js`
+entry after it, restating the full policy it needs, because the other way round
+silently replaced the worker's own CSP with the weaker catch-all one. Verify
+header changes against a built server, not by reading the config.
+
 ## 14. Logging
 
 `src/lib/logger.ts` emits one JSON object per line — `level`, `event`, `time`,
@@ -481,6 +587,14 @@ by event name or show id, which free-text messages can't be.
 Events are namespaced by area (`cron.refresh.completed`,
 `show.refresh_failed_serving_stale`, `action.failed`). Errors and warnings go to
 stderr so they can be separated by stream alone.
+
+Three fields are worth watching rather than merely collecting:
+
+| Where | Field | What a non-default value means |
+|---|---|---|
+| `cron.refresh.completed` | `skipped` / `deadlineHit` | The run hit its deadline. Missed shows lead the next run, but the library has outgrown one pass — parallelise the season fetches. |
+| `auth.password_changed`, `auth.password_reset_via_code` | `sessionsRevoked` | How many other sessions the change signed out. Anything above zero on an account with one device is worth a second look. |
+| `tmdb.unreachable` | — | Emitted where a transport failure's own text used to be shown to the visitor. Its presence is the only place that detail now exists. |
 
 `describeError` deliberately keeps only the error name and message. Stacks are
 noise in aggregated logs, and — more importantly — a thrown TMDB URL can carry a

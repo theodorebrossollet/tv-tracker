@@ -21,7 +21,7 @@ or the manifest/service worker.
 
 ```bash
 npm run dev        # local server (localhost:3000)
-npm test           # vitest, ~250 tests, no network or server needed
+npm test           # vitest, ~275 tests, no network or server needed
 npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally
@@ -83,6 +83,23 @@ refresh only fires once a row is 24h stale. Neither notices a new column is
 empty on an otherwise fresh row, so existing rows render blanks until they age
 out. Write a one-off script, as `scripts/backfill-air-dates.mjs` does.
 
+**A relation that is a list is always truthy.** `Show.tracked` and
+`Episode.watched` are lists (see below), so `if (row.tracked)` is taken for
+every row, including the empty case. This killed the on-view staleness refresh
+in `ensureShowCached` for the whole of v2 — every cached show looked tracked, so
+the branch below it was unreachable and untracked shows never re-synced. It is
+silent by construction: the wrong version compiles, type checks, and behaves
+plausibly. Ask about `.length`.
+
+**A stale untracked show is served from cache and refreshed afterwards.**
+`ensureShowCached` returns the cached copy and re-syncs via `after()` from
+`next/server`, because the refresh is a full multi-season TMDB walk and the data
+is at most a day old. Only a show with nothing cached still blocks. Two
+consequences: the `after()` callback must not touch request-time APIs
+(`cookies`, `headers`) — it throws in a Server Component — and refreshes are
+deduplicated by show id, because `lastSynced` only moves when a sync *finishes*
+and two concurrent syncs collide on the episode primary key.
+
 **Migrations do not run on deploy.** `npm run build` only does `prisma
 generate`. Apply migrations by hand with `npm run db:deploy` pointed at Turso —
 deliberate, so a build can't mutate production data. Note `prisma migrate
@@ -129,6 +146,33 @@ returns. Both halves are required. The gate goes *above* each `try` block —
 `userId` filter returns someone else's rows and still type-checks.
 `tests/isolation.test.ts` covers this; add to it when adding a query.
 
+**Route protection is per-file convention, with one backstop.** Nothing
+enforces that a new page or route handler calls a gate — there is no middleware,
+and the `APP_PASSWORD` net that used to catch the omission is gone, so a
+forgotten gate is silently public and looks entirely normal in review.
+`tests/route-gates.test.ts` walks `src/app/**/{page.tsx,route.ts}` and fails on
+any file that doesn't name a gate, with an allow-list for the login flow and the
+cron route. It checks the gate is *named*, not called — treat a green run as
+"nobody forgot entirely", not as proof the route is protected.
+
+**Changing a password or recovering with a code signs out every other session.**
+`changePassword` keeps only the session making the change; `loginWithCode`'s
+recovery branch clears all of them before minting the new one. Without this the
+recovery story didn't work: expiry slides forward on every visit, so a stolen
+session that gets used never lapses, and nothing else in the app ends a session
+it isn't holding the cookie for. The settings copy says so — keep them in step
+if either changes.
+
+**Header entries in `next.config.ts` do not stack per key.** Two matching
+`headers()` entries that set the *same* key don't merge; the last one wins.
+A catch-all listed after the `/sw.js` entry silently replaced the worker's
+`default-src 'self'; script-src 'self'` with a weaker policy — the response
+still carried a `Content-Security-Policy`, just the wrong one, and different
+keys (`Content-Type`, `Cache-Control`) survived, which is what makes it hard to
+spot. The catch-all goes first and `/sw.js` restates the full policy it needs.
+Check header changes against a built server (`npm run build && npx next start`,
+then `curl -sI`), not by reading the config.
+
 **The service worker must never cache a page.** Every route is
 `force-dynamic` and renders per-account watch state, so a cached page is
 served to whoever asks next — including a different signed-in user.
@@ -139,7 +183,18 @@ real file in a fake worker scope; extend it before widening what gets cached.
 **TMDB caching is in-process, not Next's.** These pages are
 `dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and
 silently discards any `next: { revalidate }`. Setting `fetchCache` does not
-override it — measured, not assumed. `lib/tmdb.ts` keeps its own TTL map.
+override it — measured, not assumed. `lib/tmdb.ts` keeps its own TTL map, and it
+stores the in-flight *promise* rather than the resolved value, so concurrent
+misses share one request instead of each firing their own. Rejections evict
+themselves; a cached failure would otherwise be served for the whole TTL.
+
+**Values TMDB supplies are validated where the response is mapped.** Provider
+links must be https (React only *warns* about a `javascript:` href — it renders
+it anyway) and YouTube ids are charset-checked, which is what makes them safe to
+interpolate into the thumbnail and embed URLs. Both live in `lib/tmdb.ts` rather
+than the components, so a new consumer inherits the guarantee. The id check is
+deliberately not length-pinned: `{11}` would add no safety and would silently
+drop a trailer, which renders identically to a show that has none.
 
 ## Testing
 
