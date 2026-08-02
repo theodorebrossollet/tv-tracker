@@ -124,12 +124,27 @@ SQLite rebuilds a whole table for changes that look additive — adding a column
 with a foreign key, or one with `NOT NULL DEFAULT`, both drop and recreate.
 Read the generated SQL rather than assuming.
 
-**A stale database now says so.** `lib/schema-error.ts` recognises the
-"database is behind the code" failure and surfaces "The app is being updated"
-plus an `action.schema_mismatch` log naming the missing column — because the
-generic "Something went wrong" sent debugging in the wrong direction for half
-an hour. The signal is the *driver's* message, not Prisma's error code: the
-libSQL adapter reports these as P2039/P2010, not the documented P2021/P2022.
+**A stale database now says so — on writes *and* reads.**
+`lib/schema-error.ts` recognises the "database is behind the code" failure and
+surfaces "The app is being updated" instead of the generic error, because the
+generic one sent debugging in the wrong direction for half an hour. The signal
+is the *driver's* message, not Prisma's error code: the libSQL adapter reports
+these as P2039/P2010, not the documented P2021/P2022.
+
+This used to cover only server actions, via `toResult` — so a *page* that read
+a missing column threw during render, landed in `app/error.tsx`, and told the
+user "This is usually TMDB being unreachable". That is exactly the
+wrong-direction debugging the check exists to prevent, and it happened for real
+the day `Settings.providerIds` shipped ahead of its migration: every page
+reading Settings blamed TMDB. The Prisma client in `lib/prisma.ts` now tags
+these errors with a `SCHEMA_MISMATCH` digest and logs `db.schema_mismatch`
+naming the missing column, and `error.tsx` reads the digest. It has to be the
+digest: Next scrubs the message before it reaches a client component in
+production builds, so the boundary cannot re-run the check itself. A custom
+digest *is* forwarded rather than replaced by Next's generated hash — measured
+against a production build on Next 16.2.12, and worth re-measuring on a major
+upgrade, because if it ever stops being true the copy silently reverts to
+blaming TMDB and nothing fails.
 
 **"Show more" is a URL, not `useState`.** The lists (`ShowList`,
 `UpcomingList`) and the availability panel are server components; revealing more

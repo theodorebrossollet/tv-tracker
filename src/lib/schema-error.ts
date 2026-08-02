@@ -51,6 +51,20 @@ export function isSchemaMismatch(error: unknown): boolean {
 }
 
 /**
+ * The `digest` stamped onto a schema-mismatch error so the error boundary can
+ * recognise it.
+ *
+ * Next scrubs an error's message before it reaches the client in production
+ * builds — that is the whole point of the digest — so `error.tsx` cannot run
+ * `isSchemaMismatch` itself and has nothing else to go on. A digest set on the
+ * error server-side *is* forwarded verbatim rather than replaced by the usual
+ * generated hash: measured against a production build of this app on Next
+ * 16.2.12, not assumed, because a generated hash here would silently fall
+ * through to the generic message and nobody would notice.
+ */
+export const SCHEMA_MISMATCH_DIGEST = "SCHEMA_MISMATCH";
+
+/**
  * The missing column or table, for the log line.
  *
  * Deliberately just this fragment rather than the whole error: Prisma's message
