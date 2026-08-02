@@ -26,7 +26,9 @@ idea; nothing here builds toward it.
   problem, and it got worse once the app was installed to a home screen.
   The code stays valid, which gives the one thing the original design had no
   answer for: a way back in after a forgotten password. It is still the only
-  recovery route — losing both is still losing the account.
+  *self-serve* recovery route — losing both isn't a dead end, but it stops
+  being self-serve and needs the admin to run `scripts/reset-user-code.mjs`
+  (see "Non-Functional Expectations" below).
 - **Mobile: a PWA**, not a native app. Reuses the existing Next.js codebase and
   server actions entirely — no second codebase, no app store account, no
   native API layer to build. Native (React Native/Expo) was considered and
@@ -95,12 +97,18 @@ browser's device emulator.
 
 - Still small-scale: a handful of trusted users, not public signup at any
   point.
-- **No account recovery beyond the code.** A forgotten password is recoverable
-  — sign in with the code and the account is reachable again. Losing *both* the
-  password and the code means losing the account, with no email to fall back
-  on. That is an accepted trade-off of staying anonymous/data-minimal, not an
-  oversight — say so to anyone you hand a code to, and tell them to keep it
-  after they have set a password.
+- **No self-serve account recovery beyond the code.** A forgotten password is
+  self-recoverable — sign in with the code and the account is reachable again
+  (and doing so now forces choosing a new password, rather than leaving the
+  old, forgotten one in place). Losing *both* the password and the code isn't
+  a dead end either, but it isn't self-serve: the admin can run
+  `scripts/reset-user-code.mjs <nickname>` to issue a fresh code for that same
+  account, with every tracked show and watched episode untouched, because
+  nothing about the account's data keys off the code. That script identifies
+  the account by nickname rather than anything resembling PII, matching how
+  a code is handed over in the first place. Say so to anyone you hand a code
+  to regardless — keeping it after setting a password means never needing to
+  ask.
 - Offline support is partial, not full. See the technical design doc — most
   pages are `force-dynamic`, so a service worker can cache the app shell but
   not real watch data. Don't advertise "works offline."
@@ -115,7 +123,9 @@ browser's device emulator.
 - Native mobile app (React Native/Expo or otherwise)
 - Push notifications — the PWA groundwork doesn't preclude this later, but it
   isn't being built now
-- Recovering a lost account code
+- *Self-serve* recovery of a lost account code — the admin can still issue a
+  new one by hand (`scripts/reset-user-code.mjs`); there's no in-app flow for
+  it
 - A profile page, or any way to find/search for another user by nickname —
   v2 only collects and uniqueness-checks the nickname, it doesn't build
   anything that displays or searches it yet

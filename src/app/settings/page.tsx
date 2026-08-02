@@ -1,3 +1,5 @@
+import { ChangePasswordForm } from "./change-password-form";
+import { DangerZone } from "./danger-zone";
 import { SettingsClient } from "./settings-client";
 import { describeError, logger } from "@/lib/logger";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -43,16 +45,49 @@ export default async function SettingsPage() {
         {/* Instructions rather than a button: `beforeinstallprompt` doesn't
             exist on Safari iOS, so a custom install button would work for half
             the users and silently do nothing for the other half. */}
-        <ul className="mt-3 space-y-1 text-sm text-muted">
-          <li>
-            <span className="text-foreground">iPhone or iPad:</span> Share →
-            Add to Home Screen
-          </li>
-          <li>
-            <span className="text-foreground">Android:</span> the browser menu →
-            Install app, or Add to Home screen
-          </li>
-        </ul>
+        <div className="mt-3 space-y-4 text-sm text-muted">
+          <div>
+            <p className="text-foreground">iPhone or iPad</p>
+            <p className="mt-1 text-xs text-muted">
+              Must be done in Safari — Chrome and other browsers on iOS can&rsquo;t
+              install web apps, even though they can open this site.
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>Open this site in Safari.</li>
+              <li>
+                Tap the Share icon (a square with an arrow pointing up) in the
+                toolbar — on iPhone that&rsquo;s at the bottom of the screen, on
+                iPad it&rsquo;s at the top.
+              </li>
+              <li>Scroll down the sheet that opens and tap “Add to Home Screen”.</li>
+              <li>Tap “Add” in the top-right corner.</li>
+            </ol>
+            <p className="mt-2 text-xs text-muted">
+              An icon appears on your home screen. Open the app from there, not
+              from Safari, to get the full-screen experience.
+            </p>
+          </div>
+
+          <div>
+            <p className="text-foreground">Android (Chrome)</p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>Open this site in Chrome.</li>
+              <li>
+                Tap the ⋮ menu in the top-right corner (or the “Install”
+                banner, if Chrome already shows one at the bottom).
+              </li>
+              <li>
+                Tap “Install app” (older versions of Chrome show “Add to Home
+                screen” instead — either works).
+              </li>
+              <li>Confirm by tapping “Install”.</li>
+            </ol>
+            <p className="mt-2 text-xs text-muted">
+              Other Android browsers (Firefox, Samsung Internet) have a similar
+              option, usually under “Add to Home screen” in their menu.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="mt-8">
@@ -66,6 +101,21 @@ export default async function SettingsPage() {
         </p>
 
         <SignOutButton />
+
+        <div className="mt-6 border-t border-border pt-6">
+          <h3 className="text-sm font-medium">Password</h3>
+          <p className="mt-1 text-sm text-muted">
+            Changing it requires your account code — the one you were given
+            when invited — as proof it&rsquo;s really you. Keep that code
+            regardless: it&rsquo;s still the only way back in if you forget
+            whatever password you set here.
+          </p>
+          <ChangePasswordForm />
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <DangerZone />
       </section>
     </div>
   );

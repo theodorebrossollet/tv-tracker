@@ -193,7 +193,8 @@ admit `...`, `---`, and `!!!`.
 A stateless cookie (sign `userId` into a JWT/iron-session payload) needs no
 extra table, but it can't be individually revoked — the only way to invalidate
 one is to rotate the server secret, which logs out everyone at once. Given
-codes have **no recovery path**, being able to kill one compromised session
+codes have **no self-serve recovery path** (see §4's `reset-user-code.mjs`
+note for the admin-assisted one), being able to kill one compromised session
 (or all of one user's sessions) without affecting anyone else matters more
 here than it would with a Google-login system that has its own recovery.
 
@@ -206,6 +207,10 @@ sliding expiration (§8) would make it a read *and a write* per request unless
 throttled; §4 says how.
 
 ## 3. Migration Path (existing v1 data)
+
+**Both phases have run.** Kept below as the record of how the migration was
+actually planned and sequenced, not as a pending plan — see §9's "Next Steps"
+for the current-state pointer.
 
 The deployed app already has real data under the "one implicit user" model.
 This is the sharper version of the "adding a column needs a backfill" rule in
@@ -330,7 +335,13 @@ user-chosen password does not.
   slow-hash rationale doesn't apply, and a direct lookup scales better as more
   accounts are added). The hash is unsalted by necessity — the indexed lookup
   requires it, and there is no dictionary to precompute against 128 random
-  bits. On match, create a `Session` row and set the cookie.
+  bits. On match, create a `Session` row and set the cookie. If the account
+  already has a password, that hash is cleared as part of the same update and
+  the visitor is routed to `/welcome` to choose a new one — reaching this
+  action with a password already set means recovering, not just signing in,
+  and leaving the old (forgotten) hash live would mean landing back here next
+  time. An account with no password yet (first login, or right after a
+  `reset-user-code.mjs` run) already goes to `/welcome` regardless.
 - **Cookie: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`.** `Lax` rather
   than `Strict`: `Strict` would drop the cookie on any inbound link from
   another app, which for something launched from a phone home screen and
@@ -346,6 +357,17 @@ user-chosen password does not.
 - No self-serve signup route exists. New accounts are created by running
   `scripts/create-user.mjs` (same shape as the admin-user script above)
   against production `DATABASE_URL`, which prints a new code once.
+- **Losing the code isn't self-serve recoverable, but it isn't a dead end.**
+  `scripts/reset-user-code.mjs <nickname>` looks the account up by
+  `nicknameKey`, overwrites `codeHash` with a fresh one, and prints the new
+  code once — same handling as the other account scripts. It deliberately
+  does not touch `passwordHash`: whether the visitor also needs a new
+  password is `loginWithCode`'s call to make (see above), not this script's.
+  Nothing about `TrackedShow`/`WatchedEpisode`/`Settings` changes, because
+  none of them reference the code — they key off `User.id`, which this script
+  never touches. Identifying the right account by nickname rather than by
+  anything resembling PII is what keeps this consistent with the rest of the
+  account model.
 
 **No rate limiting on `loginWithCode`, deliberately.** At 128 bits of entropy
 (§8) brute force is infeasible at any request rate, so the
@@ -635,8 +657,10 @@ table rebuild carries the row across (§3).
 
 What remains before building is not design work:
 
-1. **Schedule the Phase B window** and take the database copy (§3). This is the
-   only step in v2 that can lose data TMDB can't re-supply.
+1. ~~**Schedule the Phase B window** and take the database copy (§3).~~ **Done.**
+   Phase B has run against production — the composite unique constraints and
+   `NOT NULL userId` described in §2 are live on the real database, not just in
+   these tests' throwaway ones.
 2. **Real devices for the PWA** — an iPhone and an Android handset. Per
    `scope-v2.md`'s success criteria, a desktop browser's device emulator
-   doesn't count.
+   doesn't count. Not yet confirmed done as of this writing.
