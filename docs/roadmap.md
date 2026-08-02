@@ -19,6 +19,41 @@ capture ideas as they come up, to revisit once the current phase is done.
 - **Export personal data as CSV** — download your own tracked shows/watched
   episodes from Settings
 
+## Deferred performance work
+
+Carried over from the security & efficiency review (2 Aug 2026), whose other
+findings all shipped. None of these is a bug — the app is correct and fast
+enough today. They are the things that get worse as the library grows, listed
+with what would trigger acting on them.
+
+- **Compute bucket counts in SQL.** `getTrackedShows` ships every episode row
+  (plus watch marks) of every tracked show to Node to derive four counts and one
+  episode name, on **every** dashboard, watchlist and archive render — so the
+  payload grows with shows × episodes. At 40 shows × 120 episodes that's ~4,800
+  rows per page view. The fix is a grouped aggregate for the counts plus one
+  narrow query for next-unwatched. The field-level `select` already in place is
+  what keeps it tolerable; the single-pass loop over the result changed the
+  constant, not the shape. *Trigger: the dashboard feeling slow, or the library
+  passing a few dozen shows with long runs.*
+- **`ShowList` / `UpcomingList` are client components for a "show more"
+  counter.** The full arrays serialise into the RSC payload and pull
+  `AddButton`/`Poster` into the client graph. A server-rendered disclosure, or a
+  `?limit=` search param, keeps them on the server — `ShowGrid` shows the
+  pattern. *Trigger: page weight, or wanting these lists to work without JS.*
+- **The show page ships the whole provider matrix.** ~80 countries plus ~90
+  region names go to the `Availability` client component for a dropdown most
+  people never open — roughly 30-80KB of flight payload per view. Fetching it
+  all server-side is right (it's one TMDB call); *sending* it all is the waste.
+  Send the selected country and swap via a server round trip, or at minimum
+  strip to countries that actually have providers. *Trigger: mobile page weight.*
+
+There's also one latent limit worth knowing rather than fixing: the nested
+`watched: { where: { userId } }` reads compile to `episodeId IN (…)` with one
+bind variable per episode, and SQLite caps those at 32,766. The write side
+already chunks at 500 for exactly this reason. A tracked daytime soap (10,000+
+episodes) would make the *read* throw. Restructuring falls out of the first item
+above, so it's worth doing then rather than on its own.
+
 ## Already captured elsewhere
 
 These are noted in [scope.md](scope.md) under Phase 2 / "Ideas for the
