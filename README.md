@@ -133,7 +133,7 @@ applies migrations that haven't run yet, so running it twice is harmless.
 
 **3. Deploy**
 
-Import the repo at [vercel.com/new](https://vercel.com/new) and set five
+Import the repo at [vercel.com/new](https://vercel.com/new) and set four
 environment variables:
 
 | Variable | Value |
@@ -145,8 +145,9 @@ environment variables:
 
 `DATABASE_URL` is the one to get right: locally it's `file:./dev.db`, in
 production it must be the Turso URL. Vercel's env var box accepts a pasted
-`.env`, so preparing a block with the production values avoids transcribing five
-secrets by hand.
+`.env`, so preparing a block with the production values avoids transcribing four
+secrets by hand. (A fifth, `APP_PASSWORD`, used to belong here — removed along
+with the shared password gate that v2's real sessions replaced.)
 
 
 **4. Add a rate limit** (optional, but cheap)
@@ -188,23 +189,32 @@ src/
     page.tsx                dashboard — watching list + upcoming episodes
     watchlist/              shows added but not started
     show/[id]/              availability, trailer, episodes, mark watched
-    settings/               country, notifications, clear all data
+    settings/               country, notifications, password, clear all data
+    login/, welcome/        account-code + password sign-in, first-login setup
     api/cron/               daily episode refresh
+    manifest.json           PWA manifest
     error.tsx               catches an unreachable TMDB
   components/               shared UI (search is an overlay, not a route)
-  proxy.ts                  password gate (Next 16 renamed Middleware)
   lib/
+    auth.ts                 sessions: cookies, requireOnboardedSession, etc.
+    password.ts, password-rules.ts, nickname.ts, login-throttle.ts
     prisma.ts               database client
     tmdb.ts                 TMDB API wrapper (server-only)
     shows.ts                show syncing logic
-    queries.ts              read queries used by pages
+    queries.ts              read queries used by pages, scoped per user
     logger.ts               structured JSON logging
+    schema-error.ts         detects "database is behind the code"
     types.ts, format.ts,    client-safe helpers
     images.ts
 prisma/schema.prisma        data model
-scripts/                    migrate + one-off air-date backfill
+public/sw.js                service worker: caches the app shell only
+scripts/                    migrate, backup, account creation/reset, backfills
 tests/                      vitest suite (npm test)
 ```
+
+There is no `proxy.ts` (Next's Middleware) anymore — the shared password gate
+it implemented was removed once every page and action carried its own session
+check. See "Accounts are invite-only" above.
 
 Anything under `src/lib` that imports `server-only` must never be imported by a
 client component — that's why poster URLs, shared types, and date formatting

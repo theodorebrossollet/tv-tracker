@@ -21,7 +21,7 @@ or the manifest/service worker.
 
 ```bash
 npm run dev        # local server (localhost:3000)
-npm test           # vitest, ~100 tests, no network or server needed
+npm test           # vitest, ~250 tests, no network or server needed
 npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally

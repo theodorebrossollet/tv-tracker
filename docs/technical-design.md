@@ -31,6 +31,14 @@ No separate backend service, no message queue, no external state, no auth layer 
 
 ## 2. Data Model (Prisma schema, simplified)
 
+**Superseded by v2.** This section describes v1's schema, kept for the
+reasoning below — the shipped schema now has `User`/`Session` models, `userId`
+on `TrackedShow`/`WatchedEpisode`/`Settings`, and their unique constraints are
+composite (`[userId, showId]` etc.), which flips `Show.tracked` and
+`Episode.watched` from a to-one relation to a list. See
+`docs/technical-design-v2.md` section 2 for the actual shape and the query
+rewrites that followed from it.
+
 No `User` model in v1 — all data belongs to the single user implicitly (no `userId` fields needed).
 
 ```prisma
@@ -266,6 +274,13 @@ rows never are.
 
 ## 6. Server Actions (core logic)
 
+**Superseded by v2.** "No session/auth check needed" below was true only in
+v1. Every action listed here now opens with `requireOnboardedSession()` and
+scopes its Prisma calls by the resulting `userId` (see section 13), and the
+account actions (`loginWithCode`, `loginWithPassword`, `completeOnboarding`,
+`changePassword`, `setNickname`, `logout`) aren't listed here at all — see
+`docs/technical-design-v2.md` section 4.
+
 - `searchSuggestions(query)` — backs the overlay's typeahead; annotates results with their current list
 - `addToWatchlist(tmdbShowId)` — upserts `Show` + `Episode` rows from TMDB, creates `TrackedShow` with status `watchlist`
 - `removeShow(showId)` — removes `TrackedShow` (keeps global `Show`/`Episode` cache)
@@ -376,7 +391,10 @@ See `.env.example` for the annotated version. `CRON_SECRET` was added during the
 build: without it `/api/cron/refresh-episodes` would be a public endpoint anyone
 could hit repeatedly, burning through the TMDB rate limit.
 
-(Auth-related variables will be added in Phase 2 once the login method is decided.)
+**No auth-related variables were needed for v2's accounts.** Sessions and
+account codes are stored in the database and hashed, not signed with a
+server secret, so there's no `AUTH_SECRET`-shaped addition here — see
+`docs/technical-design-v2.md` section 4.
 
 ## 11. Deployment
 
@@ -417,10 +435,12 @@ finished shows accumulate forever.
 
 ## 12. Tests
 
-`npm test` (Vitest). 59 tests, no network and no dev server needed — TMDB is
-mocked at `fetch`, and the database tests build a throwaway SQLite file under
-`tests/.tmp` from the real migration files, so they exercise the same schema
-production gets.
+`npm test` (Vitest). 59 tests at the time this was written, no network and no
+dev server needed — TMDB is mocked at `fetch`, and the database tests build a
+throwaway SQLite file under `tests/.tmp` from the real migration files, so
+they exercise the same schema production gets. The count is well past that
+now that v2's accounts/sessions/PWA suites exist — run `npm test` for the
+current number rather than trusting one written down here.
 
 Covered:
 
