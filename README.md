@@ -7,7 +7,9 @@ through you are, and what's airing next. A replacement for TV Time.
 with `scripts/create-user.mjs`, hand it over, and the recipient sets a nickname
 and password the first time they use it. The code stays valid afterwards as the
 only way back in if the password is forgotten — there is no email to send a
-reset to, so losing both loses the account.
+reset to. Losing both isn't a dead end either, just not self-serve: run
+`scripts/reset-user-code.mjs <nickname>` to issue a fresh code for the same
+account, with all of its data untouched.
 
 The shared `APP_PASSWORD` gate that protected v1 is gone; every page and server
 action now checks a real session.
