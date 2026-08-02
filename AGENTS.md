@@ -89,6 +89,31 @@ deliberate, so a build can't mutate production data. Note `prisma migrate
 deploy` cannot talk to Turso at all (it rejects `libsql://`), which is why
 `scripts/migrate.mjs` exists.
 
+**A schema change is two steps, and the order is not a detail.** Merging *is*
+deploying — Vercel ships `main` automatically — and the migration never rides
+along with it.
+
+- **Additive** (new column or table): run it *before* merging. The deployed
+  code doesn't know the new column exists and ignores it, so there is no
+  window where anything is broken.
+- **Breaking** (drop, rename, tighten to `NOT NULL`): run it *adjacent* to the
+  merge. The old build stops working the moment it lands, and the new build
+  doesn't work until it does, so some downtime is unavoidable — keep it short
+  and deliberate rather than discovering it.
+
+Getting this backwards took the app down twice in one afternoon, both times
+because code shipped first. `npm run db:backup` before either, and note that
+SQLite rebuilds a whole table for changes that look additive — adding a column
+with a foreign key, or one with `NOT NULL DEFAULT`, both drop and recreate.
+Read the generated SQL rather than assuming.
+
+**A stale database now says so.** `lib/schema-error.ts` recognises the
+"database is behind the code" failure and surfaces "The app is being updated"
+plus an `action.schema_mismatch` log naming the missing column — because the
+generic "Something went wrong" sent debugging in the wrong direction for half
+an hour. The signal is the *driver's* message, not Prisma's error code: the
+libSQL adapter reports these as P2039/P2010, not the documented P2021/P2022.
+
 **Anything importing `server-only` must never reach a client component.** That's
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date
 formatting (`lib/format.ts`) live apart from `lib/tmdb.ts`.
