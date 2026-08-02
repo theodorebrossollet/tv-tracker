@@ -44,6 +44,7 @@ function run(script: string): RunResult {
 }
 
 const createAdmin = () => run("create-admin-user.mjs");
+const createUser = () => run("create-user.mjs");
 
 /** The code is printed once and never stored — this is the only way to read it. */
 function codeFrom(stdout: string): string {
@@ -171,6 +172,60 @@ describe("create-admin-user", () => {
     // The guard is the point: a second user here would leave one account
     // holding all the backfilled data and no way to tell which is which.
     await expect(prisma.user.count()).resolves.toBe(1);
+  });
+});
+
+describe("create-user", () => {
+  it("creates an account and prints a code matching the stored hash", async () => {
+    const result = createUser();
+    expect(result.status).toBe(0);
+
+    const code = codeFrom(result.stdout);
+    expect(code).toMatch(/^[0-9a-f]{32}$/);
+
+    await expect(
+      prisma.user.findMany({
+        select: { codeHash: true, nickname: true, passwordHash: true },
+      }),
+    ).resolves.toEqual([
+      {
+        codeHash: createHash("sha256").update(code).digest("hex"),
+        // Both chosen by the recipient at first login, not here.
+        nickname: null,
+        passwordHash: null,
+      },
+    ]);
+  });
+
+  it("creates as many accounts as it is run, each with its own code", async () => {
+    // The opposite of create-admin-user, which refuses a second run. This is
+    // the script for inviting people, so running it repeatedly is the point.
+    const codes = [createUser(), createUser(), createUser()].map((r) =>
+      codeFrom(r.stdout),
+    );
+
+    expect(new Set(codes).size).toBe(3);
+    await expect(prisma.user.count()).resolves.toBe(3);
+  });
+
+  it("never stores the code itself", async () => {
+    const code = codeFrom(createUser().stdout);
+    const user = await prisma.user.findFirstOrThrow();
+
+    expect(JSON.stringify(user)).not.toContain(code);
+  });
+
+  it("makes an account that can actually be used", async () => {
+    // The code has to survive hashing and round-trip through login, otherwise
+    // this script mints accounts nobody can get into.
+    const code = codeFrom(createUser().stdout);
+
+    await expect(
+      prisma.user.findUnique({
+        where: { codeHash: createHash("sha256").update(code).digest("hex") },
+        select: { id: true },
+      }),
+    ).resolves.not.toBeNull();
   });
 });
 

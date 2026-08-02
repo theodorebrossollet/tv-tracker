@@ -20,6 +20,7 @@ import { validatePassword } from "@/lib/password-rules";
 import { describeError, logger } from "@/lib/logger";
 import { validateNickname } from "@/lib/nickname";
 import { prisma } from "@/lib/prisma";
+import { isSchemaMismatch, missingSchemaObject } from "@/lib/schema-error";
 import { isTmdbShowId } from "@/lib/show-id";
 import { syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
@@ -71,6 +72,19 @@ function isUniqueConstraintError(error: unknown): boolean {
 function toResult(error: unknown): ActionResult {
   if (error instanceof TmdbError) {
     return { ok: false, error: error.message };
+  }
+
+  // A deploy that landed before its migration. Split out from the generic
+  // failure because the two need different things: the visitor needs to know
+  // it is temporary and not their fault, and the operator needs to know which
+  // migration is missing without reading a stack trace.
+  if (isSchemaMismatch(error)) {
+    logger.error("action.schema_mismatch", { missing: missingSchemaObject(error) });
+
+    return {
+      ok: false,
+      error: "The app is being updated. Please try again in a minute.",
+    };
   }
 
   logger.error("action.failed", describeError(error));
