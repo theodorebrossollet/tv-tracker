@@ -22,9 +22,8 @@ capture ideas as they come up, to revisit once the current phase is done.
 ## Deferred performance work
 
 Carried over from the security & efficiency review (2 Aug 2026), whose other
-findings all shipped. None of these is a bug — the app is correct and fast
-enough today. They are the things that get worse as the library grows, listed
-with what would trigger acting on them.
+findings all shipped. Not a bug — the app is correct and fast enough today.
+This is the thing that gets worse as the library grows.
 
 - **Compute bucket counts in SQL.** `getTrackedShows` ships every episode row
   (plus watch marks) of every tracked show to Node to derive four counts and one
@@ -35,17 +34,25 @@ with what would trigger acting on them.
   what keeps it tolerable; the single-pass loop over the result changed the
   constant, not the shape. *Trigger: the dashboard feeling slow, or the library
   passing a few dozen shows with long runs.*
-- **`ShowList` / `UpcomingList` are client components for a "show more"
-  counter.** The full arrays serialise into the RSC payload and pull
-  `AddButton`/`Poster` into the client graph. A server-rendered disclosure, or a
-  `?limit=` search param, keeps them on the server — `ShowGrid` shows the
-  pattern. *Trigger: page weight, or wanting these lists to work without JS.*
-- **The show page ships the whole provider matrix.** ~80 countries plus ~90
-  region names go to the `Availability` client component for a dropdown most
-  people never open — roughly 30-80KB of flight payload per view. Fetching it
-  all server-side is right (it's one TMDB call); *sending* it all is the waste.
-  Send the selected country and swap via a server round trip, or at minimum
-  strip to countries that actually have providers. *Trigger: mobile page weight.*
+
+  Worth budgeting properly rather than squeezing in. `getShowBuckets` decides
+  which list a show appears in from these counts, so an aggregate that is
+  subtly wrong doesn't error — it quietly files a show under the wrong heading.
+  Every aggregate also needs its own `userId` filter, or it sums the household.
+
+The other two items here shipped in the meantime:
+
+- ~~`ShowList` / `UpcomingList` are client components~~ — both are server
+  components now, revealing rows through a `?<list>=<n>` search param rather
+  than client state. `limitFrom` in `components/show-more-link.tsx` is what
+  reads and bounds the value; each list uses its own param so two lists on one
+  page expand independently.
+- ~~The show page ships the whole provider matrix~~ — it now renders one
+  country, chosen by `?country=`, with `pickCountry` holding the
+  URL → settings → first-available precedence. `CountrySelect` is the only
+  client piece and carries codes and names alone. The cost is a round trip when
+  changing country, which is the right trade for a control most people never
+  touch on a page that previously always paid for it.
 
 There's also one latent limit worth knowing rather than fixing: the nested
 `watched: { where: { userId } }` reads compile to `episodeId IN (…)` with one

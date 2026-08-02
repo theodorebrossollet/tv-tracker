@@ -490,15 +490,39 @@ the production database is easy to trigger accidentally and hard to undo.
 ### Long lists
 
 `ShowList` (Watchlist, Archive) renders 10 rows and offers the rest behind a
-button; `UpcomingList` does the same with 15. Every row is already on the page,
-so expanding costs no request — the server-side cap is what bounds the payload.
+link; `UpcomingList` does the same with 15.
 
-Each list instance holds its own count rather than sharing one, so a long
-Finished section can't bury the Stopped section beneath it. That falls out of
-`useState` being per-instance; the test exists to document the intent.
+**The reveal is URL state, not React state**, and the lists are server
+components because of it. They were client components purely to hold a
+"show more" counter, which meant every row serialised into the RSC payload
+whether or not anyone expanded the list. Expanding is now a navigation to
+`?<list>=<n>` and the server renders only what the URL asks for. `AddButton`
+remains a client island per row — it has to be — but carries the two values it
+needs rather than riding along with every field of every show.
+
+Three details hold it together:
+
+- **Each list owns a param** (`watchlist`, `paused`, `finished`, `stopped`,
+  `upcoming`), so Archive's two sections expand independently. The expand link
+  copies the other params across, which is the only thing keeping that true —
+  drop that and expanding one section collapses the other.
+- **`scroll={false}`**, because Next scrolls to top on navigation and the
+  control sits at the bottom of a long list.
+- **`limitFrom` floors and caps the value.** The param is as attacker-supplied
+  as any other, and an unbounded one would let a hand-edited link ask the server
+  to render every row it holds. Note a large value survives the integer check
+  and is capped rather than rejected — `1e9` parses to an integer despite not
+  looking like one, which is exactly what a stricter-looking check would miss.
 
 The Archive is the list that needed this: Watching and Watchlist churn, but
 finished shows accumulate forever.
+
+The same pattern covers the show page's availability panel — `?country=` picks
+which country's providers to render, so the page no longer ships dozens of
+countries' provider lists for a dropdown most people never open. `pickCountry`
+holds the precedence and validates both candidate codes against what's actually
+available, so a stale settings country or a hand-edited param falls back rather
+than rendering an empty panel.
 
 ## 12. Tests
 
@@ -592,7 +616,8 @@ Three fields are worth watching rather than merely collecting:
 
 | Where | Field | What a non-default value means |
 |---|---|---|
-| `cron.refresh.completed` | `skipped` / `deadlineHit` | The run hit its deadline. Missed shows lead the next run, but the library has outgrown one pass — parallelise the season fetches. |
+| `cron.refresh.completed` | `skipped` / `deadlineHit` | The run hit its deadline. Missed shows lead the next run, but the library has outgrown one pass — parallelise the season fetches. **Logged at `warn` when it happens**, so it lands on stderr instead of among a year of identical info lines; an ordinary run stays at `info`. |
+| `auth.signed_out_everywhere` | `sessionsRevoked` | Someone deliberately ended every session on their account. Rare and always user-initiated. |
 | `auth.password_changed`, `auth.password_reset_via_code` | `sessionsRevoked` | How many other sessions the change signed out. Anything above zero on an account with one device is worth a second look. |
 | `tmdb.unreachable` | — | Emitted where a transport failure's own text used to be shown to the visitor. Its presence is the only place that detail now exists. |
 
