@@ -21,7 +21,7 @@ or the manifest/service worker.
 
 ```bash
 npm run dev        # local server (localhost:3000)
-npm test           # vitest, ~275 tests, no network or server needed
+npm test           # vitest, ~290 tests, no network or server needed
 npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally
@@ -130,6 +130,16 @@ plus an `action.schema_mismatch` log naming the missing column — because the
 generic "Something went wrong" sent debugging in the wrong direction for half
 an hour. The signal is the *driver's* message, not Prisma's error code: the
 libSQL adapter reports these as P2039/P2010, not the documented P2021/P2022.
+
+**"Show more" is a URL, not `useState`.** The lists (`ShowList`,
+`UpcomingList`) and the availability panel are server components; revealing more
+rows or switching country is a navigation to `?<list>=<n>` / `?country=XX`, so
+the server renders only what was asked for instead of shipping everything and
+hiding most of it. Reaching for client state here is the instinct to resist —
+it's what these were before, and it put every row of every list into the
+payload. Each list owns its own param and the expand link copies the others
+across, or expanding one section collapses its neighbour. Bound anything read
+off a param with `limitFrom`: it's as attacker-supplied as any other input.
 
 **Anything importing `server-only` must never reach a client component.** That's
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date

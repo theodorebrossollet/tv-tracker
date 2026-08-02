@@ -451,6 +451,17 @@ Both log `sessionsRevoked`. The user-visible consequence — changing your
 password signs your other devices out — is stated in the settings copy, because
 otherwise it reads as a bug.
 
+**`signOutEverywhere` does the same job on its own.** Revoking only as a side
+effect of a password change meant the answer to "I left myself signed in on a
+borrowed laptop" was to pick a new password that was never the problem, and
+then re-enter it everywhere. The action ends every session including the
+caller's: keeping the current one would mean deciding it is the trustworthy
+one, and someone reaching for this doesn't necessarily know which device
+they're on. Signing back in is a cheap, unambiguous end state — which is also
+why it needs no confirmation step. It clears the cookie as well as the rows,
+or the browser keeps presenting a dead token and every request pays a lookup to
+be told so.
+
 There is still no *absolute* session lifetime; expiry remains sliding. With
 revocation in place that's a much smaller gap, but a cheap backstop remains
 available if it ever matters: refuse sessions whose `createdAt` is older than
