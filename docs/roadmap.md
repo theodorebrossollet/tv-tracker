@@ -16,6 +16,8 @@ capture ideas as they come up, to revisit once the current phase is done.
   this gets prioritized)
 - **Calendar view** — a calendar showing upcoming episode releases across
   tracked shows, as an alternative to the existing upcoming-episodes list
+- **Export personal data as CSV** — download your own tracked shows/watched
+  episodes from Settings
 
 ## Already captured elsewhere
 
