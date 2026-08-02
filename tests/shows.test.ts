@@ -3,6 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached, syncShowFromTmdb } from "@/lib/shows";
 
+// `after` throws outside a request scope, and these call `ensureShowCached`
+// directly. Collecting the callbacks rather than running them is also what lets
+// a test see the two halves separately: what the response carried, and what
+// happened once it had gone.
+const { scheduled } = vi.hoisted(() => ({
+  scheduled: [] as Array<() => unknown>,
+}));
+
+vi.mock("next/server", () => ({
+  after: (callback: () => unknown) => {
+    scheduled.push(callback);
+  },
+}));
+
+/** Runs the callbacks `after` was handed, the way the platform would. */
+async function runScheduledWork() {
+  await Promise.all(scheduled.splice(0).map((callback) => callback()));
+}
+
 import { TEST_USER_ID, resetDatabase, seedUser } from "./helpers";
 
 const SHOW_ID = "1399";
@@ -98,6 +117,7 @@ function countWrites() {
 beforeEach(async () => {
   await resetDatabase();
   await seedUser();
+  scheduled.length = 0;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -232,8 +252,47 @@ describe("keeping a cached show fresh", () => {
 
     expect(await ensureShowCached(SHOW_ID)).toBe(true);
 
+    // Nothing has been fetched yet: the stale copy is what the response
+    // carries, and the re-sync is what happens once it has gone.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await runScheduledWork();
+
     expect(fetchMock).toHaveBeenCalled();
     expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
+  });
+
+  it("collapses concurrent refreshes of the same show into one sync", async () => {
+    // `lastSynced` only moves when a sync finishes, so back-to-back views all
+    // see the same stale row. Without the in-flight guard each would start its
+    // own sync, and the second `createMany` would collide on the primary key.
+    await seedCachedShow(25);
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    await ensureShowCached(SHOW_ID);
+    await ensureShowCached(SHOW_ID);
+
+    expect(scheduled).toHaveLength(2);
+    await runScheduledWork();
+
+    // Two scheduled refreshes, one show fetch plus one season fetch.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
+  });
+
+  it("keeps serving the stale copy when the background refresh fails", async () => {
+    await seedCachedShow(25);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("TMDB unreachable");
+      }),
+    );
+
+    // The response already went out, so a failed refresh must not surface as a
+    // rejection — it's logged and the next view tries again.
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    await expect(runScheduledWork()).resolves.toBeUndefined();
   });
 
   it("leaves a show still inside the staleness window alone", async () => {
@@ -242,6 +301,7 @@ describe("keeping a cached show fresh", () => {
 
     expect(await ensureShowCached(SHOW_ID)).toBe(true);
 
+    expect(scheduled).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -256,15 +316,19 @@ describe("keeping a cached show fresh", () => {
 
     expect(await ensureShowCached(SHOW_ID)).toBe(true);
 
+    expect(scheduled).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("fetches a show that isn't cached at all", async () => {
+  it("waits for a show it holds nothing for", async () => {
+    // The one case with nothing to serve, so it stays blocking.
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
     expect(await ensureShowCached(SHOW_ID)).toBe(true);
 
     expect(fetchMock).toHaveBeenCalled();
+    expect(scheduled).toHaveLength(0);
+    expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
   });
 });
 

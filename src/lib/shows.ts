@@ -1,5 +1,7 @@
 import "server-only";
 
+import { after } from "next/server";
+
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getAllEpisodes, getShowDetails, TmdbError } from "@/lib/tmdb";
@@ -192,6 +194,44 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Background refreshes currently running, keyed by show id.
+ *
+ * `lastSynced` only moves once a sync *finishes*, so every view between
+ * scheduling one and it landing sees the same stale row and would schedule its
+ * own. Blocking used to bound that by itself — the visitor waited, so there was
+ * no second view to collide with. Returning the stale copy immediately removes
+ * that wait, and two concurrent syncs of one show don't merely duplicate the
+ * TMDB fetches: they compute the same `createMany` batch from the same
+ * pre-state and the second one fails on the primary key.
+ *
+ * Per-process, like the TMDB response cache in `lib/tmdb.ts` — another instance
+ * has its own map. That still covers what this is for: one visitor on one
+ * instance opening a show a few times in a row.
+ */
+const inFlightRefreshes = new Map<string, Promise<unknown>>();
+
+function refreshInBackground(tmdbShowId: string): Promise<unknown> {
+  const running = inFlightRefreshes.get(tmdbShowId);
+  if (running) return running;
+
+  const refresh = syncShowFromTmdb(tmdbShowId)
+    .catch((error) => {
+      // The stale copy has already gone out, so there is no request left to
+      // fail. Record it and let the next view try again.
+      logger.warn("show.refresh_failed_serving_stale", {
+        showId: tmdbShowId,
+        ...describeError(error),
+      });
+    })
+    .finally(() => {
+      inFlightRefreshes.delete(tmdbShowId);
+    });
+
+  inFlightRefreshes.set(tmdbShowId, refresh);
+  return refresh;
+}
+
+/**
  * Makes sure a show is in the local cache and reasonably fresh, fetching from
  * TMDB when it's missing or stale. Used when opening a show page.
  *
@@ -204,6 +244,14 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
  * shows. Without it, a show cached from a search result would keep its
  * first-seen episode data forever — wrong air dates, and missing any field
  * added to the schema after it was cached.
+ *
+ * A stale show is served from the cache and refreshed *after* the response,
+ * because the refresh is a full re-sync — every season fetched from TMDB in
+ * sequence, seconds of it for a long-running show — and the visitor is only
+ * ever looking at data that is at most a day old. Blocking on it would put that
+ * wait in front of the page ahead of the show page's own TMDB calls. The only
+ * request that still waits is one for a show we hold nothing for, where there
+ * is nothing to serve.
  *
  * Returns false when TMDB doesn't recognise the id.
  */
@@ -222,6 +270,14 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
 
     const age = Date.now() - existing.lastSynced.getTime();
     if (age < STALE_AFTER_MS) return true;
+
+    // `after` runs the callback once the response is sent. It must not touch
+    // request-time APIs (`cookies`, `headers`) from a Server Component, which
+    // is why the callback is only Prisma and TMDB. Every caller of this
+    // function reaches it through the show page or its `generateMetadata`, so
+    // there is always a request scope — `after` throws without one.
+    after(() => refreshInBackground(tmdbShowId));
+    return true;
   }
 
   try {
@@ -231,16 +287,8 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
     // A 404 means the id isn't a real show — the caller renders not-found.
     if (error instanceof TmdbError && error.status === 404) return false;
 
-    // A show we already have cached shouldn't 500 just because a refresh
-    // failed — serve the stale copy instead.
-    if (existing) {
-      logger.warn("show.refresh_failed_serving_stale", {
-        showId: tmdbShowId,
-        ...describeError(error),
-      });
-      return true;
-    }
-
+    // Nothing cached to fall back on — this path is only reached when the show
+    // is absent entirely, so a failure here has no stale copy to serve.
     throw error;
   }
 }
