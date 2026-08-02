@@ -46,6 +46,8 @@ const {
 const { changePassword, completeOnboarding, loginWithCode, loginWithPassword, logout } =
   await import("@/app/actions");
 const { FAILURE_THRESHOLD } = await import("@/lib/login-throttle");
+const { PASSWORD_MAX } = await import("@/lib/password-rules");
+const { NICKNAME_MAX } = await import("@/lib/nickname");
 const { hashPassword } = await import("@/lib/password");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase } = await import("./helpers");
@@ -271,6 +273,38 @@ describe("loginWithCode", () => {
     expect(after.passwordHash).toBeNull();
   });
 
+  it("revokes existing sessions when recovering", async () => {
+    // Recovery is the other half of the same story as changePassword: someone
+    // reaching for their code has lost control of something, so the sessions
+    // that predate it can't be trusted either.
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+
+    await createSession(user.id);
+    const staleCookie = jar.get(SESSION_COOKIE)!;
+
+    await redirectedTo(() => loginWithCode("correct-horse"));
+
+    // Exactly one session: the one the code sign-in just minted.
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
+
+    jar.set(SESSION_COOKIE, staleCookie);
+    await expect(getSession()).resolves.toBeNull();
+  });
+
+  it("keeps a mid-onboarding session when there is no password to recover", async () => {
+    // No password set means nothing has been lost — this is someone still
+    // finishing setup, and signing them out mid-flow would be gratuitous.
+    const user = await makeUser("theo", "correct-horse", null);
+
+    await createSession(user.id);
+    const existing = jar.get(SESSION_COOKIE)!;
+
+    await redirectedTo(() => loginWithCode("correct-horse"));
+
+    jar.set(SESSION_COOKIE, existing);
+    await expect(getSession()).resolves.not.toBeNull();
+  });
+
   it("tolerates a pasted code with surrounding whitespace", async () => {
     await makeUser(null, "correct-horse");
 
@@ -365,6 +399,40 @@ describe("loginWithPassword", () => {
 
     // Identical wording, so the form never reveals which half was wrong.
     expect(unknown.error).toBe(wrong.error);
+  });
+
+  it("turns away an over-length password without hashing it", async () => {
+    const user = await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+
+    // Hashing is ~100ms of CPU and 32MB, and this action is reachable by an
+    // unauthenticated POST — so the input it hands to scrypt has to be bounded.
+    // The spy is the assertion: it proves the request was turned away *before*
+    // the expensive part, not merely that it was rejected.
+    const lookup = vi.spyOn(prisma.user, "findUnique");
+    const result = await loginWithPassword("theo", "x".repeat(PASSWORD_MAX + 1));
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toMatch(/wrong nickname or password/i);
+    expect(lookup).not.toHaveBeenCalled();
+
+    lookup.mockRestore();
+
+    // Still the same message an ordinary failure gets, and the account is
+    // untouched — no failed-login counted against it.
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.failedLogins).toBe(0);
+  });
+
+  it("turns away an over-length nickname the same way", async () => {
+    await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+
+    const lookup = vi.spyOn(prisma.user, "findUnique");
+    const result = await loginWithPassword("n".repeat(NICKNAME_MAX + 1), "hunter2hunter2");
+
+    expect(result).toMatchObject({ ok: false });
+    expect(lookup).not.toHaveBeenCalled();
+
+    lookup.mockRestore();
   });
 
   it("refuses an account that hasn't set a password yet", async () => {
@@ -648,5 +716,51 @@ describe("changePassword", () => {
     expect(
       await redirectedTo(() => changePassword("correct-horse", "new-password1")),
     ).toBe("/login");
+  });
+
+  it("signs out every other session, keeping the one making the change", async () => {
+    // The threat this answers: someone else holds a live cookie. Changing the
+    // password has to end that, or "change your password" is advice that
+    // doesn't work — expiry slides forward on every visit, so their session
+    // never lapses on its own.
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+
+    await createSession(user.id);
+    const otherCookie = jar.get(SESSION_COOKIE)!;
+
+    // Created second, so its cookie is the one the jar now holds — this stands
+    // in for the browser actually making the change.
+    await createSession(user.id);
+    const ownCookie = jar.get(SESSION_COOKIE)!;
+
+    expect(otherCookie).not.toBe(ownCookie);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(2);
+
+    expect(await changePassword("correct-horse", "new-password1")).toMatchObject(
+      { ok: true },
+    );
+
+    // The caller is still signed in...
+    await expect(getSession()).resolves.toMatchObject({ user: { id: user.id } });
+
+    // ...and the other cookie now resolves to nothing.
+    jar.set(SESSION_COOKIE, otherCookie);
+    await expect(getSession()).resolves.toBeNull();
+
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
+  });
+
+  it("leaves another account's sessions alone", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const other = await makeOnboardedUser("sam", "code-2", "other-password1");
+
+    await createSession(other.id);
+    await createSession(user.id);
+
+    await changePassword("correct-horse", "new-password1");
+
+    // The revoking `deleteMany` is scoped by userId; without that filter this
+    // would sign the whole household out.
+    expect(await prisma.session.count({ where: { userId: other.id } })).toBe(1);
   });
 });

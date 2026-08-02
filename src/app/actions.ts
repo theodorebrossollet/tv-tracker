@@ -16,9 +16,9 @@ import {
   lockoutMs,
 } from "@/lib/login-throttle";
 import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
-import { validatePassword } from "@/lib/password-rules";
+import { PASSWORD_MAX, validatePassword } from "@/lib/password-rules";
 import { describeError, logger } from "@/lib/logger";
-import { validateNickname } from "@/lib/nickname";
+import { NICKNAME_MAX, validateNickname } from "@/lib/nickname";
 import { prisma } from "@/lib/prisma";
 import { isSchemaMismatch, missingSchemaObject } from "@/lib/schema-error";
 import { isTmdbShowId } from "@/lib/show-id";
@@ -167,6 +167,20 @@ export async function loginWithCode(code: string): Promise<ActionResult> {
       },
     });
 
+    // Recovering means the existing credentials can't be trusted — the whole
+    // reason to be here is that something went wrong with them. Every existing
+    // session goes before the new one is minted, so "sign in with your code"
+    // actually evicts whoever prompted it rather than joining them.
+    //
+    // Not done for a plain code sign-in: an account with no password set yet
+    // is mid-onboarding, not recovering, and has nothing worth evicting.
+    let revoked = 0;
+    if (needsNewPassword) {
+      ({ count: revoked } = await prisma.session.deleteMany({
+        where: { userId: user.id },
+      }));
+    }
+
     await createSession(user.id);
 
     // The code itself is never logged — see the note in lib/logger.ts about
@@ -174,7 +188,10 @@ export async function loginWithCode(code: string): Promise<ActionResult> {
     // cannot rotate.
     logger.info("auth.login", { userId: user.id, via: "code" });
     if (needsNewPassword) {
-      logger.info("auth.password_reset_via_code", { userId: user.id });
+      logger.info("auth.password_reset_via_code", {
+        userId: user.id,
+        sessionsRevoked: revoked,
+      });
     }
 
     destination = user.nickname === null || needsNewPassword ? "/welcome" : "/";
@@ -197,6 +214,20 @@ export async function loginWithPassword(
 
   if (!key || !password) {
     return { ok: false, error: "Enter your nickname and password." };
+  }
+
+  // `PASSWORD_MAX` exists to bound scrypt's input (see password-rules.ts), but
+  // it was only ever applied when *setting* a password — not here, which is the
+  // one path an unauthenticated caller can drive. Every attempt costs ~100ms of
+  // CPU and 32MB, an unknown nickname included, since `fakeVerify` runs to keep
+  // the timing flat. Without a cap the caller chooses how much work to ask for.
+  //
+  // Checked before the lookup, so it costs a round trip as well as the hash.
+  // Same message as a wrong password: an over-length value was never a
+  // credential, and saying which half was wrong would tell an attacker whether
+  // the nickname exists.
+  if (password.length > PASSWORD_MAX || key.length > NICKNAME_MAX) {
+    return { ok: false, error: "Wrong nickname or password." };
   }
 
   try {
@@ -397,7 +428,23 @@ export async function changePassword(
 
     if (count === 0) return { ok: false, error: "That code isn't recognised." };
 
-    logger.info("auth.password_changed", { userId: session.user.id });
+    // Changing a password is the "I think someone else is in here" action, so
+    // the new password has to actually shut them out. Sessions outlive it
+    // otherwise: expiry slides forward on every visit, so one exercised
+    // monthly never lapses, and nothing else in the app ends a session it
+    // isn't holding the cookie for.
+    //
+    // The session making the change is spared — signing someone out of the
+    // page they are standing on to tell them their password changed is a
+    // worse experience than the threat is worth.
+    const { count: revoked } = await prisma.session.deleteMany({
+      where: { userId: session.user.id, id: { not: session.sessionId } },
+    });
+
+    logger.info("auth.password_changed", {
+      userId: session.user.id,
+      sessionsRevoked: revoked,
+    });
   } catch (error) {
     return toResult(error);
   }
