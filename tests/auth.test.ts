@@ -43,7 +43,7 @@ const {
   requireOnboardedSession,
   requireSession,
 } = await import("@/lib/auth");
-const { completeOnboarding, loginWithCode, loginWithPassword, logout } =
+const { changePassword, completeOnboarding, loginWithCode, loginWithPassword, logout } =
   await import("@/app/actions");
 const { FAILURE_THRESHOLD } = await import("@/lib/login-throttle");
 const { hashPassword } = await import("@/lib/password");
@@ -228,10 +228,47 @@ describe("loginWithCode", () => {
     await expect(prisma.session.count()).resolves.toBe(1);
   });
 
-  it("sends a finished account straight to the app", async () => {
-    await makeOnboardedUser("theo", "correct-horse");
+  it("sends a finished account to choose a new password, not straight into the app", async () => {
+    // The code is the recovery route for a forgotten password — signing in
+    // with it and landing in the app with the old, still-forgotten password
+    // intact would just bring them back here next time.
+    const user = await makeOnboardedUser("theo", "correct-horse");
 
-    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/");
+    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/welcome");
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.passwordHash).toBeNull();
+    expect(after.nickname).toBe("theo"); // unaffected — only the password resets
+  });
+
+  it("lets a recovered account finish with a new password", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    await redirectedTo(() => loginWithCode("correct-horse"));
+
+    expect(
+      await redirectedTo(() => completeOnboarding("theo", "new-password1")),
+    ).toBe("/");
+
+    jar.clear();
+    await prisma.session.deleteMany();
+
+    expect(
+      await redirectedTo(() => loginWithPassword("theo", "new-password1")),
+    ).toBe("/");
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).resolves.not.toMatchObject({ passwordHash: null });
+  });
+
+  it("leaves an unfinished account (no password yet) alone", async () => {
+    // Nickname set, password never chosen — the existing "keep the nickname,
+    // only ask for a password" welcome path, not the reset path.
+    const user = await makeUser("theo", "correct-horse", null);
+
+    await redirectedTo(() => loginWithCode("correct-horse"));
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.passwordHash).toBeNull();
   });
 
   it("tolerates a pasted code with surrounding whitespace", async () => {
@@ -427,7 +464,9 @@ describe("login throttling", () => {
     const user = await makeOnboardedUser("theo", "correct-horse");
     await failTimes(FAILURE_THRESHOLD);
 
-    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/");
+    // Also sent to set a new password, same as any other code recovery — see
+    // the "loginWithCode" describe block above.
+    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/welcome");
 
     await expect(
       prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
@@ -550,6 +589,64 @@ describe("completeOnboarding", () => {
   it("redirects a signed-out caller instead of writing", async () => {
     expect(
       await redirectedTo(() => completeOnboarding("theo", "hunter2hunter2")),
+    ).toBe("/login");
+  });
+});
+
+describe("changePassword", () => {
+  it("changes the password when the code matches", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    await createSession(user.id);
+
+    const result = await changePassword("correct-horse", "new-password1");
+    expect(result.ok).toBe(true);
+
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+
+    jar.clear();
+    await prisma.session.deleteMany();
+
+    expect(
+      await redirectedTo(() => loginWithPassword("theo", "new-password1")),
+    ).toBe("/");
+    // The old password must no longer work.
+    await expect(
+      loginWithPassword("theo", "old-password1"),
+    ).resolves.toMatchObject({ ok: false });
+
+    expect(before.passwordHash).not.toBeNull();
+  });
+
+  it("rejects a wrong code without touching the password", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    await createSession(user.id);
+
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    const result = await changePassword("wrong-code", "new-password1");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/isn't recognised/i);
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.passwordHash).toBe(before.passwordHash);
+  });
+
+  it("rejects a new password that fails the shared validation", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    await createSession(user.id);
+
+    const result = await changePassword("correct-horse", "short");
+    expect(result.ok).toBe(false);
+
+    // The old password is still the one that works.
+    expect(
+      await redirectedTo(() => loginWithPassword("theo", "old-password1")),
+    ).toBe("/");
+  });
+
+  it("redirects a signed-out caller instead of writing", async () => {
+    expect(
+      await redirectedTo(() => changePassword("correct-horse", "new-password1")),
     ).toBe("/login");
   });
 });

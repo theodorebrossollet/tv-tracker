@@ -145,13 +145,26 @@ export async function loginWithCode(code: string): Promise<ActionResult> {
     // enumeration to enable.
     if (!user) return { ok: false, error: "That code isn't recognised." };
 
+    // An account with a password already set that still reaches this action
+    // is here to *recover*, not just sign in — the whole reason "forgot your
+    // password? use your code" exists is to get back in when the current
+    // password is the thing they lost. Leaving the old hash in place would
+    // sign them in with a password they still don't know, and next time
+    // they'd be right back here. Clearing it forces the same "choose a
+    // password" step first-login already goes through.
+    const needsNewPassword = user.passwordHash !== null;
+
     // The code proves ownership, so it clears any password lockout. That is
     // what keeps a stranger from locking someone out of their own account by
     // guessing at their nickname: the way back in never depended on the
     // password.
     await prisma.user.update({
       where: { id: user.id },
-      data: { failedLogins: 0, lockedUntil: null },
+      data: {
+        failedLogins: 0,
+        lockedUntil: null,
+        ...(needsNewPassword ? { passwordHash: null } : {}),
+      },
     });
 
     await createSession(user.id);
@@ -160,9 +173,11 @@ export async function loginWithCode(code: string): Promise<ActionResult> {
     // TMDB URLs, which applies with more force to a credential its owner
     // cannot rotate.
     logger.info("auth.login", { userId: user.id, via: "code" });
+    if (needsNewPassword) {
+      logger.info("auth.password_reset_via_code", { userId: user.id });
+    }
 
-    destination =
-      user.nickname === null || user.passwordHash === null ? "/welcome" : "/";
+    destination = user.nickname === null || needsNewPassword ? "/welcome" : "/";
   } catch (error) {
     return toResult(error);
   }
@@ -340,6 +355,54 @@ export async function completeOnboarding(
   // Outside the try, same as the logins above.
   revalidatePath("/", "layout");
   redirect("/");
+}
+
+/**
+ * Changes the password on an already-signed-in, already-onboarded account.
+ *
+ * Re-checks the account code rather than the current password, on purpose:
+ * the code is the one credential this app treats as proof of ownership (it's
+ * what `loginWithCode` accepts for recovery), so requiring it here means a
+ * hijacked *session* alone can't rotate the password — the same bar recovery
+ * already has to clear. There's no separate "enter your current password"
+ * step, because someone changing their password from settings may well be
+ * doing it *because* they've half-forgotten the current one.
+ */
+export async function changePassword(
+  code: string,
+  newPassword: string,
+): Promise<ActionResult> {
+  // Above the try — same reasoning as every other action in this section.
+  const session = await requireOnboardedSession();
+
+  const trimmedCode = code.trim();
+  if (!trimmedCode) return { ok: false, error: "Enter your account code." };
+
+  const checkedPassword = validatePassword(newPassword, {
+    nickname: session.user.nickname ?? undefined,
+  });
+  if (!checkedPassword.ok) return { ok: false, error: checkedPassword.error };
+
+  try {
+    const passwordHash = await hashPassword(newPassword);
+
+    // `codeHash` in the filter is the actual check — a valid session doesn't
+    // satisfy it on its own. Same message for "wrong code" as a failed
+    // `loginWithCode` lookup: nothing useful to distinguish, and no account
+    // enumeration to enable.
+    const { count } = await prisma.user.updateMany({
+      where: { id: session.user.id, codeHash: hashCode(trimmedCode) },
+      data: { passwordHash, failedLogins: 0, lockedUntil: null },
+    });
+
+    if (count === 0) return { ok: false, error: "That code isn't recognised." };
+
+    logger.info("auth.password_changed", { userId: session.user.id });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
