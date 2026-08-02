@@ -91,12 +91,22 @@ function toResult(error: unknown): ActionResult {
   return { ok: false, error: "Something went wrong. Please try again." };
 }
 
-/** Refreshes every route that can show a show's tracked state or progress. */
-function revalidateShowViews(showId?: string) {
-  revalidatePath("/");
-  revalidatePath("/watchlist");
-  revalidatePath("/archive");
-  if (showId) revalidatePath(`/show/${showId}`);
+/**
+ * Refreshes every route that can show a show's tracked state or progress.
+ *
+ * One layout-level call rather than four path-level ones. Note this is wider
+ * than what it replaced — it invalidates everything under the root layout, not
+ * three fixed paths plus one show — which is fine here only because every route
+ * in the app is `force-dynamic` and re-renders on request anyway. What these
+ * calls actually buy is purging the *client* router cache, which is what would
+ * otherwise show a stale count after navigating back.
+ *
+ * The narrow version was also easy to get wrong: each new route that displays
+ * progress had to remember to add itself here, and a missing line looks like
+ * nothing at all.
+ */
+function revalidateShowViews() {
+  revalidatePath("/", "layout");
 }
 
 // ---------------------------------------------------------------------------
@@ -553,7 +563,7 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
     return toResult(error);
   }
 
-  revalidateShowViews(tmdbShowId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -577,7 +587,7 @@ export async function removeShow(showId: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -646,7 +656,7 @@ export async function markEpisodeWatched(
       });
     }
 
-    revalidateShowViews(episode.showId);
+    revalidateShowViews();
   } catch (error) {
     return toResult(error);
   }
@@ -725,7 +735,7 @@ async function setAside(
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -769,7 +779,7 @@ export async function resumeShow(showId: string): Promise<ActionResult> {
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -797,7 +807,7 @@ export async function unmarkEpisodeWatched(
 
     if (episode) await demoteIfNothingWatched(user.id, episode.showId);
 
-    revalidateShowViews(episode?.showId);
+    revalidateShowViews();
   } catch (error) {
     return toResult(error);
   }
@@ -886,7 +896,7 @@ export async function setSeasonWatched(
     return toResult(error);
   }
 
-  revalidateShowViews(showId);
+  revalidateShowViews();
   return { ok: true };
 }
 
