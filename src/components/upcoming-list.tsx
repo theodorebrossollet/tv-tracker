@@ -1,15 +1,16 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
 
 import { Poster } from "@/components/poster";
+import { ShowMoreLink } from "@/components/show-more-link";
 import { StatusBadge } from "@/components/status-badge";
 import { relativeAirDate } from "@/lib/format";
 import type { UpcomingEpisode } from "@/lib/queries";
 
 /** How many rows to show at first, and to add per click. */
-const PAGE_SIZE = 15;
+export const UPCOMING_PAGE_SIZE = 15;
+
+/** Search param this list expands with. */
+export const UPCOMING_PARAM = "upcoming";
 
 function episodeCode(seasonNumber: number, episodeNumber: number) {
   return `S${String(seasonNumber).padStart(2, "0")}E${String(
@@ -17,17 +18,26 @@ function episodeCode(seasonNumber: number, episodeNumber: number) {
   ).padStart(2, "0")}`;
 }
 
+interface UpcomingListProps {
+  episodes: UpcomingEpisode[];
+  searchParams: Record<string, string | string[] | undefined>;
+  limit: number;
+}
+
 /**
  * The upcoming-episodes list, revealed a page at a time.
  *
- * All the rows are already on the page — this only controls how many are
- * rendered, so "Load more" costs no request. The server caps the query well
- * above the page size, which is what actually bounds the payload.
+ * A server component: the query caps at 50 episodes, and previously all of them
+ * serialised into the page whether or not anyone expanded the list. Now only
+ * the rows being shown are rendered, and "Load more" is a URL rather than
+ * client state.
  */
-export function UpcomingList({ episodes }: { episodes: UpcomingEpisode[] }) {
-  const [visible, setVisible] = useState(PAGE_SIZE);
-
-  const shown = episodes.slice(0, visible);
+export function UpcomingList({
+  episodes,
+  searchParams,
+  limit,
+}: UpcomingListProps) {
+  const shown = episodes.slice(0, limit);
   const remaining = episodes.length - shown.length;
 
   return (
@@ -71,14 +81,14 @@ export function UpcomingList({ episodes }: { episodes: UpcomingEpisode[] }) {
       </ul>
 
       {remaining > 0 ? (
-        <button
-          type="button"
-          onClick={() => setVisible((count) => count + PAGE_SIZE)}
-          className="mt-3 w-full rounded-full border border-border py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
-        >
-          Load {Math.min(PAGE_SIZE, remaining)} more
-          <span className="ml-1.5 text-xs">({remaining} left)</span>
-        </button>
+        <ShowMoreLink
+          param={UPCOMING_PARAM}
+          current={searchParams}
+          step={UPCOMING_PAGE_SIZE}
+          shown={shown.length}
+          remaining={remaining}
+          label="Load"
+        />
       ) : null}
     </>
   );

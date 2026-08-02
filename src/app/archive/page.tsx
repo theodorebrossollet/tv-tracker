@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { ShowList } from "@/components/show-list";
+import { limitFrom } from "@/components/show-more-link";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets } from "@/lib/queries";
 
@@ -14,8 +15,13 @@ export const metadata = { title: "Archive · TV Tracker" };
  * progress" without a filter — the previous "hide finished shows" toggle
  * existed only because finished shows had nowhere else to live.
  */
-export default async function ArchivePage() {
+interface ArchivePageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ArchivePage({ searchParams }: ArchivePageProps) {
   const { user } = await requireOnboardedSession();
+  const params = await searchParams;
   const { finished, stopped } = await getShowBuckets(user.id);
 
   if (finished.length === 0 && stopped.length === 0) {
@@ -51,7 +57,13 @@ export default async function ArchivePage() {
             worked out from your progress, not stored.
           </p>
 
-          <ShowList shows={finished} detail="progress" />
+          <ShowList
+            shows={finished}
+            detail="progress"
+            param="finished"
+            searchParams={params}
+            limit={limitFrom(params, "finished", 10)}
+          />
         </section>
       ) : null}
 
@@ -63,7 +75,13 @@ export default async function ArchivePage() {
             back to Watching.
           </p>
 
-          <ShowList shows={stopped} detail="progress" />
+          <ShowList
+            shows={stopped}
+            detail="progress"
+            param="stopped"
+            searchParams={params}
+            limit={limitFrom(params, "stopped", 10)}
+          />
         </section>
       ) : null}
     </div>

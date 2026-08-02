@@ -1,21 +1,18 @@
-"use client";
-
 import Image from "next/image";
-import { useState } from "react";
 
-import { Select } from "@/components/select";
+import { CountrySelect } from "@/components/country-select";
 import { posterUrl } from "@/lib/images";
 import type { CountryAvailability, WatchProvider } from "@/lib/tmdb";
 
 interface AvailabilityProps {
-  /** Every country TMDB has data for, so switching costs no extra request. */
-  countries: CountryAvailability[];
-  /** Display names keyed by country code, for the dropdown labels. */
-  regionNames: Record<string, string>;
-  /** The country from settings, when it has data for this show. */
-  defaultCode: string | null;
-  /** True when settings has a country but this show isn't available there. */
-  settingsCountryUnavailable: string | null;
+  /** Just the country being shown — not every country TMDB has data for. */
+  selected: CountryAvailability;
+  /** Codes and display names, for the dropdown only. */
+  options: Array<{ code: string; name: string }>;
+  /** Display name of the country being shown. */
+  selectedName: string;
+  /** Set when settings names a country this show isn't available in. */
+  settingsCountryUnavailable: { code: string; name: string } | null;
 }
 
 const GROUPS = [
@@ -25,16 +22,23 @@ const GROUPS = [
   { key: "buy", label: "Buy" },
 ] as const;
 
+/**
+ * Where a show can be streamed, for one country at a time.
+ *
+ * A server component. TMDB returns every country in a single response, so
+ * fetching them all costs nothing extra — but *sending* them all did: a popular
+ * show carries provider lists, logo paths and names for dozens of countries,
+ * all serialised into the page for a dropdown most people never open. The
+ * chosen country now comes from the URL, and only that country's data is
+ * rendered. `CountrySelect` is the one client piece, and it carries codes and
+ * names only.
+ */
 export function Availability({
-  countries,
-  regionNames,
-  defaultCode,
+  selected,
+  options,
+  selectedName,
   settingsCountryUnavailable,
 }: AvailabilityProps) {
-  const [code, setCode] = useState(defaultCode ?? countries[0]?.code ?? "");
-
-  const selected = countries.find((country) => country.code === code);
-
   return (
     <section className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -42,71 +46,58 @@ export function Availability({
 
         <label className="flex items-center gap-2 text-xs text-muted">
           Country
-          <Select
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          >
-            {countries.map((country) => (
-              <option key={country.code} value={country.code}>
-                {regionNames[country.code] ?? country.code}
-              </option>
-            ))}
-          </Select>
+          <CountrySelect value={selected.code} options={options} />
         </label>
       </div>
 
       {settingsCountryUnavailable ? (
         <p className="mt-2 text-xs text-muted">
-          Not available in{" "}
-          {regionNames[settingsCountryUnavailable] ??
-            settingsCountryUnavailable}{" "}
-          (your settings country) — showing {regionNames[code] ?? code} instead.
+          Not available in {settingsCountryUnavailable.name} (your settings
+          country) — showing {selectedName} instead.
         </p>
       ) : null}
 
-      {selected ? (
-        <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
-          {GROUPS.map(({ key, label }) => {
-            const providers = selected[key];
-            if (providers.length === 0) return null;
+      <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+        {GROUPS.map(({ key, label }) => {
+          const providers = selected[key];
+          if (providers.length === 0) return null;
 
-            return (
-              <div key={key} className="flex flex-wrap items-center gap-2">
-                <span className="w-14 shrink-0 text-xs text-muted">{label}</span>
-                {providers.map((provider) => (
-                  <ProviderBadge key={provider.id} provider={provider} />
-                ))}
-              </div>
-            );
-          })}
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-2">
+              <span className="w-14 shrink-0 text-xs text-muted">{label}</span>
+              {providers.map((provider) => (
+                <ProviderBadge key={provider.id} provider={provider} />
+              ))}
+            </div>
+          );
+        })}
 
-          <p className="border-t border-border pt-2 text-[11px] text-muted">
-            Availability data from{" "}
-            <a
-              href="https://www.justwatch.com/"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="underline hover:text-foreground"
-            >
-              JustWatch
-            </a>{" "}
-            via TMDB.
-            {selected.link ? (
-              <>
-                {" "}
-                <a
-                  href={selected.link}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="underline hover:text-foreground"
-                >
-                  Open on TMDB
-                </a>
-              </>
-            ) : null}
-          </p>
-        </div>
-      ) : null}
+        <p className="border-t border-border pt-2 text-[11px] text-muted">
+          Availability data from{" "}
+          <a
+            href="https://www.justwatch.com/"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="underline hover:text-foreground"
+          >
+            JustWatch
+          </a>{" "}
+          via TMDB.
+          {selected.link ? (
+            <>
+              {" "}
+              <a
+                href={selected.link}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="underline hover:text-foreground"
+              >
+                Open on TMDB
+              </a>
+            </>
+          ) : null}
+        </p>
+      </div>
     </section>
   );
 }

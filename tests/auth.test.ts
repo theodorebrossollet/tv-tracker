@@ -43,8 +43,14 @@ const {
   requireOnboardedSession,
   requireSession,
 } = await import("@/lib/auth");
-const { changePassword, completeOnboarding, loginWithCode, loginWithPassword, logout } =
-  await import("@/app/actions");
+const {
+  changePassword,
+  completeOnboarding,
+  loginWithCode,
+  loginWithPassword,
+  logout,
+  signOutEverywhere,
+} = await import("@/app/actions");
 const { FAILURE_THRESHOLD } = await import("@/lib/login-throttle");
 const { PASSWORD_MAX } = await import("@/lib/password-rules");
 const { NICKNAME_MAX } = await import("@/lib/nickname");
@@ -658,6 +664,56 @@ describe("completeOnboarding", () => {
     expect(
       await redirectedTo(() => completeOnboarding("theo", "hunter2hunter2")),
     ).toBe("/login");
+  });
+});
+
+describe("signOutEverywhere", () => {
+  it("ends every session on the account, this one included", async () => {
+    // The gap this fills: revocation existed, but only as a side effect of
+    // changing a password. "I left myself signed in on a borrowed laptop"
+    // shouldn't require picking a new password and re-entering it everywhere.
+    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+
+    await createSession(user.id);
+    const otherCookie = jar.get(SESSION_COOKIE)!;
+    await createSession(user.id);
+
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(2);
+    expect(await redirectedTo(() => signOutEverywhere())).toBe("/login");
+
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
+
+    // Including the caller's own — no cookie left resolving to anything.
+    jar.set(SESSION_COOKIE, otherCookie);
+    await expect(getSession()).resolves.toBeNull();
+  });
+
+  it("clears the cookie, not just the row", async () => {
+    // The row is gone either way, but a cookie left behind means the browser
+    // keeps presenting a dead token and every request pays a lookup to be
+    // told so.
+    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+    await createSession(user.id);
+
+    await redirectedTo(() => signOutEverywhere());
+
+    expect(jar.get(SESSION_COOKIE)).toBeUndefined();
+  });
+
+  it("leaves another account alone", async () => {
+    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+    const other = await makeOnboardedUser("sam", "code-2", "other-password1");
+
+    await createSession(other.id);
+    await createSession(user.id);
+
+    await redirectedTo(() => signOutEverywhere());
+
+    expect(await prisma.session.count({ where: { userId: other.id } })).toBe(1);
+  });
+
+  it("redirects a signed-out caller instead of writing", async () => {
+    expect(await redirectedTo(() => signOutEverywhere())).toBe("/login");
   });
 });
 

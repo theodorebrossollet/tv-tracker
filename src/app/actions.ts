@@ -320,6 +320,45 @@ export async function logout(): Promise<ActionResult> {
 }
 
 /**
+ * Ends every session on the account, including this one.
+ *
+ * `changePassword` already revokes the others, but only as a side effect of
+ * picking a new password — so the answer to "I left myself signed in on a
+ * borrowed laptop" was to change a password that was never the problem. This
+ * does that one job on its own.
+ *
+ * Everything goes, this session included. Keeping the current one would mean
+ * deciding it is the trustworthy one, and someone reaching for this doesn't
+ * necessarily know which device they are on; signing out and back in is a
+ * cheap, unambiguous end state. That's also why it needs no confirmation
+ * beyond the button: the worst case is typing your password again.
+ */
+export async function signOutEverywhere(): Promise<ActionResult> {
+  const session = await requireOnboardedSession();
+
+  try {
+    const { count } = await prisma.session.deleteMany({
+      where: { userId: session.user.id },
+    });
+
+    // The cookie outlives its row otherwise: the row is gone, but the browser
+    // keeps presenting a token until it expires, and every request pays a
+    // lookup to be told it's invalid.
+    await destroySession();
+
+    logger.info("auth.signed_out_everywhere", {
+      userId: session.user.id,
+      sessionsRevoked: count,
+    });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidatePath("/", "layout");
+  redirect("/login");
+}
+
+/**
  * Finishes an account: nickname and password, chosen together at first login.
  *
  * Both are written in one update. Setting them separately would leave an

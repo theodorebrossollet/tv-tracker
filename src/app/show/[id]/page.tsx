@@ -10,6 +10,7 @@ import { SeasonActions } from "./season-actions";
 import { formatAirDate, showMetaLine } from "@/lib/format";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowDetail } from "@/lib/queries";
+import { pickCountry } from "@/lib/pick-country";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
 import { getSettings } from "@/lib/shows";
@@ -25,6 +26,7 @@ export const dynamic = "force-dynamic";
 
 interface ShowPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: ShowPageProps) {
@@ -38,8 +40,12 @@ export async function generateMetadata({ params }: ShowPageProps) {
   return { title: show ? `${show.name} · TV Tracker` : "Show · TV Tracker" };
 }
 
-export default async function ShowPage({ params }: ShowPageProps) {
+export default async function ShowPage({
+  params,
+  searchParams,
+}: ShowPageProps) {
   const { id } = await params;
+  const params_ = await searchParams;
   const { user } = await requireOnboardedSession();
 
   // The route param is untrusted: it flows into a TMDB request path, the Show
@@ -100,13 +106,25 @@ export default async function ShowPage({ params }: ShowPageProps) {
     })),
   ];
 
-  const regionNames = Object.fromEntries(
-    regions.map((region) => [region.code, region.name]),
-  );
+  // Names are looked up rather than shipped: only the countries this show is
+  // actually available in need one, not every region TMDB knows about.
+  const nameFor = (code: string) =>
+    regions.find((region) => region.code === code)?.name ?? code;
 
   const hasSettingsCountry = countries.some(
     (country) => country.code === settings.country,
   );
+
+  const selectedCountry = pickCountry(
+    countries,
+    params_.country,
+    settings.country,
+  );
+
+  const countryOptions = countries.map((country) => ({
+    code: country.code,
+    name: nameFor(country.code),
+  }));
 
   const metaLine = showMetaLine(show);
   const now = new Date();
@@ -144,13 +162,15 @@ export default async function ShowPage({ params }: ShowPageProps) {
         </div>
       </div>
 
-      {countries.length > 0 ? (
+      {selectedCountry ? (
         <Availability
-          countries={countries}
-          regionNames={regionNames}
-          defaultCode={hasSettingsCountry ? settings.country : null}
+          selected={selectedCountry}
+          options={countryOptions}
+          selectedName={nameFor(selectedCountry.code)}
           settingsCountryUnavailable={
-            settings.country && !hasSettingsCountry ? settings.country : null
+            settings.country && !hasSettingsCountry
+              ? { code: settings.country, name: nameFor(settings.country) }
+              : null
           }
         />
       ) : null}

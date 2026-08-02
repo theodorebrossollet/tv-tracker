@@ -1,10 +1,8 @@
-"use client";
-
 import Link from "next/link";
-import { useState } from "react";
 
 import { AddButton } from "@/components/add-button";
 import { Poster } from "@/components/poster";
+import { ShowMoreLink } from "@/components/show-more-link";
 import type { TrackedShowSummary } from "@/lib/queries";
 
 interface ShowListProps {
@@ -13,18 +11,26 @@ interface ShowListProps {
   detail?: "available" | "progress";
   /** Rows shown before the first "show more", and added per click. */
   pageSize?: number;
+  /** Search-param name this list expands with — unique per list on a page. */
+  param: string;
+  /** The page's current search params, for building the expand link. */
+  searchParams: Record<string, string | string[] | undefined>;
+  /** How many rows to render, already read off the URL by the page. */
+  limit: number;
 }
 
 /**
  * The compact one-per-row list used by Watchlist and Archive.
  *
  * Paginated because the Archive only grows — finished shows accumulate forever,
- * where Watching and Watchlist churn. Each list holds its own count rather than
- * sharing one, so a long Finished section can't bury the Stopped section
- * underneath it.
+ * where Watching and Watchlist churn. Each list expands under its own search
+ * param rather than sharing one, so a long Finished section can't bury the
+ * Stopped section underneath it.
  *
- * Every row is already on the page; this only controls how many are rendered,
- * so expanding costs no request.
+ * A server component: only the rows being shown are rendered, and the summaries
+ * never cross into the client bundle. `AddButton` is still a client island per
+ * row — it has to be, it's interactive — but it now carries only the two values
+ * it needs instead of riding along with every field of every show.
  *
  * The link and the button are siblings rather than nested: a `<button>` inside
  * an `<a>` is invalid HTML and assistive tech handles nested interactive
@@ -35,10 +41,11 @@ export function ShowList({
   shows,
   detail = "available",
   pageSize = 10,
+  param,
+  searchParams,
+  limit,
 }: ShowListProps) {
-  const [visible, setVisible] = useState(pageSize);
-
-  const shown = shows.slice(0, visible);
+  const shown = shows.slice(0, limit);
   const remaining = shows.length - shown.length;
 
   return (
@@ -79,14 +86,14 @@ export function ShowList({
       </ul>
 
       {remaining > 0 ? (
-        <button
-          type="button"
-          onClick={() => setVisible((count) => count + pageSize)}
-          className="mt-3 w-full rounded-full border border-border py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
-        >
-          Show {Math.min(pageSize, remaining)} more
-          <span className="ml-1.5 text-xs">({remaining} left)</span>
-        </button>
+        <ShowMoreLink
+          param={param}
+          current={searchParams}
+          step={pageSize}
+          shown={shown.length}
+          remaining={remaining}
+          label="Show"
+        />
       ) : null}
     </>
   );

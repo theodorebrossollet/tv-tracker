@@ -1,6 +1,7 @@
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { ShowList } from "@/components/show-list";
+import { limitFrom } from "@/components/show-more-link";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets } from "@/lib/queries";
 
@@ -14,8 +15,15 @@ export const metadata = { title: "Watchlist · TV Tracker" };
  * Paused sits here rather than in the Archive because the intent is the same —
  * you mean to get to it. Shows given up on go to the Archive instead.
  */
-export default async function WatchlistPage() {
+interface WatchlistPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function WatchlistPage({
+  searchParams,
+}: WatchlistPageProps) {
   const { user } = await requireOnboardedSession();
+  const params = await searchParams;
   const { watchlist, paused } = await getShowBuckets(user.id);
 
   return (
@@ -36,7 +44,12 @@ export default async function WatchlistPage() {
             />
           </div>
         ) : (
-          <ShowList shows={watchlist} />
+          <ShowList
+            shows={watchlist}
+            param="watchlist"
+            searchParams={params}
+            limit={limitFrom(params, "watchlist", 10)}
+          />
         )}
       </section>
 
@@ -49,7 +62,13 @@ export default async function WatchlistPage() {
             watched brings a show back.
           </p>
 
-          <ShowList shows={paused} detail="progress" />
+          <ShowList
+            shows={paused}
+            detail="progress"
+            param="paused"
+            searchParams={params}
+            limit={limitFrom(params, "paused", 10)}
+          />
         </section>
       ) : null}
     </div>
