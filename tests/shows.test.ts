@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { prisma } from "@/lib/prisma";
-import { syncShowFromTmdb } from "@/lib/shows";
+import { ensureShowCached, syncShowFromTmdb } from "@/lib/shows";
 
 import { TEST_USER_ID, resetDatabase, seedUser } from "./helpers";
 
@@ -52,6 +52,19 @@ function mockTmdb(episodes: EpisodePayload[]) {
 
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** A cached show row with a controlled `lastSynced` and no episodes yet. */
+async function seedCachedShow(hoursSinceSync: number) {
+  await prisma.show.create({
+    data: {
+      id: SHOW_ID,
+      name: "Game of Thrones",
+      lastSynced: new Date(Date.now() - hoursSinceSync * HOUR_MS),
+    },
+  });
 }
 
 /** Counts the episode writes a call makes, by kind. */
@@ -205,6 +218,53 @@ describe("syncing a show from TMDB", () => {
     await syncShowFromTmdb(SHOW_ID);
 
     expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
+  });
+});
+
+describe("keeping a cached show fresh", () => {
+  it("re-syncs an untracked show once it goes stale", async () => {
+    // The regression: `Show.tracked` became a list in v2, and an empty array is
+    // truthy — so `if (existing.tracked)` was taken for every cached show, the
+    // staleness branch below it was unreachable, and a show cached from a
+    // search result kept its first-seen episode data forever.
+    await seedCachedShow(25);
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
+  });
+
+  it("leaves a show still inside the staleness window alone", async () => {
+    await seedCachedShow(1);
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves a stale tracked show to the cron", async () => {
+    // The branch the bug made unconditional. It still has to hold for a show
+    // that really is tracked, or the fix just moves the duplicated work.
+    await seedCachedShow(25);
+    await prisma.trackedShow.create({
+      data: { userId: TEST_USER_ID, showId: SHOW_ID, status: "watching" },
+    });
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches a show that isn't cached at all", async () => {
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+
+    expect(fetchMock).toHaveBeenCalled();
   });
 });
 

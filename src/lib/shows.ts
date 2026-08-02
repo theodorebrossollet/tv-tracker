@@ -215,7 +215,10 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
 
   if (existing) {
     // Tracked shows are the cron's job; don't duplicate that work on page view.
-    if (existing.tracked) return true;
+    // `tracked` is a list, so this has to ask about its length — an empty array
+    // is truthy, and testing the array itself made every cached show look
+    // tracked and the staleness check below unreachable.
+    if (existing.tracked.length > 0) return true;
 
     const age = Date.now() - existing.lastSynced.getTime();
     if (age < STALE_AFTER_MS) return true;
