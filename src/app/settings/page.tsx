@@ -98,6 +98,9 @@ export default async function SettingsPage() {
             {user.nickname}
           </span>
           . Signing out ends this session only — other devices stay signed in.
+          Sign out everywhere ends all of them, including this one, for when
+          you&rsquo;ve left yourself signed in somewhere you&rsquo;d rather not
+          have.
         </p>
 
         <SignOutButton />

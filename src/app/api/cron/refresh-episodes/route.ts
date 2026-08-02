@@ -110,7 +110,13 @@ export async function GET(request: Request) {
 
   const durationMs = Date.now() - startedAt;
 
-  logger.info("cron.refresh.completed", {
+  // A run that hit the deadline is the one worth noticing, and an info line
+  // among a year of identical info lines is not noticing. Warnings go to
+  // stderr, so this separates itself out without anyone having to remember to
+  // grep for `skipped`.
+  const log = deadlineHit ? logger.warn : logger.info;
+
+  log("cron.refresh.completed", {
     checked: tracked.length,
     refreshed: refreshed.length,
     failed: failed.length,

@@ -257,13 +257,21 @@ describe("finishing inside the deadline", () => {
 
     const { logger } = await import("@/lib/logger");
     const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
 
     const response = await authorized();
 
     expect(syncShowFromTmdb).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(200);
 
-    const [, fields] = info.mock.calls.find(
+    // Warn, not info. A truncated run is the one worth noticing, and warnings
+    // go to stderr — an info line among a year of identical info lines is not
+    // noticing. Asserting the level is what keeps that true.
+    expect(
+      info.mock.calls.some(([event]) => event === "cron.refresh.completed"),
+    ).toBe(false);
+
+    const [, fields] = warn.mock.calls.find(
       ([event]) => event === "cron.refresh.completed",
     )!;
 
@@ -271,6 +279,30 @@ describe("finishing inside the deadline", () => {
     expect(fields!.skipped).toBe(2);
 
     info.mockRestore();
+    warn.mockRestore();
     vi.mocked(Date.now).mockRestore();
+  });
+
+  it("stays at info level on an ordinary run", async () => {
+    await seedShow({ showId: "1", offsets: [-1], status: "watching" });
+
+    const { logger } = await import("@/lib/logger");
+    const info = vi.spyOn(logger, "info").mockImplementation(() => {});
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    await authorized();
+
+    const [, fields] = info.mock.calls.find(
+      ([event]) => event === "cron.refresh.completed",
+    )!;
+
+    expect(fields!.deadlineHit).toBe(false);
+    expect(fields!.skipped).toBe(0);
+    expect(
+      warn.mock.calls.some(([event]) => event === "cron.refresh.completed"),
+    ).toBe(false);
+
+    info.mockRestore();
+    warn.mockRestore();
   });
 });

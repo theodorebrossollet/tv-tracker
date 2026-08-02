@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // ShowList renders AddButton, which imports server actions. The list's
@@ -11,6 +11,7 @@ vi.mock("@/app/actions", () => ({
 
 const { StatusBadge } = await import("@/components/status-badge");
 const { ShowList } = await import("@/components/show-list");
+const { limitFrom } = await import("@/components/show-more-link");
 import type { TrackedShowSummary } from "@/lib/queries";
 import type { TrackStatus } from "@/lib/types";
 
@@ -54,81 +55,122 @@ describe("StatusBadge", () => {
   });
 });
 
+/** ShowList's disclosure props, with the URL state a page would pass in. */
+function paging(limit: number, params: Record<string, string> = {}) {
+  return { param: "finished", searchParams: params, limit } as const;
+}
+
 describe("ShowList pagination", () => {
   it("shows only the first page and offers the rest", () => {
     const shows = Array.from({ length: 25 }, (_, i) => show(`s${i}`));
 
-    render(<ShowList shows={shows} pageSize={10} />);
+    render(<ShowList shows={shows} pageSize={10} {...paging(10)} />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(10);
-    expect(screen.getByRole("button", { name: /Show 10 more/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Show 10 more/ })).toBeTruthy();
     expect(screen.getByText(/15 left/)).toBeTruthy();
   });
 
-  it("offers no button when everything fits", () => {
-    render(<ShowList shows={[show("a"), show("b")]} pageSize={10} />);
+  it("offers no link when everything fits", () => {
+    render(<ShowList shows={[show("a"), show("b")]} pageSize={10} {...paging(10)} />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /more/ })).toBeNull();
   });
 
   it("counts the final partial page correctly", () => {
-    // 12 shows, 10 per page — the button should offer 2, not 10.
-    render(<ShowList shows={Array.from({ length: 12 }, (_, i) => show(`s${i}`))} pageSize={10} />);
-
-    expect(screen.getByRole("button", { name: /Show 2 more/ })).toBeTruthy();
-  });
-
-  it("keeps each list's count independent", () => {
-    // Two lists on one page (Archive's Finished and Stopped): expanding one
-    // must not reveal rows in the other.
-    //
-    // The click is the whole test. Counting rows before expanding passes even
-    // with a single shared counter, since both lists start at the same size —
-    // verified by reintroducing exactly that bug.
-    const { container } = render(
-      <>
-        <div data-testid="first">
-          <ShowList shows={Array.from({ length: 20 }, (_, i) => show(`a${i}`))} pageSize={10} />
-        </div>
-        <div data-testid="second">
-          <ShowList shows={Array.from({ length: 20 }, (_, i) => show(`b${i}`))} pageSize={10} />
-        </div>
-      </>,
+    // 12 shows, 10 per page — the link should offer 2, not 10.
+    render(
+      <ShowList
+        shows={Array.from({ length: 12 }, (_, i) => show(`s${i}`))}
+        pageSize={10}
+        {...paging(10)}
+      />,
     );
 
-    const first = within(screen.getByTestId("first"));
-    const second = within(screen.getByTestId("second"));
-
-    expect(first.getAllByRole("listitem")).toHaveLength(10);
-    expect(second.getAllByRole("listitem")).toHaveLength(10);
-
-    fireEvent.click(first.getByRole("button", { name: /Show 10 more/ }));
-
-    expect(first.getAllByRole("listitem")).toHaveLength(20);
-    // The one that matters: the second list must not have moved.
-    expect(second.getAllByRole("listitem")).toHaveLength(10);
-    expect(container).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Show 2 more/ })).toBeTruthy();
   });
 
-  it("reveals the next page on click", () => {
-    render(<ShowList shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))} pageSize={10} />);
+  it("renders exactly the limit it is given", () => {
+    // The reveal is URL state now, so a limit past the first page is what an
+    // expanded list looks like on a fresh render.
+    render(
+      <ShowList
+        shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
+        pageSize={10}
+        {...paging(20)}
+      />,
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /Show 10 more/ }));
     expect(screen.getAllByRole("listitem")).toHaveLength(20);
+    expect(screen.getByRole("link", { name: /Show 5 more/ })).toBeTruthy();
+  });
 
-    // Last page is partial, and the button should say so before disappearing.
-    fireEvent.click(screen.getByRole("button", { name: /Show 5 more/ }));
-    expect(screen.getAllByRole("listitem")).toHaveLength(25);
-    expect(screen.queryByRole("button", { name: /more/ })).toBeNull();
+  it("asks for one more page than it is showing", () => {
+    render(
+      <ShowList
+        shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
+        pageSize={10}
+        {...paging(10)}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: /Show 10 more/ }).getAttribute("href"),
+    ).toBe("?finished=20");
+  });
+
+  it("carries the other lists' params across", () => {
+    // Two lists on one page (Archive's Finished and Stopped). Expanding one
+    // must not collapse the other, and the only thing holding the other's
+    // state is the query string — so the link has to preserve it.
+    render(
+      <ShowList
+        shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
+        pageSize={10}
+        {...paging(10, { stopped: "30" })}
+      />,
+    );
+
+    const href = screen
+      .getByRole("link", { name: /Show 10 more/ })
+      .getAttribute("href");
+
+    expect(href).toContain("stopped=30");
+    expect(href).toContain("finished=20");
   });
 
   it("shows watch progress when asked, availability otherwise", () => {
-    const { unmount } = render(<ShowList shows={[show("a")]} detail="progress" />);
+    const { unmount } = render(
+      <ShowList shows={[show("a")]} detail="progress" {...paging(10)} />,
+    );
     expect(screen.getByText("10 / 10 watched")).toBeTruthy();
     unmount();
 
-    render(<ShowList shows={[show("a")]} />);
+    render(<ShowList shows={[show("a")]} {...paging(10)} />);
     expect(screen.getByText("10 episodes available")).toBeTruthy();
+  });
+});
+
+describe("reading a list's limit off the URL", () => {
+  it("falls back to the default for anything that isn't a positive integer", () => {
+    // The param is attacker-supplied like any other.
+    for (const raw of ["0", "-5", "abc", "1.5", "", undefined]) {
+      expect(limitFrom({ finished: raw }, "finished", 10)).toBe(10);
+    }
+  });
+
+  it("caps an absurd request rather than rejecting it", () => {
+    // A large number is still a number, so it survives the parse — the cap is
+    // what stops a hand-edited link asking the server to render every row it
+    // holds. `1e9` is included because it parses to an integer despite not
+    // looking like one, which is exactly the case a stricter-looking regex
+    // check would wave through.
+    expect(limitFrom({ finished: "100000" }, "finished", 10)).toBe(500);
+    expect(limitFrom({ finished: "1e9" }, "finished", 10)).toBe(500);
+  });
+
+  it("takes a sensible value as given", () => {
+    expect(limitFrom({ finished: "30" }, "finished", 10)).toBe(30);
   });
 });

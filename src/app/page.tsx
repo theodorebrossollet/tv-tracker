@@ -1,7 +1,12 @@
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { ShowGrid } from "@/components/show-grid";
-import { UpcomingList } from "@/components/upcoming-list";
+import { limitFrom } from "@/components/show-more-link";
+import {
+  UPCOMING_PAGE_SIZE,
+  UPCOMING_PARAM,
+  UpcomingList,
+} from "@/components/upcoming-list";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 
@@ -10,12 +15,22 @@ import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 export const dynamic = "force-dynamic";
 
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: DashboardPageProps) {
   const { user } = await requireOnboardedSession();
+  const params = await searchParams;
+  const upcomingLimit = limitFrom(params, UPCOMING_PARAM, UPCOMING_PAGE_SIZE);
 
   const [{ watching }, upcoming] = await Promise.all([
     getShowBuckets(user.id),
-    // Fetch well past the first page so "Load more" needs no round trip.
+    // Still fetched well past the first page: this is how far ahead the list
+    // looks, and it's what makes the "(N left)" count on the expand link
+    // honest. Only `upcomingLimit` of them are rendered.
     getUpcomingEpisodes(user.id, 90),
   ]);
 
@@ -54,7 +69,11 @@ export default async function DashboardPage() {
             />
           </div>
         ) : (
-          <UpcomingList episodes={upcoming} />
+          <UpcomingList
+            episodes={upcoming}
+            searchParams={params}
+            limit={upcomingLimit}
+          />
         )}
       </section>
     </div>
