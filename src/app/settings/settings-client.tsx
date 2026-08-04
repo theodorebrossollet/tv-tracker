@@ -190,7 +190,7 @@ export function SettingsClient({
             onChange={(event) => changeCountry(event.target.value)}
             disabled={savingCountry || regions.length === 0}
             aria-label="Country"
-            className="absolute inset-0 cursor-pointer opacity-0"
+            className="absolute inset-0 cursor-pointer text-base opacity-0"
           >
             <option value="">Not set</option>
             {regions.map((region) => (

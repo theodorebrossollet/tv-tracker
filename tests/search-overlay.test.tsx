@@ -125,3 +125,18 @@ describe("recent searches", () => {
     expect(push).toHaveBeenCalledWith("/show/95396");
   });
 });
+
+describe("the field's font size", () => {
+  it("is 16px, because anything smaller makes iOS zoom", () => {
+    // Not a style preference. Safari zooms the viewport when a focused form
+    // control is under 16px, which crops the page and leaves the reader
+    // pinching back out — reported from a phone, not theorised.
+    //
+    // Asserted on the class because that is where the decision lives: the
+    // handoff specifies 15px, so without something failing here this reverts
+    // the next time someone matches the spec.
+    open();
+
+    expect(screen.getByLabelText("Show title").className).toContain("text-base");
+  });
+});

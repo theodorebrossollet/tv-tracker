@@ -21,8 +21,12 @@ export function Select({
   children,
   ...props
 }: SelectProps) {
+  // Both scales are 16px text. Anything smaller makes iOS Safari zoom the
+  // viewport when the control takes focus, which crops the page and leaves the
+  // reader pinching back out — a worse trade than a slightly larger chip, and
+  // the bigger target suits a phone anyway.
   const padding =
-    scale === "md" ? "py-2 pl-4 pr-9 text-sm" : "py-1.5 pl-3 pr-8 text-xs";
+    scale === "md" ? "py-2 pl-4 pr-9 text-base" : "py-1.5 pl-3 pr-8 text-base";
 
   return (
     <span className="relative inline-flex items-center">
