@@ -11,6 +11,9 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     globalSetup: ["./tests/global-setup.ts"],
+    // Runs in every test file's environment. Only does anything under jsdom —
+    // see the file for what it stubs and, more importantly, what it doesn't.
+    setupFiles: ["./tests/setup-dialog.ts"],
     // The database-backed tests share one SQLite file and truncate between
     // cases, so they must not run concurrently.
     fileParallelism: false,
