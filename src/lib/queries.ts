@@ -28,6 +28,12 @@ export interface TrackedShowSummary {
   /** Fallback ordering key for shows with no watch history yet. */
   addedAt: Date;
   nextUnwatched: {
+    /**
+     * Carried so the dashboard can mark this episode watched in place —
+     * `markEpisodeWatched` is keyed by episode id, and without it the row
+     * could only link to the show page.
+     */
+    id: string;
     seasonNumber: number;
     episodeNumber: number;
     name: string | null;
@@ -68,6 +74,11 @@ export async function getTrackedShows(
           episodes: {
             orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
             select: {
+              // Only the next-unwatched episode's id is ever read, but the
+              // scan that finds it runs over every episode, so the column has
+              // to come back for all of them. One string per row against the
+              // counts this query already computes.
+              id: true,
               seasonNumber: true,
               episodeNumber: true,
               name: true,
@@ -132,6 +143,7 @@ export async function getTrackedShows(
       addedAt: entry.addedAt,
       nextUnwatched: nextUnwatched
         ? {
+            id: nextUnwatched.id,
             seasonNumber: nextUnwatched.seasonNumber,
             episodeNumber: nextUnwatched.episodeNumber,
             name: nextUnwatched.name,

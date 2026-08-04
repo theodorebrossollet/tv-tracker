@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Poster } from "@/components/poster";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { StatusBadge } from "@/components/status-badge";
-import { relativeAirDate } from "@/lib/format";
+import { episodeCode } from "@/lib/episode-code";
+import { daysUntil, relativeAirDate } from "@/lib/format";
 import type { UpcomingEpisode } from "@/lib/queries";
 
 /** How many rows to show at first, and to add per click. */
@@ -12,11 +13,12 @@ export const UPCOMING_PAGE_SIZE = 15;
 /** Search param this list expands with. */
 export const UPCOMING_PARAM = "upcoming";
 
-function episodeCode(seasonNumber: number, episodeNumber: number) {
-  return `S${String(seasonNumber).padStart(2, "0")}E${String(
-    episodeNumber,
-  ).padStart(2, "0")}`;
-}
+/**
+ * Inside this many days the date is worth noticing rather than just reading,
+ * so it takes the accent. Matches where `relativeAirDate` stops counting days
+ * and starts printing a date — the two would look arbitrary if they disagreed.
+ */
+const SOON_DAYS = 7;
 
 interface UpcomingListProps {
   episodes: UpcomingEpisode[];
@@ -27,7 +29,7 @@ interface UpcomingListProps {
 /**
  * The upcoming-episodes list, revealed a page at a time.
  *
- * A server component: the query caps at 50 episodes, and previously all of them
+ * A server component: the query caps at 90 episodes, and previously all of them
  * serialised into the page whether or not anyone expanded the list. Now only
  * the rows being shown are rendered, and "Load more" is a URL rather than
  * client state.
@@ -42,42 +44,52 @@ export function UpcomingList({
 
   return (
     <>
-      <ul className="mt-4 divide-y divide-border rounded-lg border border-border">
-        {shown.map((episode) => (
-          <li key={episode.episodeId}>
-            <Link
-              href={`/show/${episode.showId}`}
-              className="flex items-center gap-3 p-3 transition-colors hover:bg-surface"
-            >
-              <Poster
-                path={episode.posterPath}
-                name={episode.showName}
-                width={40}
-              />
+      <ul className="mt-3">
+        {shown.map((episode) => {
+          const iso = episode.airDate.toISOString();
+          const soon = daysUntil(iso) < SOON_DAYS;
 
-              <div className="min-w-0 flex-1">
-                <p className="flex items-center gap-2 truncate text-sm font-medium">
-                  {episode.showName}
-                  {/* Only worth flagging the ones you haven't started — a
-                      "Watching" badge on most rows would be noise. */}
-                  {episode.status === "watchlist" ? (
-                    <StatusBadge status={episode.status} />
-                  ) : null}
-                </p>
-                <p className="truncate text-xs text-muted">
-                  <span className="font-mono">
-                    {episodeCode(episode.seasonNumber, episode.episodeNumber)}
+          return (
+            <li key={episode.episodeId} className="border-b border-border-faint">
+              <Link
+                href={`/show/${episode.showId}`}
+                className="flex items-center gap-[11px] py-[11px]"
+              >
+                <Poster
+                  path={episode.posterPath}
+                  name={episode.showName}
+                  width={34}
+                />
+
+                <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                  <span className="flex items-center gap-[7px]">
+                    <span className="min-w-0 truncate text-sm font-medium">
+                      {episode.showName}
+                    </span>
+                    {/* Only worth flagging the ones you haven't started — a
+                        "Watching" badge on most rows would be noise. */}
+                    {episode.status === "watchlist" ? (
+                      <StatusBadge status={episode.status} />
+                    ) : null}
                   </span>
-                  {episode.name ? ` · ${episode.name}` : ""}
-                </p>
-              </div>
 
-              <span className="shrink-0 text-xs text-muted">
-                {relativeAirDate(episode.airDate.toISOString())}
-              </span>
-            </Link>
-          </li>
-        ))}
+                  <span className="truncate font-mono text-[10.5px] text-faint">
+                    {episodeCode(episode.seasonNumber, episode.episodeNumber)}
+                    {episode.name ? ` · ${episode.name}` : ""}
+                  </span>
+                </div>
+
+                <span
+                  className={`shrink-0 text-xs ${
+                    soon ? "text-accent-deep" : "text-faint"
+                  }`}
+                >
+                  {relativeAirDate(iso)}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
 
       {remaining > 0 ? (
