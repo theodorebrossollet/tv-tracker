@@ -204,9 +204,17 @@ interface RowProps {
 function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
   const body = (
     <>
+      {/* `surface-sunken` is *darker* than the sheet's own `surface`, so tiles
+          drawn on it read as holes punched in the row rather than as tiles —
+          and the icon inside all but disappeared. Raised and outlined instead,
+          and the current one goes solid rather than tinted: the row behind it
+          already carries the tint, and tint-on-tint left the tile invisible
+          exactly where it matters most. */}
       <span
-        className={`flex size-[34px] shrink-0 items-center justify-center rounded-[11px] ${
-          checked ? "bg-accent-tint text-accent-deep" : "bg-surface-sunken text-muted"
+        className={`flex size-[34px] shrink-0 items-center justify-center rounded-[11px] border ${
+          checked
+            ? "border-transparent bg-accent text-on-accent"
+            : "border-border bg-surface-raised text-muted"
         }`}
       >
         <StatusIcon status={icon} className="size-[15px]" />
@@ -235,7 +243,7 @@ function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
       type="button"
       onClick={onSelect}
       disabled={disabled}
-      className="flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface-sunken disabled:opacity-50"
+      className="flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
     >
       {body}
     </button>
