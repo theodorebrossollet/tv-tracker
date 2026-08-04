@@ -96,6 +96,14 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* Suppresses the browser's own pull-to-refresh, which would otherwise fire
+     alongside the app's — Chrome on Android reloads the page, and iOS does the
+     same in an installed PWA. Two refreshes from one gesture, one of them
+     throwing away the client router's state.
+     `contain` rather than `none`: it stops the gesture and the scroll chaining
+     without also killing the rubber-band bounce, which is the feedback that
+     tells you a list has ended. */
+  overscroll-behavior-y: contain;
 }
 
 /* Bottom-sheet entrance. Both are applied with `motion-reduce:animate-none`,

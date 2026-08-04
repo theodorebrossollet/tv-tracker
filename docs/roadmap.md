@@ -19,59 +19,41 @@ capture ideas as they come up, to revisit once the current phase is done.
 - **Export personal data as CSV** — download your own tracked shows/watched
   episodes from Settings
 
-## Deferred from the phone redesign (Aug 2026)
+## Shipped from the phone redesign (Aug 2026)
 
-The redesign shipped as a presentation-layer change across seven pull
-requests. One item in the handoff needed a server action; that action and its
-button have since landed, leaving only the gesture.
+The redesign shipped as a presentation-layer change across seven pull requests,
+then pull-to-refresh in two: the server action with a tappable strip, and the
+gesture over the same action.
 
-- **Pull-to-refresh on the show page — the gesture half.** The action and a
-  tappable strip shipped; what is left is the gesture itself.
+Kept here because the reasoning outlives the work, and governs anything else
+that re-syncs on demand:
 
-  What exists: `refreshShow` in `app/actions.ts`, gated, guarded, and bounded by
-  a five-minute cooldown on `lastSynced` that doubles as "you're already up to
-  date". `RefreshStrip` calls it and reports the three states the handoff draws.
-  A gesture would call the same action and needs no server work at all.
+- `refreshShowDeduped` (`lib/shows.ts`) dedupes by show id and returns the
+  shared promise, so awaiting it *is* a foreground refresh. It never rejects —
+  it catches and logs — which is why `refreshShow` decides success by re-reading
+  `lastSynced` rather than by catching anything. A sync that lost the
+  primary-key race against another instance still moved the timestamp, and
+  reporting that as a failure would be wrong.
+- The TMDB in-process cache is not in the way: `getShowDetails` and
+  `getSeasonEpisodes` go through `tmdbFetch` with `cache: "no-store"`. Only
+  providers, regions and trailers go through `cached()`.
+- The five-minute cooldown on `lastSynced` is the rate limit *and* the honest
+  answer, so no throttling table was needed. `syncShowFromTmdb` is the most
+  expensive operation in the app and a server action is POST-able directly, so
+  something had to bound it. Note `lastSynced` is global rather than per-user:
+  if someone else refreshed the same show two minutes ago, the answer is "up to
+  date" without a fetch. Correct, not a bug.
+- `getAllEpisodes` walks seasons **sequentially** — eleven round trips for a
+  ten-season show — hence `maxDuration = 60` on the show page against a 10s
+  default.
 
-  What it takes, and why it was worth separating: touch handling with an axis
-  lock — the season tabs scroll horizontally, so a sideways drag from the top
-  must not fire — plus `overscroll-behavior-y: contain` to suppress Chrome
-  Android's native pull-to-refresh and iOS 16+'s in a standalone PWA. It has no
-  automated coverage available: jsdom has neither real touch nor real scroll.
-  Desktop has no touch either way, so the strip stays tappable regardless, which
-  is why the button was the half worth shipping first.
-
-  *Trigger: someone reaching for the gesture out of habit and finding nothing.*
-
-  The notes below are what the original investigation turned up. They are kept
-  because they explain why the server half was as small as it was, and because
-  the same reasoning governs anything else that re-syncs on demand:
-
-  - `refreshShowDeduped` (`lib/shows.ts`) already dedupes by show id and
-    already returns the shared promise. Awaiting it *is* the foreground
-    refresh. It also never rejects — it catches and logs — so the action can
-    await it, re-read `lastSynced`, and treat "moved forward" as success
-    without any error plumbing.
-  - The TMDB in-process cache is not in the way: `getShowDetails` and
-    `getSeasonEpisodes` go through `tmdbFetch` with `cache: "no-store"`. Only
-    providers, regions and trailers go through `cached()`. A refresh genuinely
-    re-fetches.
-  - Refusing when `lastSynced` is younger than a few minutes is both the rate
-    limit and the honest answer, so no new throttling infrastructure is needed.
-    `syncShowFromTmdb` is the most expensive operation in the app and a server
-    action is POST-able directly, so *some* bound is required. Note
-    `lastSynced` is global, not per-user: if someone else refreshed the same
-    show two minutes ago, the answer is "up to date" without a fetch. That's
-    correct, not a bug.
-
-  Two things that had to be got right, and were. `getAllEpisodes` fetches
-  seasons **sequentially**, so a ten-season show is eleven round trips — hence
-  `maxDuration = 60` on the show page, because Vercel's default function timeout
-  is 10s and a long show would exceed it. And the dedup map is per-process, so
-  two rapid taps landing on two instances both sync and the second collides on
-  the episode primary key; deciding success by whether `lastSynced` moved
-  sidesteps that entirely, since the collision is already swallowed inside
-  `refreshShowDeduped` and the timestamp still advanced.
+The gesture's deciding logic lives in `lib/pull-to-refresh.ts`, apart from the
+listeners in `components/use-pull-to-refresh.ts`, because jsdom has neither real
+touch nor real scroll: the split is what makes any of it testable. The listener
+half remains the one part of this app with no automated coverage at all, and
+changes to it need a device — Chrome on Android and an installed iOS PWA both
+have their own pull-to-refresh, suppressed by `overscroll-behavior-y: contain`
+on `body`.
 
 ## Deferred performance work
 
