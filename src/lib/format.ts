@@ -60,6 +60,41 @@ export function relativeAirDate(iso: string): string {
   return formatAirDateShort(iso);
 }
 
+/** 49 → "49m", 95 → "1h 35m". */
+export function formatRuntime(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * A coarse "how far off is this", for the caught-up card's countdown pill.
+ *
+ * Deliberately not `relativeAirDate`, and the difference is contextual rather
+ * than an inconsistency: this pill sits directly beside the full date
+ * ("Monday 21 Sep 2026"), so repeating it would be dead weight — what it adds
+ * is the sense of scale that a date alone doesn't give. In the upcoming list
+ * the relative date is the *only* date shown, so precision is what's wanted
+ * there and `relativeAirDate` stays.
+ */
+export function countdownTo(iso: string): string {
+  const days = daysUntil(iso);
+
+  if (days === 0) return "Airs today";
+  if (days === 1) return "Airs tomorrow";
+  if (days < 14) return `In ${days} days`;
+
+  if (days < 60) {
+    const weeks = Math.round(days / 7);
+    return `In ${weeks} weeks`;
+  }
+
+  const months = Math.round(days / 30);
+  return `In ${months} months`;
+}
+
 /**
  * Builds the metadata line under a show's synopsis, e.g.
  * "2007–2015 · AMC · Drama" or "2022–present · HBO · Drama".

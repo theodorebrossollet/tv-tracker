@@ -29,9 +29,9 @@ export function SeasonActions({
       type="button"
       onClick={toggleSeason}
       disabled={pending}
-      className="rounded-full border border-border px-3 py-1 text-xs transition-colors hover:bg-surface disabled:opacity-50"
+      className="min-h-[38px] shrink-0 rounded-[10px] border border-border px-3 text-[13px] text-muted transition-colors hover:text-foreground disabled:opacity-50"
     >
-      {pending ? "Saving…" : allWatched ? "Unmark all" : "Mark all watched"}
+      {pending ? "Saving…" : allWatched ? "Unmark all" : "Mark all"}
     </button>
   );
 }

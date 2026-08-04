@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   caughtUpLabel,
+  countdownTo,
   daysUntil,
   formatAirDate,
   formatAirDateShort,
+  formatRuntime,
   relativeAirDate,
   showMetaLine,
 } from "@/lib/format";
@@ -168,5 +170,56 @@ describe("caughtUpLabel", () => {
     expect(caughtUpLabel("Canceled")).toBe("Series finished");
     expect(caughtUpLabel("Returning Series")).toBe("Caught up");
     expect(caughtUpLabel(null)).toBe("Caught up");
+  });
+});
+
+describe("formatRuntime", () => {
+  it("keeps a sub-hour episode in minutes", () => {
+    expect(formatRuntime(49)).toBe("49m");
+  });
+
+  it("splits a longer one, and drops a zero remainder", () => {
+    expect(formatRuntime(95)).toBe("1h 35m");
+    expect(formatRuntime(120)).toBe("2h");
+  });
+});
+
+describe("countdownTo", () => {
+  // The caught-up card's pill. Coarser than relativeAirDate on purpose: it
+  // sits beside the full date, so what it adds is scale, not precision.
+  function at(now: string) {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+  }
+
+  it("names today and tomorrow rather than counting them", () => {
+    at("2026-07-29T12:00:00.000Z");
+    expect(countdownTo("2026-07-29T04:00:00.000Z")).toBe("Airs today");
+    expect(countdownTo("2026-07-30T04:00:00.000Z")).toBe("Airs tomorrow");
+  });
+
+  it("counts days up to a fortnight", () => {
+    at("2026-07-29T12:00:00.000Z");
+    expect(countdownTo("2026-08-05T04:00:00.000Z")).toBe("In 7 days");
+    expect(countdownTo("2026-08-11T04:00:00.000Z")).toBe("In 13 days");
+  });
+
+  it("switches to weeks at a fortnight, not before", () => {
+    // The boundary is the whole point of the scale — a fortnight reported as
+    // "In 14 days" is the units failing to change where they were meant to.
+    at("2026-07-29T12:00:00.000Z");
+    expect(countdownTo("2026-08-12T04:00:00.000Z")).toBe("In 2 weeks");
+  });
+
+  it("switches to months at two, not before", () => {
+    at("2026-07-29T12:00:00.000Z");
+    // 59 days out is still weeks; 60 is months.
+    expect(countdownTo("2026-09-25T04:00:00.000Z")).toBe("In 8 weeks");
+    expect(countdownTo("2026-09-27T04:00:00.000Z")).toBe("In 2 months");
+  });
+
+  it("handles a date well over a year out", () => {
+    at("2026-07-29T12:00:00.000Z");
+    expect(countdownTo("2027-09-21T04:00:00.000Z")).toBe("In 14 months");
   });
 });
