@@ -23,7 +23,7 @@ import { NICKNAME_MAX, validateNickname } from "@/lib/nickname";
 import { prisma } from "@/lib/prisma";
 import { isSchemaMismatch, missingSchemaObject } from "@/lib/schema-error";
 import { isTmdbShowId } from "@/lib/show-id";
-import { syncShowFromTmdb } from "@/lib/shows";
+import { refreshShowDeduped, syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, TmdbError, type TmdbSearchResult } from "@/lib/tmdb";
 import type { TrackStatus } from "@/lib/types";
 
@@ -775,6 +775,80 @@ async function setAside(
     return toResult(error);
   }
 
+  revalidateShowViews();
+  return { ok: true };
+}
+
+/**
+ * How recently a show can have been synced before a manual refresh declines to
+ * do it again.
+ *
+ * This is the rate limit as well as the answer. `syncShowFromTmdb` is the most
+ * expensive thing in the app — a request per season, then hundreds of writes —
+ * and a server action is POST-able directly, so *something* has to bound it;
+ * a cooldown that doubles as "you're already up to date" costs no extra
+ * infrastructure and no extra table.
+ *
+ * Note `lastSynced` is global rather than per-user: the Show/Episode cache is
+ * shared. If someone else refreshed the same show two minutes ago, this
+ * returns success without fetching, which is correct — the data really is
+ * fresh — but it is worth knowing before it reads as a bug.
+ */
+const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+
+/**
+ * Re-syncs one show from TMDB, on demand.
+ *
+ * The cron visits tracked shows daily and `ensureShowCached` re-syncs an
+ * untracked one on view once it is a day stale; neither is something the reader
+ * can ask for. This is, and it is the only path that blocks on the result.
+ *
+ * Success is decided by whether `lastSynced` moved, not by catching an error.
+ * `refreshShowDeduped` never rejects, and a sync that lost the primary-key race
+ * against another instance still left the timestamp advanced — treating that as
+ * a failure would report "couldn't reach TMDB" for a refresh that worked.
+ */
+export async function refreshShow(showId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // Same uniform-invariant guard as removeShow. This one does reach TMDB.
+  if (!isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
+  try {
+    const before = await prisma.show.findUnique({
+      where: { id: showId },
+      select: { lastSynced: true },
+    });
+
+    // Nothing cached means nothing to refresh — opening the show is what
+    // fetches it in the first place.
+    if (!before) return { ok: false, error: "Unknown show." };
+
+    if (Date.now() - before.lastSynced.getTime() < REFRESH_COOLDOWN_MS) {
+      return { ok: true };
+    }
+
+    await refreshShowDeduped(showId);
+
+    const refreshed = await prisma.show.findUnique({
+      where: { id: showId },
+      select: { lastSynced: true },
+    });
+
+    if (refreshed?.lastSynced.getTime() === before.lastSynced.getTime()) {
+      logger.warn("show.refresh_failed", { userId: user.id, showId });
+      return { ok: false, error: "Couldn't reach TMDB. Please try again." };
+    }
+
+    logger.info("show.refreshed", { userId: user.id, showId });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  // Wider than the show page: a sync can add or move episodes, which changes
+  // the upcoming list and every progress count that reads from it.
   revalidateShowViews();
   return { ok: true };
 }

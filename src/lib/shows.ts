@@ -194,7 +194,7 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Background refreshes currently running, keyed by show id.
+ * Refreshes currently running, keyed by show id.
  *
  * `lastSynced` only moves once a sync *finishes*, so every view between
  * scheduling one and it landing sees the same stale row and would schedule its
@@ -206,11 +206,22 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
  *
  * Per-process, like the TMDB response cache in `lib/tmdb.ts` — another instance
  * has its own map. That still covers what this is for: one visitor on one
- * instance opening a show a few times in a row.
+ * instance opening a show a few times in a row. Two instances racing still
+ * collide on the primary key, which is why the second sync's failure has to be
+ * survivable rather than reported — see the `catch` below.
  */
 const inFlightRefreshes = new Map<string, Promise<unknown>>();
 
-function refreshInBackground(tmdbShowId: string): Promise<unknown> {
+/**
+ * Syncs a show, joining the run already in flight if there is one.
+ *
+ * Deliberately never rejects. That is what lets both callers stay simple: the
+ * on-view path has already sent its response and has nothing left to fail, and
+ * the manual refresh action decides success by re-reading `lastSynced` rather
+ * than by catching anything — a sync that lost the primary-key race still moved
+ * the timestamp, and reporting it as an error would be wrong.
+ */
+export function refreshShowDeduped(tmdbShowId: string): Promise<unknown> {
   const running = inFlightRefreshes.get(tmdbShowId);
   if (running) return running;
 
@@ -276,7 +287,7 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
     // is why the callback is only Prisma and TMDB. Every caller of this
     // function reaches it through the show page or its `generateMetadata`, so
     // there is always a request scope — `after` throws without one.
-    after(() => refreshInBackground(tmdbShowId));
+    after(() => refreshShowDeduped(tmdbShowId));
     return true;
   }
 

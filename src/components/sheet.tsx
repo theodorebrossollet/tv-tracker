@@ -26,6 +26,7 @@ interface SheetProps {
  */
 export function Sheet({ title, caption, onClose, children }: SheetProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -55,21 +56,36 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
         event.preventDefault();
         onClose();
       }}
-      // The dialog fills the viewport and carries the scrim itself, so a click
-      // landing on it rather than on the panel inside is a click outside.
+      // Anything outside the panel is a tap outside. Tested by containment
+      // rather than by comparing against the dialog itself: the layout div
+      // below fills the viewport, so it — not the dialog — is what a tap above
+      // the panel actually lands on. Identity-checking the dialog meant this
+      // never fired, and with no Escape key on a phone the sheet could only be
+      // left by choosing something.
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        if (!panelRef.current?.contains(event.target as Node)) onClose();
       }}
       className="m-0 h-full max-h-full w-full max-w-full bg-neutral-900/40 p-0 backdrop-blur-[2px] animate-[scrim-in_.18s_ease-out] motion-reduce:animate-none dark:bg-black/60"
     >
       <div className="flex h-full flex-col justify-end">
-        <div className="rounded-t-[22px] border-t border-border bg-surface px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none">
-          <div className="flex justify-center pb-2.5">
+        <div
+          ref={panelRef}
+          className="rounded-t-[22px] border-t border-border bg-surface px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none"
+        >
+          {/* A button, not decoration. Tapping outside is the usual way out,
+              but it is invisible — this is the one part of the sheet that
+              looks like it does something, so it should. */}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex w-full justify-center pb-2.5"
+          >
             <span
               aria-hidden="true"
               className="h-1 w-[38px] rounded-full bg-icon-faint"
             />
-          </div>
+          </button>
 
           <p className="px-1.5 text-[13px] font-semibold tracking-[-0.01em]">
             {title}

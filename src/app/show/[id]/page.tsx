@@ -9,6 +9,7 @@ import {
   NextUpCard,
   type NextUpEpisode,
 } from "@/components/next-up-card";
+import { RefreshStrip } from "@/components/refresh-strip";
 import { limitFrom } from "@/components/show-more-link";
 import { ShowHeader } from "@/components/show-header";
 import {
@@ -53,6 +54,14 @@ const ALT_COUNTRY_PAGE_SIZE = 6;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export const dynamic = "force-dynamic";
+
+/**
+ * A manual refresh is a full multi-season TMDB walk, and `getAllEpisodes`
+ * fetches seasons sequentially — eleven round trips for a ten-season show.
+ * Vercel's default function timeout is 10s, which a long-running show will
+ * exceed; the Hobby ceiling is 60.
+ */
+export const maxDuration = 60;
 
 interface ShowPageProps {
   params: Promise<{ id: string }>;
@@ -284,16 +293,10 @@ export default async function ShowPage({
 
   return (
     <div>
-      {/* Read-only. There is no user-triggerable refresh path in the app — the
-          cron visits tracked shows daily and `ensureShowCached` re-syncs an
-          untracked one on view once it is a day stale, which is exactly what
-          the second state reports. A gesture needs a server action; see
-          docs/roadmap.md. */}
-      <p className="-mx-4 border-b border-border-faint px-4 pb-2.5 text-center font-mono text-[10px] uppercase tracking-[0.07em] text-faint">
-        {refreshing
-          ? "Checking for new episodes…"
-          : `Refreshed ${formatAirDate(show.lastSynced.toISOString())}`}
-      </p>
+      <RefreshStrip
+        showId={show.id}
+        refreshedLabel={`Refreshed ${formatAirDate(show.lastSynced.toISOString())}`}
+      />
 
       <ShowHeader
         showId={show.id}
