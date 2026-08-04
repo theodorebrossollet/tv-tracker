@@ -3,15 +3,18 @@
 import { useState, useTransition } from "react";
 
 import { logout, signOutEverywhere } from "@/app/actions";
+import { ButtonRow } from "@/components/settings-rows";
 
 /**
  * Sign out of this device, or of all of them.
  *
- * Two buttons rather than one with a checkbox: they answer different
- * questions, and the everywhere case is the one people reach for while
- * worried. The ordinary case stays the plain, obvious button — a stored
- * session table is what makes cutting off one device without disturbing the
- * others possible at all.
+ * Two rows rather than one with a toggle: they answer different questions, and
+ * the everywhere case is the one people reach for while worried. The ordinary
+ * case stays the plain, obvious one — a stored session table is what makes
+ * cutting off one device without disturbing the others possible at all.
+ *
+ * Renders bare rows, so it sits inside the Account group rather than bringing
+ * a container of its own.
  */
 export function SignOutButton() {
   const [error, setError] = useState<string | null>(null);
@@ -29,32 +32,25 @@ export function SignOutButton() {
   }
 
   return (
-    <div className="mt-3">
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => run(logout)}
-          disabled={pending}
-          className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface disabled:opacity-50"
-        >
-          {pending ? "Signing out…" : "Sign out"}
-        </button>
+    <>
+      <ButtonRow
+        label={pending ? "Signing out…" : "Sign out"}
+        onClick={() => run(logout)}
+        disabled={pending}
+      />
 
-        <button
-          type="button"
-          onClick={() => run(signOutEverywhere)}
-          disabled={pending}
-          className="rounded-full border border-border px-4 py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
-        >
-          Sign out everywhere
-        </button>
-      </div>
+      <ButtonRow
+        label="Sign out everywhere"
+        description="Ends every session, including this one"
+        onClick={() => run(signOutEverywhere)}
+        disabled={pending}
+      />
 
-      {error && (
-        <p role="alert" className="mt-2 text-sm text-red-500">
+      {error ? (
+        <p role="alert" className="px-3.5 py-2.5 text-[12.5px] text-danger">
           {error}
         </p>
-      )}
-    </div>
+      ) : null}
+    </>
   );
 }

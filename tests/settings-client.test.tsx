@@ -48,12 +48,13 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
 
     const checkbox = screen.getByRole("checkbox", {
-      name: /Notify me/,
+      name: /Air-date alerts/,
     }) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
 
@@ -64,6 +65,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
@@ -79,6 +81,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
@@ -93,6 +96,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
@@ -108,6 +112,7 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
@@ -124,10 +129,45 @@ describe("settings reflect server-side changes", () => {
         regions={regions}
         providerOptions={providerOptions}
         providerIds={[8]}
+        browsingProviders={false}
         providerMore={providerMore}
       />,
     );
 
     expect(netflix.checked).toBe(true);
+  });
+});
+
+describe("browsing the service catalogue", () => {
+  // TMDB lists several hundred services per region, so the group shows only
+  // what you subscribe to until you ask for the rest. The reveal is a URL, and
+  // this row is both directions of it — stuck in either state, the group is
+  // permanently unbrowsable or permanently 24 rows long.
+  function renderWith(browsing: boolean) {
+    return render(
+      <SettingsClient
+        notifyEnabled={false}
+        country={null}
+        regions={regions}
+        providerOptions={providerOptions}
+        providerIds={[]}
+        browsingProviders={browsing}
+        providerMore={providerMore}
+      />,
+    );
+  }
+
+  it("offers the catalogue when collapsed", () => {
+    renderWith(false);
+
+    const link = screen.getByRole("link", { name: "Choose services" });
+    expect(link.getAttribute("href")).toBe("?providers=24");
+  });
+
+  it("offers the way back out while browsing", () => {
+    renderWith(true);
+
+    const link = screen.getByRole("link", { name: "Done choosing" });
+    expect(link.getAttribute("href")).toBe("/settings");
   });
 });

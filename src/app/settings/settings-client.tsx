@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
 
 import {
@@ -7,10 +9,14 @@ import {
   updateNotificationPrefs,
   updateProviders,
 } from "@/app/actions";
-import { ProviderSelect } from "@/components/provider-select";
-import { Select } from "@/components/select";
+import {
+  Chevron,
+  Group,
+  ToggleRow,
+} from "@/components/settings-rows";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { MAX_PROVIDERS } from "@/lib/alternate-countries";
+import { posterUrl } from "@/lib/images";
 import type { WatchProvider, WatchRegion } from "@/lib/tmdb";
 
 interface SettingsClientProps {
@@ -20,6 +26,8 @@ interface SettingsClientProps {
   /** Only the slice of the catalogue this page asked for — see settings/page. */
   providerOptions: WatchProvider[];
   providerIds: number[];
+  /** Whether the URL is asking to browse the whole catalogue. */
+  browsingProviders: boolean;
   /** Everything `ShowMoreLink` needs to reveal the next slice. */
   providerMore: {
     param: string;
@@ -36,17 +44,17 @@ export function SettingsClient({
   regions,
   providerOptions,
   providerIds,
+  browsingProviders,
   providerMore,
 }: SettingsClientProps) {
-  // Derived from the props via useOptimistic, not copied into useState. Both
-  // values change server-side — clearing all data resets them, and the row is
+  // Derived from the props via useOptimistic, not copied into useState. All
+  // three change server-side — clearing all data resets them, and the row is
   // recreated with defaults — and a useState copy initialises once and then
   // ignores every later prop, so the display could never be corrected. Same
   // reasoning as AddButton.
   const [enabled, setEnabled] = useOptimistic(notifyEnabled);
   const [selectedCountry, setSelectedCountry] = useOptimistic(country ?? "");
   const [selectedProviders, setSelectedProviders] = useOptimistic(providerIds);
-  const [countrySaved, setCountrySaved] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [savingPrefs, startPrefs] = useTransition();
   const [savingCountry, startCountry] = useTransition();
@@ -66,13 +74,9 @@ export function SettingsClient({
   }
 
   function changeCountry(next: string) {
-    setCountrySaved(false);
-
     startCountry(async () => {
       setSelectedCountry(next);
-      const result = await updateCountry(next);
-
-      if (result.ok) setCountrySaved(true);
+      await updateCountry(next);
     });
   }
 
@@ -83,7 +87,7 @@ export function SettingsClient({
       : [...selectedProviders, id];
 
     // Checked here as well as in the action, so the cap reads as a rule rather
-    // than as a click that silently does nothing: the optimistic value would
+    // than as a tap that silently does nothing: the optimistic value would
     // otherwise flip on, then revert when the rejected save landed.
     if (!removing && next.length > MAX_PROVIDERS) {
       setProviderError(`You can pick up to ${MAX_PROVIDERS} services.`);
@@ -97,114 +101,138 @@ export function SettingsClient({
       const result = await updateProviders(next);
 
       // The optimistic value is already dropped by the time this runs, so the
-      // chip has reverted itself — all that's missing is saying why.
+      // toggle has reverted itself — all that's missing is saying why.
       if (!result.ok) {
         setProviderError(result.error ?? "Couldn't save that. Try again.");
       }
     });
   }
 
+  const countryName =
+    regions.find((region) => region.code === selectedCountry)?.name ??
+    "Not set";
+
   return (
-    <div className="mt-6 space-y-8">
-      <section>
-        <h2 className="font-medium">Country</h2>
-        <p className="mt-1 text-sm text-muted">
-          Used as the default when showing where a series is available to
-          stream. You can still check other countries from any show page.
-        </p>
-
-        {regions.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">
-            Couldn&rsquo;t load the country list from TMDB. Reload to try again.
-          </p>
-        ) : (
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <Select
-              scale="md"
-              value={selectedCountry}
-              onChange={(event) => changeCountry(event.target.value)}
-              disabled={savingCountry}
-              aria-label="Country"
-            >
-              <option value="">Not set</option>
-              {regions.map((region) => (
-                <option key={region.code} value={region.code}>
-                  {region.name}
-                </option>
-              ))}
-            </Select>
-
-            {savingCountry ? (
-              <span className="text-xs text-muted">Saving…</span>
-            ) : countrySaved ? (
-              <span className="text-xs text-accent">Saved</span>
-            ) : null}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h2 className="font-medium">Your streaming services</h2>
-        <p className="mt-1 text-sm text-muted">
-          Also used to flag when a show you don&rsquo;t have at home is
-          already on one of these services elsewhere — useful with a VPN,
-          though that&rsquo;s against most streaming services&rsquo; terms.
-        </p>
-
-        {providerOptions.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">
-            Couldn&rsquo;t load the service list from TMDB. Reload to try
-            again.
-          </p>
-        ) : (
-          <div className="mt-3">
-            <ProviderSelect
-              options={providerOptions}
-              selected={selectedProviders}
-              onToggle={toggleProvider}
+    <>
+      <Group
+        label="Your services"
+        description={
+          <>
+            Used to tell you where a show is streaming — and where it
+            isn&rsquo;t.{" "}
+            {selectedProviders.length === 0
+              ? "None selected."
+              : `${selectedProviders.length} selected.`}
+          </>
+        }
+      >
+        {providerOptions.length === 0 && !browsingProviders ? null : (
+          providerOptions.map((provider) => (
+            <ToggleRow
+              key={provider.id}
+              label={provider.name}
+              logo={<ProviderLogo provider={provider} />}
+              checked={selectedProviders.includes(provider.id)}
+              onChange={() => toggleProvider(provider.id)}
               disabled={savingProviders}
             />
-
-            {providerError ? (
-              <p role="alert" className="mt-2 text-sm text-red-500">
-                {providerError}
-              </p>
-            ) : null}
-
-            {providerMore.remaining > 0 ? (
-              <ShowMoreLink
-                param={providerMore.param}
-                current={providerMore.current}
-                step={providerMore.step}
-                shown={providerMore.shown}
-                remaining={providerMore.remaining}
-                label="Show"
-              />
-            ) : null}
-          </div>
+          ))
         )}
-      </section>
 
-      <section>
-        <h2 className="font-medium">Notifications</h2>
-
-        <label className="mt-3 flex items-start gap-3">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={toggleNotifications}
-            disabled={savingPrefs}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
-          />
-          <span className="text-sm">
-            Notify me about new episodes
-            <span className="mt-0.5 block text-xs text-muted">
-              Saves the preference now. Actually sending notifications is a
-              Phase 2 feature — see docs/scope.md.
-            </span>
+        {/* TMDB lists several hundred services per region, so the catalogue is
+            behind a disclosure rather than in the group: collapsed, this shows
+            only what you actually subscribe to. The reveal is a URL, like every
+            other list in the app, which is also why it survives the round trip
+            a toggle causes. */}
+        <Link
+          href={browsingProviders ? "/settings" : "?providers=24"}
+          scroll={false}
+          className="flex min-h-[52px] w-full items-center justify-between gap-3 px-3.5 text-[15px] transition-colors hover:bg-surface-sunken"
+        >
+          {browsingProviders ? "Done choosing" : "Choose services"}
+          <span className="text-muted">
+            <Chevron />
           </span>
+        </Link>
+      </Group>
+
+      {providerError ? (
+        <p role="alert" className="mx-0.5 mt-2 text-[12.5px] text-danger">
+          {providerError}
+        </p>
+      ) : null}
+
+      {browsingProviders && providerMore.remaining > 0 ? (
+        <ShowMoreLink
+          param={providerMore.param}
+          current={providerMore.current}
+          step={providerMore.step}
+          shown={providerMore.shown}
+          remaining={providerMore.remaining}
+          label="Show"
+        />
+      ) : null}
+
+      <Group label="Region &amp; alerts">
+        {/* A native select covering the row, rather than a drill-in to a
+            picker screen. It looks like the drawn row, and on a phone it opens
+            the platform's own wheel — which is better than anything a custom
+            sheet would do here, and free for keyboards and screen readers. */}
+        <label className="relative flex min-h-[52px] w-full cursor-pointer items-center justify-between gap-3 px-3.5 text-[15px] transition-colors has-[:focus-visible]:outline has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-accent hover:bg-surface-sunken">
+          Country
+          <span className="flex items-center gap-[7px] text-muted">
+            {savingCountry ? "Saving…" : countryName}
+            <Chevron />
+          </span>
+
+          <select
+            value={selectedCountry}
+            onChange={(event) => changeCountry(event.target.value)}
+            disabled={savingCountry || regions.length === 0}
+            aria-label="Country"
+            className="absolute inset-0 cursor-pointer opacity-0"
+          >
+            <option value="">Not set</option>
+            {regions.map((region) => (
+              <option key={region.code} value={region.code}>
+                {region.name}
+              </option>
+            ))}
+          </select>
         </label>
-      </section>
-    </div>
+
+        <ToggleRow
+          label="Air-date alerts"
+          // The handoff's subtitle promises a notification that nothing sends.
+          // The preference is real and worth keeping; the delivery isn't built,
+          // and a settings screen that implies otherwise is how someone misses
+          // an episode waiting for a message.
+          description="The morning an episode lands. Not sending yet."
+          checked={enabled}
+          onChange={toggleNotifications}
+          disabled={savingPrefs}
+        />
+      </Group>
+    </>
+  );
+}
+
+function ProviderLogo({ provider }: { provider: WatchProvider }) {
+  const logo = posterUrl(provider.logoPath, "w185");
+
+  if (!logo) {
+    return (
+      <span className="size-7 shrink-0 rounded-lg border border-border bg-surface-sunken" />
+    );
+  }
+
+  return (
+    <Image
+      src={logo}
+      alt=""
+      width={28}
+      height={28}
+      className="size-7 shrink-0 rounded-lg border border-border object-cover"
+    />
   );
 }
