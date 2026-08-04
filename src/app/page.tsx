@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
+import { SearchIconButton } from "@/components/search-icon-button";
 import { ShowGrid } from "@/components/show-grid";
 import { limitFrom } from "@/components/show-more-link";
 import {
@@ -37,7 +38,12 @@ export default async function DashboardPage({
   return (
     <div className="space-y-10">
       <section>
-        <h1 className="text-xl font-semibold tracking-tight">Watching</h1>
+        <div className="flex items-center justify-between gap-2.5">
+          <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
+            Watching
+          </h1>
+          <SearchIconButton />
+        </div>
 
         {watching.length === 0 ? (
           <div className="mt-4">
@@ -54,12 +60,12 @@ export default async function DashboardPage({
       </section>
 
       <section>
-        <h2 className="text-xl font-semibold tracking-tight">
+        <h2 className="text-lg font-semibold tracking-[-0.015em]">
           Upcoming episodes
         </h2>
-        <p className="mt-1 text-sm text-muted">
-          Across everything you&rsquo;re watching and everything on your
-          watchlist. Air dates come from TMDB and refresh once a day.
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+          Across everything you&rsquo;re watching and on your watchlist. Air
+          dates refresh once a day.
         </p>
 
         {upcoming.length === 0 ? (

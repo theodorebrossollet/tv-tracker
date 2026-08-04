@@ -50,7 +50,7 @@ export function ShowMoreLink({
     <Link
       href={`?${next.toString()}`}
       scroll={false}
-      className="mt-3 block w-full rounded-full border border-border py-2 text-center text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
+      className="mt-3.5 flex min-h-[46px] w-full items-center justify-center rounded-[13px] border border-border text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
     >
       {label} {Math.min(step, remaining)} more
       <span className="ml-1.5 text-xs">({remaining} left)</span>

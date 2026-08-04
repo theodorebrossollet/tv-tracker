@@ -80,6 +80,22 @@ describe("watch progress", () => {
     expect(show.nextUnwatched?.episodeNumber).toBe(2);
   });
 
+  it("carries that episode's id, not just its number", async () => {
+    // The dashboard's inline tick marks this episode without leaving the list,
+    // and `markEpisodeWatched` is keyed by id. A wrong id here doesn't fail —
+    // it silently marks a different episode, which is why this asserts the id
+    // rather than that one merely exists.
+    const { episodeIds } = await seedShow({
+      offsets: [-30, -20, -10],
+      status: "watching",
+      watched: [0],
+    });
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
+
+    expect(show.nextUnwatched?.id).toBe(episodeIds[1]);
+  });
+
   it("has no next episode once everything aired is watched", async () => {
     await seedShow({
       offsets: [-30, -20],
