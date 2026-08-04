@@ -5,7 +5,18 @@ import { useState, useTransition } from "react";
 
 import { clearAllData } from "@/app/actions";
 
-/** Its own component so the page can place it last, after every other section. */
+const BUTTON =
+  "flex min-h-[52px] w-full items-center justify-center rounded-[14px] border text-[15px] transition-colors disabled:opacity-50";
+
+/**
+ * Its own block, after every other group, outlined rather than filled.
+ *
+ * The handoff labels this row "Delete account". It isn't one: `clearAllData`
+ * wipes tracked shows, watch history and preferences and leaves the account
+ * itself — you stay signed in and can start again. Calling it deletion would
+ * promise something it doesn't do, and the person most likely to read it
+ * literally is the one who wants to be forgotten.
+ */
 export function DangerZone() {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -25,31 +36,31 @@ export function DangerZone() {
   }
 
   return (
-    <section>
-      <h2 className="font-medium">Danger zone</h2>
-      <p className="mt-1 text-sm text-muted">
-        Removes every tracked show, watch history entry, and preference. The
-        locally cached show and episode details from TMDB are kept so
-        re-adding a show is fast.
-      </p>
-
+    <section className="mt-[22px]">
       {cleared ? (
-        <p className="mt-3 text-sm text-accent">All tracking data cleared.</p>
+        <p className="text-[12.5px] text-accent">All tracking data cleared.</p>
       ) : confirming ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2">
+          <p className="mx-0.5 text-[12.5px] leading-relaxed text-muted">
+            Removes every tracked show, watch history entry and preference. Your
+            account stays, and the cached show details from TMDB are kept so
+            re-adding a show is fast.
+          </p>
+
           <button
             type="button"
             onClick={confirmClear}
             disabled={clearing}
-            className="rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className={`${BUTTON} border-danger/40 bg-danger/10 text-danger`}
           >
-            {clearing ? "Clearing…" : "Yes, delete everything"}
+            {clearing ? "Clearing…" : "Yes, clear everything"}
           </button>
+
           <button
             type="button"
             onClick={() => setConfirming(false)}
             disabled={clearing}
-            className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface"
+            className={`${BUTTON} border-border hover:bg-surface`}
           >
             Cancel
           </button>
@@ -58,7 +69,7 @@ export function DangerZone() {
         <button
           type="button"
           onClick={() => setConfirming(true)}
-          className="mt-3 rounded-full border border-red-500/50 px-4 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10"
+          className={`${BUTTON} border-danger/30 bg-surface text-danger hover:bg-danger/5`}
         >
           Clear all data
         </button>
