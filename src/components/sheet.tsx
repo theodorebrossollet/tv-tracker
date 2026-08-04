@@ -67,7 +67,7 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
           <div className="flex justify-center pb-2.5">
             <span
               aria-hidden="true"
-              className="h-1 w-[38px] rounded-full bg-border"
+              className="h-1 w-[38px] rounded-full bg-icon-faint"
             />
           </div>
 

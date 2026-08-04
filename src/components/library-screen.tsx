@@ -62,6 +62,7 @@ export function LibraryScreen({
               <EmptyState
                 title="Watchlist is empty"
                 description="Add shows here when you want to remember to start them later."
+                icon="bookmark"
                 action={<FindShowButton />}
               />
             ) : (
@@ -97,6 +98,7 @@ export function LibraryScreen({
               <EmptyState
                 title="Nothing archived yet"
                 description="Shows land here when you finish them, or when you stop watching one for good."
+                icon="archive"
               />
             </div>
           ) : null}
