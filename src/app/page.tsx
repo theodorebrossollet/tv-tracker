@@ -43,7 +43,8 @@ export default async function DashboardPage({
           <div className="mt-4">
             <EmptyState
               title="Nothing in progress"
-              description="Shows land here automatically once you mark an episode watched. Finished ones move to the Archive."
+              description="Shows land here on their own once you mark an episode watched. Finished ones move to the Archive."
+              icon="shows"
               action={<FindShowButton />}
             />
           </div>
@@ -66,6 +67,7 @@ export default async function DashboardPage({
             <EmptyState
               title="Nothing scheduled"
               description="None of your tracked shows have an announced air date coming up."
+              variant="inline"
             />
           </div>
         ) : (

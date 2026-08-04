@@ -29,6 +29,10 @@
   --surface-raised: #ffffff;
   --border: #e4e4e7;
   --border-faint: #f0f0f2;
+  /* Decorative strokes: empty-state glyphs, the sheet's grab handle. Stronger
+     than `border`, which disappears against a sunken panel, but well below
+     `faint` — these carry no information and must not read as text. */
+  --icon-faint: #c4c4cc;
   --accent: #4f46e5;
   /* Accent text on an accent tint, where the accent itself is too light. */
   --accent-deep: #4338ca;
@@ -50,6 +54,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-border: var(--border);
   --color-border-faint: var(--border-faint);
+  --color-icon-faint: var(--icon-faint);
   --color-accent: var(--accent);
   --color-accent-deep: var(--accent-deep);
   --color-accent-tint: var(--accent-tint);
@@ -73,6 +78,7 @@
     --surface-raised: #23232a;
     --border: #2a2a30;
     --border-faint: #1c1c21;
+    --icon-faint: #3a3a42;
     --accent: #818cf8;
     /* The dark accent is already light enough to read on its own tint. */
     --accent-deep: #818cf8;
