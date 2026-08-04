@@ -94,7 +94,7 @@ export function EpisodeRow({
           <span
             className={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
               optimisticWatched
-                ? "border-accent bg-accent text-white"
+                ? "border-accent bg-accent text-on-accent"
                 : aired
                   ? "border-muted"
                   : "border-dashed border-border"

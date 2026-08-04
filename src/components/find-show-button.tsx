@@ -10,7 +10,7 @@ export function FindShowButton({ label = "Find a show" }: { label?: string }) {
     <button
       type="button"
       onClick={open}
-      className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+      className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-on-accent transition-opacity hover:opacity-90"
     >
       {label}
     </button>

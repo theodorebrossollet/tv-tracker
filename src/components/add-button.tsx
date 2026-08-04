@@ -78,7 +78,7 @@ export function AddButton({
         aria-label={label}
         className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-lg leading-none transition-colors disabled:opacity-50 ${
           tracked
-            ? "border-accent bg-accent text-white"
+            ? "border-accent bg-accent text-on-accent"
             : "border-border hover:bg-surface"
         }`}
       >
@@ -96,7 +96,7 @@ export function AddButton({
         aria-label={label}
         className={`flex w-fit items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
           tracked
-            ? "border-accent bg-accent text-white"
+            ? "border-accent bg-accent text-on-accent"
             : "border-border hover:bg-surface"
         }`}
       >

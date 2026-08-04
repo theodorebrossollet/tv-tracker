@@ -1,11 +1,23 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 import { SearchOverlay } from "@/components/search-overlay";
 
 interface SearchContextValue {
   open: () => void;
+  /**
+   * Whether the overlay is showing. The tab bar needs it: Search is a tab like
+   * any other, but it has no route to match `usePathname` against, so this is
+   * the only thing that can mark it active.
+   */
+  isOpen: boolean;
 }
 
 const SearchContext = createContext<SearchContextValue | null>(null);
@@ -20,8 +32,12 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
+  // Memoised on `isOpen`: without it every consumer of this context re-renders
+  // on any parent render, and the tab bar is now one of them on every screen.
+  const value = useMemo(() => ({ open, isOpen }), [open, isOpen]);
+
   return (
-    <SearchContext.Provider value={{ open }}>
+    <SearchContext.Provider value={value}>
       {children}
       {isOpen ? <SearchOverlay onClose={close} /> : null}
     </SearchContext.Provider>

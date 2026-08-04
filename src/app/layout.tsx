@@ -1,9 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
-import { Nav } from "@/components/nav";
 import { SearchProvider } from "@/components/search-provider";
 import { ServiceWorker } from "@/components/service-worker";
+import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,6 +40,11 @@ export const viewport: Viewport = {
   // Matches the manifest's theme_color, so the browser chrome and the
   // installed splash agree.
   themeColor: "#4f46e5",
+  // Load-bearing for the tab bar: without it iOS reports every
+  // `env(safe-area-inset-*)` as 0, and the bar renders under the home
+  // indicator. The cost is that content now runs edge to edge, so anything
+  // pinned to a screen edge has to add the inset back itself.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -61,10 +66,14 @@ export default function RootLayout({
 
         <SearchProvider>
           <ServiceWorker />
-          <Nav />
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-10">
+          {/* Clearance for the fixed tab bar: its own height plus whatever the
+              device reserves below it. Padding on the scrolling document rather
+              than a margin on the bar, so the last row of a list can still be
+              scrolled clear of it. */}
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
             {children}
           </main>
+          <TabBar />
         </SearchProvider>
       </body>
     </html>
