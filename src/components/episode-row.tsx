@@ -3,7 +3,8 @@
 import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched, unmarkEpisodeWatched } from "@/app/actions";
-import { formatAirDate } from "@/lib/format";
+import { episodeCode } from "@/lib/episode-code";
+import { formatAirDate, formatRuntime } from "@/lib/format";
 
 interface EpisodeRowProps {
   episodeId: string;
@@ -16,15 +17,6 @@ interface EpisodeRowProps {
   aired: boolean;
   runtime: number | null;
   overview: string | null;
-}
-
-/** 49 → "49m", 95 → "1h 35m". */
-function formatRuntime(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
 export function EpisodeRow({
@@ -66,19 +58,15 @@ export function EpisodeRow({
     });
   }
 
-  const code = `S${String(seasonNumber).padStart(2, "0")}E${String(
-    episodeNumber,
-  ).padStart(2, "0")}`;
+  const code = episodeCode(seasonNumber, episodeNumber);
 
   return (
     <li
-      className={`border-b border-border last:border-b-0 border-l-2 transition-colors ${
-        optimisticWatched
-          ? "border-l-accent bg-accent/[0.07]"
-          : "border-l-transparent"
+      className={`rounded-xl transition-colors ${
+        optimisticWatched ? "bg-accent/[0.06]" : ""
       }`}
     >
-      <div className="flex items-center gap-2 px-3 py-2.5">
+      <div className="flex min-h-[52px] items-center gap-3 px-2 py-2">
         <button
           type="button"
           role="checkbox"
@@ -88,11 +76,11 @@ export function EpisodeRow({
           disabled={pending || !aired}
           title={aired ? undefined : "Hasn't aired yet"}
           className={`flex min-w-0 flex-1 items-center gap-3 text-left ${
-            aired ? "cursor-pointer" : "cursor-not-allowed"
+            aired ? "cursor-pointer" : "cursor-default"
           }`}
         >
           <span
-            className={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+            className={`flex size-6 shrink-0 items-center justify-center rounded-[7px] border transition-colors ${
               optimisticWatched
                 ? "border-accent bg-accent text-on-accent"
                 : aired
@@ -116,27 +104,26 @@ export function EpisodeRow({
             ) : null}
           </span>
 
-          <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-            <span className="font-mono text-xs text-muted">{code}</span>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            {/* Not struck through. The tint and the filled box carry it: a
+                strikethrough on every watched row of a long season turns the
+                list into a wall of crossed-out text. */}
             <span
-              className={`min-w-0 flex-1 truncate text-sm ${
-                optimisticWatched
-                  ? "text-muted line-through"
-                  : aired
-                    ? ""
-                    : "text-muted"
+              className={`truncate text-[14.5px] ${
+                optimisticWatched || !aired ? "text-muted" : ""
               }`}
             >
               {name ?? "Untitled episode"}
             </span>
+
+            <span className="truncate font-mono text-[10.5px] text-faint">
+              {code}
+              {runtime ? ` · ${formatRuntime(runtime)}` : ""}
+              {` · ${formatAirDate(airDate)}`}
+              {airDate && !aired ? " · upcoming" : ""}
+            </span>
           </span>
         </button>
-
-        <span className="shrink-0 text-xs text-muted">
-          {runtime ? `${formatRuntime(runtime)} · ` : ""}
-          {formatAirDate(airDate)}
-          {airDate && !aired ? " · upcoming" : ""}
-        </span>
 
         {/* Synopses are hidden by default: a 92-episode show would otherwise
             be an unusable wall of text. */}
@@ -150,7 +137,7 @@ export function EpisodeRow({
                 ? `Hide synopsis for ${code}`
                 : `Show synopsis for ${code}`
             }
-            className="shrink-0 rounded p-1 text-muted transition-colors hover:bg-surface hover:text-foreground"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface hover:text-foreground"
           >
             <svg
               viewBox="0 0 24 24"
@@ -167,14 +154,11 @@ export function EpisodeRow({
               <path d="m6 9 6 6 6-6" />
             </svg>
           </button>
-        ) : (
-          // Keeps the date column aligned on rows with no synopsis.
-          <span className="size-[26px] shrink-0" aria-hidden="true" />
-        )}
+        ) : null}
       </div>
 
       {expanded && overview ? (
-        <p className="px-3 pb-3 pl-10 text-xs leading-relaxed text-muted">
+        <p className="px-2 pb-3 pl-11 text-xs leading-relaxed text-muted">
           {overview}
         </p>
       ) : null}

@@ -20,6 +20,13 @@ interface StatusMenuProps {
    * it has to be passed in — the show's stored status is still "watching".
    */
   finished?: boolean;
+  /**
+   * `menu` is the "..." in a library row. `pill` is the show page's header
+   * control, which replaces the old Watching/Pause/Stop button trio and is the
+   * only place status is set there — it appears twice on that page, in the
+   * header and at the foot of About, and both read the same value.
+   */
+  variant?: "menu" | "pill";
 }
 
 const ROWS: Record<StatusTarget, { label: string; hint: string }> = {
@@ -34,6 +41,29 @@ const ROWS: Record<StatusTarget, { label: string; hint: string }> = {
   stopped: { label: "Stopped", hint: "Moved to your archive" },
   remove: { label: "Not tracked", hint: "Not in your library" },
 };
+
+/**
+ * How the pill carries each state.
+ *
+ * Only the three "you're engaged with this" states take the accent. Colouring
+ * paused and stopped too would turn a status into a traffic light — the same
+ * reasoning `StatusBadge` documents for search results.
+ */
+type PillTone = "accent" | "neutral" | "quiet";
+
+const PILL_TONE: Record<PillTone, string> = {
+  accent: "border-accent-border bg-accent-tint text-accent-deep",
+  neutral: "border-border bg-surface text-foreground",
+  quiet: "border-border bg-transparent text-faint",
+};
+
+function toneOf(status: TrackStatus | null, finished: boolean): PillTone {
+  if (status === null) return "quiet";
+  if (finished || status === "watching" || status === "watchlist") {
+    return "accent";
+  }
+  return "neutral";
+}
 
 /** What the checked row reads, which is not always the stored status. */
 function currentRow(status: TrackStatus | null, finished: boolean) {
@@ -55,6 +85,7 @@ export function StatusMenu({
   name,
   status,
   finished = false,
+  variant = "menu",
 }: StatusMenuProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +93,9 @@ export function StatusMenu({
 
   const targets = statusTargets(status);
   const current = currentRow(status, finished);
+  const statusIcon: StatusTarget = finished
+    ? "watching"
+    : (status ?? "remove");
 
   function apply(target: StatusTarget) {
     setError(null);
@@ -81,20 +115,35 @@ export function StatusMenu({
 
   return (
     <>
-      {/* 44px of hit area around a 32px control, per the handoff's note about
-          padding small targets out in code rather than drawing them bigger. */}
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label={`Change status for ${name}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className="relative -m-1.5 flex size-11 shrink-0 items-center justify-center"
-      >
-        <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground">
-          <EllipsisIcon />
-        </span>
-      </button>
+      {variant === "pill" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`Change status for ${name}`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className={`inline-flex min-h-9 shrink-0 items-center gap-[7px] rounded-full border px-3 text-[12.5px] font-medium ${PILL_TONE[toneOf(status, finished)]}`}
+        >
+          <StatusIcon status={statusIcon} className="size-[11px]" />
+          {current.label}
+          <ChevronDown />
+        </button>
+      ) : (
+        /* 44px of hit area around a 32px control, per the handoff's note about
+           padding small targets out in code rather than drawing them bigger. */
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`Change status for ${name}`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className="relative -m-1.5 flex size-11 shrink-0 items-center justify-center"
+        >
+          <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground">
+            <EllipsisIcon />
+          </span>
+        </button>
+      )}
 
       {open ? (
         <Sheet
@@ -107,12 +156,13 @@ export function StatusMenu({
           onClose={() => setOpen(false)}
         >
           <div className="flex flex-col gap-0.5">
-            <Row {...current} checked />
+            <Row {...current} icon={statusIcon} checked />
 
             {targets.map((target) => (
               <Row
                 key={target}
                 {...ROWS[target]}
+                icon={target}
                 disabled={pending}
                 onSelect={() => apply(target)}
               />
@@ -123,6 +173,7 @@ export function StatusMenu({
                 <hr className="my-1.5 border-border-faint" />
                 <Row
                   {...ROWS.remove}
+                  icon="remove"
                   disabled={pending}
                   onSelect={() => apply("remove")}
                 />
@@ -144,14 +195,22 @@ export function StatusMenu({
 interface RowProps {
   label: string;
   hint: string;
+  icon: StatusTarget;
   checked?: boolean;
   disabled?: boolean;
   onSelect?: () => void;
 }
 
-function Row({ label, hint, checked, disabled, onSelect }: RowProps) {
+function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
   const body = (
     <>
+      <span
+        className={`flex size-[34px] shrink-0 items-center justify-center rounded-[11px] ${
+          checked ? "bg-accent-tint text-accent-deep" : "bg-surface-sunken text-muted"
+        }`}
+      >
+        <StatusIcon status={icon} className="size-[15px]" />
+      </span>
       <span className="min-w-0 flex-1 text-left">
         <span className="block text-[15px] font-medium">{label}</span>
         <span className="mt-0.5 block text-[11.5px] text-muted">{hint}</span>
@@ -180,6 +239,71 @@ function Row({ label, hint, checked, disabled, onSelect }: RowProps) {
     >
       {body}
     </button>
+  );
+}
+
+/** One glyph per status, shared by the pill and the sheet rows it opens. */
+export function StatusIcon({
+  status,
+  className = "",
+}: {
+  status: StatusTarget;
+  className?: string;
+}) {
+  const stroke = status === "watching" ? "3" : "2.4";
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={stroke}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {status === "watching" ? <path d="m5 13 4 4L19 7" /> : null}
+      {status === "watchlist" ? (
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+      ) : null}
+      {status === "paused" ? (
+        <>
+          <path d="M8 5v14" />
+          <path d="M16 5v14" />
+        </>
+      ) : null}
+      {status === "stopped" ? (
+        <>
+          <rect x="3" y="4" width="18" height="4" rx="1" />
+          <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+          <path d="M10 12h4" />
+        </>
+      ) : null}
+      {status === "remove" ? (
+        <>
+          <path d="M12 5v14" />
+          <path d="M5 12h14" />
+        </>
+      ) : null}
+    </svg>
+  );
+}
+
+function ChevronDown() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3 opacity-75"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }
 
