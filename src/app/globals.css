@@ -91,3 +91,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* Bottom-sheet entrance. Both are applied with `motion-reduce:animate-none`,
+ * so a reader who asks for less motion gets the sheet without the travel
+ * rather than without the sheet. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(101%);
+  }
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}

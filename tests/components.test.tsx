@@ -2,15 +2,18 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// ShowList renders AddButton, which imports server actions. The list's
+// LibraryList renders StatusMenu, which imports server actions. The list's
 // pagination is what's under test, so the actions are stubbed out.
 vi.mock("@/app/actions", () => ({
   addToWatchlist: vi.fn(),
   removeShow: vi.fn(),
+  pauseShow: vi.fn(),
+  resumeShow: vi.fn(),
+  stopShow: vi.fn(),
 }));
 
 const { StatusBadge } = await import("@/components/status-badge");
-const { ShowList } = await import("@/components/show-list");
+const { LibraryList } = await import("@/components/library-list");
 const { limitFrom } = await import("@/components/show-more-link");
 import type { TrackedShowSummary } from "@/lib/queries";
 import type { TrackStatus } from "@/lib/types";
@@ -55,16 +58,16 @@ describe("StatusBadge", () => {
   });
 });
 
-/** ShowList's disclosure props, with the URL state a page would pass in. */
+/** LibraryList's disclosure props, with the URL state a page would pass in. */
 function paging(limit: number, params: Record<string, string> = {}) {
   return { param: "finished", searchParams: params, limit } as const;
 }
 
-describe("ShowList pagination", () => {
+describe("LibraryList pagination", () => {
   it("shows only the first page and offers the rest", () => {
     const shows = Array.from({ length: 25 }, (_, i) => show(`s${i}`));
 
-    render(<ShowList shows={shows} pageSize={10} {...paging(10)} />);
+    render(<LibraryList shows={shows} {...paging(10)} />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(10);
     expect(screen.getByRole("link", { name: /Show 10 more/ })).toBeTruthy();
@@ -72,7 +75,7 @@ describe("ShowList pagination", () => {
   });
 
   it("offers no link when everything fits", () => {
-    render(<ShowList shows={[show("a"), show("b")]} pageSize={10} {...paging(10)} />);
+    render(<LibraryList shows={[show("a"), show("b")]} {...paging(10)} />);
 
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.queryByRole("link", { name: /more/ })).toBeNull();
@@ -81,9 +84,8 @@ describe("ShowList pagination", () => {
   it("counts the final partial page correctly", () => {
     // 12 shows, 10 per page — the link should offer 2, not 10.
     render(
-      <ShowList
+      <LibraryList
         shows={Array.from({ length: 12 }, (_, i) => show(`s${i}`))}
-        pageSize={10}
         {...paging(10)}
       />,
     );
@@ -95,9 +97,8 @@ describe("ShowList pagination", () => {
     // The reveal is URL state now, so a limit past the first page is what an
     // expanded list looks like on a fresh render.
     render(
-      <ShowList
+      <LibraryList
         shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
-        pageSize={10}
         {...paging(20)}
       />,
     );
@@ -108,9 +109,8 @@ describe("ShowList pagination", () => {
 
   it("asks for one more page than it is showing", () => {
     render(
-      <ShowList
+      <LibraryList
         shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
-        pageSize={10}
         {...paging(10)}
       />,
     );
@@ -125,9 +125,8 @@ describe("ShowList pagination", () => {
     // must not collapse the other, and the only thing holding the other's
     // state is the query string — so the link has to preserve it.
     render(
-      <ShowList
+      <LibraryList
         shows={Array.from({ length: 25 }, (_, i) => show(`s${i}`))}
-        pageSize={10}
         {...paging(10, { stopped: "30" })}
       />,
     );
@@ -142,12 +141,12 @@ describe("ShowList pagination", () => {
 
   it("shows watch progress when asked, availability otherwise", () => {
     const { unmount } = render(
-      <ShowList shows={[show("a")]} detail="progress" {...paging(10)} />,
+      <LibraryList shows={[show("a")]} detail="progress" {...paging(10)} />,
     );
     expect(screen.getByText("10 / 10 watched")).toBeTruthy();
     unmount();
 
-    render(<ShowList shows={[show("a")]} {...paging(10)} />);
+    render(<LibraryList shows={[show("a")]} {...paging(10)} />);
     expect(screen.getByText("10 episodes available")).toBeTruthy();
   });
 });
