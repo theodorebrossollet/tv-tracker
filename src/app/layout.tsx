@@ -70,7 +70,7 @@ export default function RootLayout({
               device reserves below it. Padding on the scrolling document rather
               than a margin on the bar, so the last row of a list can still be
               scrolled clear of it. */}
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
             {children}
           </main>
           <TabBar />

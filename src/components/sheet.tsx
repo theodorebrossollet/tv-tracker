@@ -37,6 +37,13 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
     // non-modal one with no trap and no backdrop.
     dialog.showModal();
 
+    // `showModal` focuses the first focusable descendant, which is a control —
+    // and Safari paints its focus ring on it, so the sheet opened with one row
+    // (or the grab handle) looking pre-selected. Focusing the panel instead
+    // starts focus inside the dialog, where the trap needs it, without landing
+    // on anything that looks chosen. Tab still reaches the rows in order.
+    panelRef.current?.focus();
+
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -70,7 +77,11 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
       <div className="flex h-full flex-col justify-end">
         <div
           ref={panelRef}
-          className="rounded-t-[22px] border-t border-border bg-surface px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none"
+          // Focusable only as a target for the initial focus above — never in
+          // the tab order, and no ring, because it is a container rather than
+          // something you can operate.
+          tabIndex={-1}
+          className="rounded-t-[22px] border-t border-border bg-surface px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] outline-none animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none"
         >
           {/* A button, not decoration. Tapping outside is the usual way out,
               but it is invisible — this is the one part of the sheet that

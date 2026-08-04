@@ -21,6 +21,7 @@ interface Tab {
   href?: string;
   /** Extra routes that also count as this tab. */
   also?: string[];
+  icon: React.ReactNode;
 }
 
 /**
@@ -29,14 +30,21 @@ interface Tab {
  * both and points at whichever is the more common entry.
  */
 const TABS: Tab[] = [
-  { label: "Watching", href: "/" },
-  { label: "Library", href: "/watchlist", also: ["/archive"] },
-  { label: "Search" },
-  { label: "Settings", href: "/settings" },
+  { label: "Watching", href: "/", icon: <TvIcon /> },
+  {
+    label: "Library",
+    href: "/watchlist",
+    also: ["/archive"],
+    // The same bookmark the empty Watchlist draws, so the tab and the screen
+    // it leads to agree about what Library means.
+    icon: <BookmarkIcon />,
+  },
+  { label: "Search", icon: <SearchGlyph /> },
+  { label: "Settings", href: "/settings", icon: <SlidersIcon /> },
 ];
 
 const TAB_CLASS =
-  "flex min-h-12 flex-col items-center justify-center gap-1.5 rounded-lg text-[10.5px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+  "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg text-[10.5px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
 
 export function TabBar() {
   const pathname = usePathname();
@@ -79,7 +87,7 @@ export function TabBar() {
         {TABS.map((tab) => {
           const active = isActive(tab);
           const className = `${TAB_CLASS} ${
-            active ? "text-foreground" : "text-faint"
+            active ? "text-accent-deep" : "text-faint"
           }`;
 
           // Search is a tab, but it opens the overlay rather than navigating —
@@ -96,7 +104,7 @@ export function TabBar() {
                 aria-expanded={active}
                 className={className}
               >
-                <Dot active={active} />
+                {tab.icon}
                 {tab.label}
               </button>
             );
@@ -109,7 +117,7 @@ export function TabBar() {
               aria-current={active ? "page" : undefined}
               className={className}
             >
-              <Dot active={active} />
+              {tab.icon}
               {tab.label}
             </Link>
           );
@@ -119,12 +127,64 @@ export function TabBar() {
   );
 }
 
-/** The 5px accent marker above an active tab's label. */
-function Dot({ active }: { active: boolean }) {
+/**
+ * Shared geometry for the four glyphs.
+ *
+ * `currentColor` throughout, so the active state is one colour change on the
+ * parent rather than four icons each knowing about it.
+ */
+function Glyph({ children }: { children: React.ReactNode }) {
   return (
-    <span
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-[21px]"
       aria-hidden="true"
-      className={`size-[5px] rounded-full ${active ? "bg-accent" : "bg-transparent"}`}
-    />
+    >
+      {children}
+    </svg>
+  );
+}
+
+function TvIcon() {
+  return (
+    <Glyph>
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="m7 3 5 4 5-4" />
+    </Glyph>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <Glyph>
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </Glyph>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <Glyph>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Glyph>
+  );
+}
+
+function SlidersIcon() {
+  return (
+    <Glyph>
+      <path d="M4 8h5" />
+      <path d="M13 8h7" />
+      <path d="M4 16h11" />
+      <path d="M19 16h1" />
+      <circle cx="11" cy="8" r="2.2" />
+      <circle cx="17" cy="16" r="2.2" />
+    </Glyph>
   );
 }

@@ -70,6 +70,30 @@ describe("leaving a sheet without choosing anything", () => {
   });
 });
 
+describe("where focus lands when it opens", () => {
+  it("does not leave a row looking chosen", () => {
+    // `showModal` focuses the first focusable descendant, and Safari paints its
+    // focus ring on it — so the sheet opened with the first control outlined in
+    // blue, which reads as a selection nobody made. Focus belongs inside the
+    // dialog, but on the panel rather than on anything operable.
+    const { container } = open();
+
+    const panel = container.querySelector("dialog > div > div");
+
+    expect(document.activeElement).toBe(panel);
+    expect(document.activeElement?.tagName).not.toBe("BUTTON");
+  });
+
+  it("keeps the panel out of the tab order", () => {
+    // Focusable as a target, never a stop: tabbing should reach the rows.
+    const { container } = open();
+
+    const panel = container.querySelector("dialog > div > div");
+
+    expect(panel?.getAttribute("tabindex")).toBe("-1");
+  });
+});
+
 describe("what does not close it", () => {
   it("stays open when something inside the panel is tapped", () => {
     // The row handlers decide what happens next; dismissing here would race

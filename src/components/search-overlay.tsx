@@ -136,7 +136,7 @@ export function SearchOverlay({
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search for a show…"
               aria-label="Show title"
-              className="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-faint"
+              className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-faint"
             />
 
             {query ? (

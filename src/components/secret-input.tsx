@@ -52,7 +52,7 @@ export function SecretInput({
           spellCheck={false}
           autoFocus={autoFocus}
           placeholder={placeholder}
-          className={`w-full rounded-md border border-neutral-300 bg-transparent py-2 pl-3 pr-16 text-sm outline-none focus:border-neutral-500 dark:border-neutral-700 ${
+          className={`w-full rounded-md border border-neutral-300 bg-transparent py-2 pl-3 pr-16 text-base outline-none focus:border-neutral-500 dark:border-neutral-700 ${
             mono ? "font-mono" : ""
           }`}
         />
