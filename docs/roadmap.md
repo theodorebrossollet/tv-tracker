@@ -21,20 +21,33 @@ capture ideas as they come up, to revisit once the current phase is done.
 
 ## Deferred from the phone redesign (Aug 2026)
 
-The redesign ships as a presentation-layer change. One item in the handoff
-needs a server action and is deliberately left out of it — the screens are
-built around its absence, not waiting on it.
+The redesign shipped as a presentation-layer change across seven pull
+requests. One item in the handoff needed a server action; that action and its
+button have since landed, leaving only the gesture.
 
-- **Pull-to-refresh on the show page.** The handoff draws the refresh strip as
-  a gesture ("Checking TMDB…" / "Updated just now"); it ships as a read-only
-  status line instead, because there is no user-triggerable refresh path. The
-  cron visits tracked shows daily and `ensureShowCached` re-syncs an *untracked*
-  show on view once it is 24h stale, via `after()`. Nothing else re-fetches.
+- **Pull-to-refresh on the show page — the gesture half.** The action and a
+  tappable strip shipped; what is left is the gesture itself.
 
-  The server half is smaller than it looks, and three things that usually make
-  this expensive are already handled:
+  What exists: `refreshShow` in `app/actions.ts`, gated, guarded, and bounded by
+  a five-minute cooldown on `lastSynced` that doubles as "you're already up to
+  date". `RefreshStrip` calls it and reports the three states the handoff draws.
+  A gesture would call the same action and needs no server work at all.
 
-  - `refreshInBackground` (`lib/shows.ts`) already dedupes by show id and
+  What it takes, and why it was worth separating: touch handling with an axis
+  lock — the season tabs scroll horizontally, so a sideways drag from the top
+  must not fire — plus `overscroll-behavior-y: contain` to suppress Chrome
+  Android's native pull-to-refresh and iOS 16+'s in a standalone PWA. It has no
+  automated coverage available: jsdom has neither real touch nor real scroll.
+  Desktop has no touch either way, so the strip stays tappable regardless, which
+  is why the button was the half worth shipping first.
+
+  *Trigger: someone reaching for the gesture out of habit and finding nothing.*
+
+  The notes below are what the original investigation turned up. They are kept
+  because they explain why the server half was as small as it was, and because
+  the same reasoning governs anything else that re-syncs on demand:
+
+  - `refreshShowDeduped` (`lib/shows.ts`) already dedupes by show id and
     already returns the shared promise. Awaiting it *is* the foreground
     refresh. It also never rejects — it catches and logs — so the action can
     await it, re-read `lastSynced`, and treat "moved forward" as success
@@ -51,27 +64,14 @@ built around its absence, not waiting on it.
     show two minutes ago, the answer is "up to date" without a fetch. That's
     correct, not a bug.
 
-  Two things to get right when it is built. `getAllEpisodes` fetches seasons
-  **sequentially**, so a ten-season show is eleven round trips — set
-  `maxDuration` on the show page, because Vercel's default function timeout is
-  10s and a very long show will exceed it. And the dedup map is per-process, so
+  Two things that had to be got right, and were. `getAllEpisodes` fetches
+  seasons **sequentially**, so a ten-season show is eleven round trips — hence
+  `maxDuration = 60` on the show page, because Vercel's default function timeout
+  is 10s and a long show would exceed it. And the dedup map is per-process, so
   two rapid taps landing on two instances both sync and the second collides on
-  the episode primary key; the `lastSynced` comparison above sidesteps that
-  entirely, since the collision is already swallowed inside
-  `refreshInBackground` and the timestamp still moved.
-
-  The gesture itself is the expensive half despite being fewer lines: touch
-  handling with an axis lock (the season tabs scroll horizontally, so a sideways
-  drag from the top must not fire), `overscroll-behavior-y: contain` to suppress
-  Chrome Android's native pull-to-refresh and iOS 16+'s in a standalone PWA, and
-  no automated coverage at all — jsdom has neither real touch nor real scroll,
-  so it needs device passes on iOS Safari, Android Chrome and the installed PWA.
-  Desktop has no touch either way, so the strip stays tappable regardless.
-
-  *Worth splitting when it is scheduled:* the action plus a tappable strip
-  delivers the whole point of the feature, is fully testable, and works for
-  pointer and keyboard. The gesture layers over the identical action afterwards
-  and can be deleted without losing anything.
+  the episode primary key; deciding success by whether `lastSynced` moved
+  sidesteps that entirely, since the collision is already swallowed inside
+  `refreshShowDeduped` and the timestamp still advanced.
 
 ## Deferred performance work
 
