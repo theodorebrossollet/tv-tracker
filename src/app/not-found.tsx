@@ -11,7 +11,7 @@ export default function NotFound() {
 
       <Link
         href="/"
-        className="mt-4 inline-block rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+        className="mt-4 inline-block rounded-full bg-accent px-4 py-2 text-sm font-medium text-on-accent transition-opacity hover:opacity-90"
       >
         Back to Watching
       </Link>

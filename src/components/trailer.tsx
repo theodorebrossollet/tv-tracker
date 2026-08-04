@@ -74,7 +74,7 @@ export function Trailer({ options, showName }: TrailerProps) {
                 aria-pressed={option.id === selected.id}
                 className={`rounded-full border px-3 py-1 text-xs transition-colors ${
                   option.id === selected.id
-                    ? "border-accent bg-accent text-white"
+                    ? "border-accent bg-accent text-on-accent"
                     : "border-border text-muted hover:bg-surface hover:text-foreground"
                 }`}
               >
@@ -121,7 +121,7 @@ export function Trailer({ options, showName }: TrailerProps) {
             {/* Scrim keeps the play button and caption legible over any frame. */}
             <span className="absolute inset-0 bg-black/35 transition-colors group-hover:bg-black/45" />
 
-            <span className="relative flex size-16 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-transform group-hover:scale-105">
+            <span className="relative flex size-16 items-center justify-center rounded-full bg-accent text-on-accent shadow-lg transition-transform group-hover:scale-105">
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"

@@ -1,21 +1,61 @@
 @import "tailwindcss";
 
+/* Design tokens for the phone-first redesign.
+ *
+ * Every colour the UI uses is named here and nowhere else. The redesign's
+ * handoff specifies most screens as inline hex, which is how forty components
+ * end up each holding their own copy of #17171a — so a component that reaches
+ * for a literal colour is a component that missed a token.
+ *
+ * `faint` deliberately does NOT match the handoff's table. It specified
+ * #9ca3af on white and #6b7280 on near-black, which are 2.5:1 and 4.1:1 —
+ * both under WCAG AA's 4.5:1, and it is the token carrying the smallest type
+ * in the app (10-11px mono metadata, section labels, inactive tab labels).
+ * The cause is visible in the handoff's own table: each scheme's "faint" is
+ * the other scheme's `muted`, a value picked for the opposite background. The
+ * values below sit at ~4.8:1 in both schemes and stay a clear step below
+ * `muted`.
+ */
 :root {
   --background: #ffffff;
+  /* Settings only: grouped rows read as cards against a tinted page. */
+  --background-grouped: #f4f4f5;
   --foreground: #171717;
   --muted: #6b7280;
+  --faint: #71717a;
   --surface: #f6f6f7;
+  --surface-sunken: #fafafa;
+  /* The raised element on a sunken track — a selected segment. */
+  --surface-raised: #ffffff;
   --border: #e4e4e7;
+  --border-faint: #f0f0f2;
   --accent: #4f46e5;
+  /* Accent text on an accent tint, where the accent itself is too light. */
+  --accent-deep: #4338ca;
+  --accent-tint: rgba(79, 70, 229, 0.08);
+  --accent-border: rgba(79, 70, 229, 0.3);
+  /* Text and icons ON an accent fill. Not always white — see the dark block. */
+  --on-accent: #ffffff;
+  --danger: #dc2626;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-grouped: var(--background-grouped);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-raised: var(--surface-raised);
   --color-border: var(--border);
+  --color-border-faint: var(--border-faint);
   --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-border: var(--accent-border);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -23,11 +63,26 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0b0b0d;
+    /* No separate grouped background in dark — the surfaces carry it. */
+    --background-grouped: #0b0b0d;
     --foreground: #ededed;
     --muted: #9ca3af;
+    --faint: #7c7c86;
     --surface: #17171a;
+    --surface-sunken: #131317;
+    --surface-raised: #23232a;
     --border: #2a2a30;
+    --border-faint: #1c1c21;
     --accent: #818cf8;
+    /* The dark accent is already light enough to read on its own tint. */
+    --accent-deep: #818cf8;
+    --accent-tint: rgba(129, 140, 248, 0.12);
+    --accent-border: rgba(129, 140, 248, 0.4);
+    /* White on #818cf8 is 3:1 — under AA. The accent is light in this scheme,
+       so what goes on top of it has to be dark. */
+    --on-accent: #0b0b0d;
+    /* #dc2626 on near-black is 4.1:1; this is 7.1:1. */
+    --danger: #f87171;
   }
 }
 
