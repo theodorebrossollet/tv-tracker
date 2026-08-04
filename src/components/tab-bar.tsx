@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useSearch } from "@/components/search-provider";
@@ -117,13 +117,36 @@ export function TabBar() {
               aria-current={active ? "page" : undefined}
               className={className}
             >
-              {tab.icon}
+              <Pressed>{tab.icon}</Pressed>
               {tab.label}
             </Link>
           );
         })}
       </div>
     </nav>
+  );
+}
+
+/**
+ * Marks a tab as tapped before its screen arrives.
+ *
+ * Every route here is `force-dynamic`, so a tap waits on a server render. The
+ * `loading.tsx` files cover the destination; this covers the moment before it,
+ * while the router is still fetching and the old screen is still on display —
+ * which is the part that read as the app ignoring the tap.
+ *
+ * `useLinkStatus` only works inside a `<Link>`, which is why this is a
+ * component rather than a prop.
+ */
+function Pressed({ children }: { children: React.ReactNode }) {
+  const { pending } = useLinkStatus();
+
+  return (
+    <span
+      className={`transition-opacity ${pending ? "animate-pulse opacity-60 motion-reduce:animate-none" : ""}`}
+    >
+      {children}
+    </span>
   );
 }
 

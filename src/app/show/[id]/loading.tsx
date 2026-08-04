@@ -1,3 +1,5 @@
+import { Skeleton, SkeletonScreen } from "@/components/skeleton";
+
 /**
  * Opening a show that isn't cached yet fetches it from TMDB — one request for
  * the show plus one per season, run sequentially to stay inside the rate limit.
@@ -14,29 +16,42 @@
  */
 export default function Loading() {
   return (
-    <div className="animate-pulse">
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="h-[210px] w-[140px] shrink-0 rounded-md bg-surface" />
+    <SkeletonScreen>
+      {/* Refresh strip. */}
+      <Skeleton className="-mx-4 h-9 w-[calc(100%+2rem)] rounded-none" />
 
-        <div className="min-w-0 flex-1 space-y-3">
-          <div className="h-6 w-2/5 rounded bg-surface" />
-          <div className="space-y-2">
-            <div className="h-3 w-full rounded bg-surface" />
-            <div className="h-3 w-11/12 rounded bg-surface" />
-            <div className="h-3 w-3/4 rounded bg-surface" />
-          </div>
-          <div className="h-9 w-44 rounded-full bg-surface" />
+      <div className="mt-3 flex items-end gap-3.5">
+        <Skeleton className="h-[117px] w-[78px] shrink-0 rounded-lg" />
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <Skeleton className="h-6 w-3/5" />
+          <Skeleton className="h-3 w-2/5" />
+          <Skeleton className="h-[5px] w-full rounded-full" />
         </div>
       </div>
 
-      <div className="mt-8 space-y-2">
-        <div className="h-5 w-32 rounded bg-surface" />
-        <div className="h-40 w-full rounded-lg bg-surface" />
+      {/* Episodes / Watch / About. */}
+      <Skeleton className="mt-5 h-[46px] w-full rounded-[13px]" />
+
+      {/* Next up. */}
+      <Skeleton className="mt-4 h-[150px] w-full rounded-2xl" />
+
+      <div className="mt-4 flex gap-1.5">
+        {Array.from({ length: 3 }, (_, index) => (
+          <Skeleton key={index} className="h-[38px] w-14 rounded-[10px]" />
+        ))}
       </div>
 
-      <p className="mt-6 text-center text-sm text-muted">
-        Loading show details from TMDB…
-      </p>
-    </div>
+      <div className="mt-4 space-y-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="flex items-center gap-3">
+            <Skeleton className="size-6 shrink-0 rounded-[7px]" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-2.5 w-1/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </SkeletonScreen>
   );
 }
