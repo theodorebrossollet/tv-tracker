@@ -19,6 +19,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "TV Tracker",
   description: "Track the shows you're watching and what's airing next.",
+  // Accounts are handed out by invitation and there is no public surface worth
+  // finding, so there is nothing for a crawler to do here but index the sign-in
+  // page. Not a security control — every route has its own gate, and a crawler
+  // that ignores this reaches exactly what an anonymous visitor reaches — just
+  // the correct posture for an app nobody can sign up for.
+  robots: { index: false, follow: false },
   // iOS ignores the web manifest's icons for the home screen entirely and uses
   // this link instead. Without it the installed icon is a screenshot of the
   // page — verified by its absence from the rendered head, not assumed.

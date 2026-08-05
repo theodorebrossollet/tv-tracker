@@ -622,8 +622,17 @@ gap `SameSite=Lax` doesn't close — a framed page carries the cookie and clicks
 inside it are same-origin — and the Danger Zone is two clicks from wiping an
 account.
 
-The CSP here is *only* `frame-ancestors`. A real `default-src`/`script-src`
-policy needs a nonce for Next's inline bootstrap and is a separate project.
+The CSP carries `frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`
+and `form-action 'self'`. There is still no `script-src`: that one genuinely
+needs a nonce for Next's inline bootstrap and remains a separate project. The
+other three don't, which is the whole reason they are there — "a real CSP needs
+a nonce" was being read as "no CSP directives are affordable", and `base-uri` is
+the one that matters most in the meantime. Without a `script-src`, an injected
+`<base>` silently retargets every relative script URL on the page and nothing
+else in this policy stops it.
+
+When the `script-src` work does land, the trailer needs
+`frame-src https://www.youtube-nocookie.com` the moment a `default-src` appears.
 
 Note the ordering trap: matching `headers()` entries do **not** merge per key —
 the last one to set a key wins. The catch-all is listed first and the `/sw.js`

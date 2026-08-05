@@ -89,12 +89,16 @@ describe("air date anchoring", () => {
   });
 });
 
+// Searches go through the in-process response cache, so each test needs its
+// own query — the same convention the provider tests below already follow with
+// `p1`, `p-stampede` and friends. Reusing one would serve the previous test's
+// cached promise and make no request at all.
 describe("authentication", () => {
   it("sends a v4 read token as a Bearer header", async () => {
     vi.stubEnv("TMDB_API_KEY", "aaa.bbb.ccc");
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("anything");
+    await searchTvShows("auth-v4-token");
 
     const [url, options] = fetchMock.mock.calls[0] as unknown as [
       URL,
@@ -110,7 +114,7 @@ describe("authentication", () => {
     vi.stubEnv("TMDB_API_KEY", "0123456789abcdef");
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("anything");
+    await searchTvShows("auth-v3-key");
 
     const [url, options] = fetchMock.mock.calls[0] as unknown as [
       URL,
@@ -308,6 +312,30 @@ describe("values TMDB supplies that end up in markup", () => {
 });
 
 describe("response cache", () => {
+  it("serves a repeated search without asking TMDB again", async () => {
+    // Search is the only TMDB call an ordinary interaction makes every time it
+    // is used, and `searchSuggestions` is POST-able directly with no cooldown —
+    // the one signed-in path that can drive TMDB without a bound. Every other
+    // expensive path has one (`refreshShow` has its five-minute cooldown,
+    // `ensureShowCached` has staleness). This is that bound.
+    const fetchMock = mockFetch({ results: [] });
+
+    await searchTvShows("the wire");
+    await searchTvShows("the wire");
+    await searchTvShows("the wire");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keys searches by query, so a different title still asks", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    await searchTvShows("severance");
+    await searchTvShows("succession");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("shares one request between callers that miss together", async () => {
     // A cold instance rendering a show page fans out to providers, regions and
     // a trailer per season at once. Caching the resolved value meant every

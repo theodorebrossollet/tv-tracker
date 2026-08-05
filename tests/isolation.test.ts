@@ -13,6 +13,22 @@ vi.mock("@/lib/shows", async (importOriginal) => ({
   ensureShowCached: vi.fn(async () => true),
 }));
 
+// `searchSuggestions` badges each result with the caller's own tracked status,
+// which is a per-user read like any other. The TMDB half is stubbed; what is
+// under test is which account's rows get attached to the results.
+vi.mock("@/lib/tmdb", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tmdb")>()),
+  searchTvShows: vi.fn(async () => [
+    {
+      id: 500,
+      name: "Test Show",
+      posterPath: null,
+      overview: null,
+      firstAirYear: "2020",
+    },
+  ]),
+}));
+
 // Actions run as user A throughout; user B is the bystander whose data must
 // never appear or change.
 vi.mock("@/lib/auth", async (importOriginal) => ({
@@ -23,12 +39,20 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
   })),
 }));
 
-const { clearAllData, markEpisodeWatched, removeShow, setSeasonWatched } =
-  await import("@/app/actions");
+const {
+  clearAllData,
+  markEpisodeWatched,
+  pauseShow,
+  removeShow,
+  resumeShow,
+  searchSuggestions,
+  setSeasonWatched,
+  unmarkEpisodeWatched,
+} = await import("@/app/actions");
 const { getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
-const { resetDatabase, seedShow, seedUser } = await import("./helpers");
+const { resetDatabase, seedShow, seedUser, statusOf } = await import("./helpers");
 
 const A = "user-a";
 const B = "user-b";
@@ -104,6 +128,16 @@ describe("reads never cross accounts", () => {
     expect(forB?.seasons[0].episodes.map((e) => e.watched)).toEqual([false, false]);
   });
 
+  it("badges search results with the caller's own tracked status", async () => {
+    // The suggestion list reads TrackedShow to decide what the "+" says. Drop
+    // the userId and A is told they are already watching a show B tracks.
+    await seedShow({ showId: "500", offsets: [-1], status: "watching", userId: B });
+
+    const { results } = await searchSuggestions("test");
+
+    expect(results).toMatchObject([{ id: "500", status: null }]);
+  });
+
   it("buckets each account independently", async () => {
     await seedShow({ showId: "500", offsets: [-1], status: "watching", watched: [0], userId: A });
     await seedShow({ showId: "500", offsets: [-1], status: "watchlist", userId: B });
@@ -168,6 +202,49 @@ describe("writes never touch another account", () => {
     await expect(prisma.settings.findMany({ select: { userId: true } })).resolves.toEqual([
       { userId: B },
     ]);
+  });
+
+  it("demotes on the caller's own remaining progress, not the household's", async () => {
+    // `demoteIfNothingWatched` counts what is left before sending a show back
+    // to the watchlist, and that count runs through a relation
+    // (`{ userId, episode: { showId } }`) — the shape this whole file exists
+    // for. Without its userId, A unmarking their last episode finds B's mark,
+    // decides there is progress left, and silently leaves A's show under
+    // Watching with nothing watched: the exact stuck state the demotion rule
+    // was written to fix.
+    const { episodeIds } = await seedShow({
+      showId: "500",
+      offsets: [-1],
+      status: "watching",
+      watched: [0],
+      userId: A,
+    });
+    await seedShow({
+      showId: "500",
+      offsets: [-1],
+      status: "watching",
+      watched: [0],
+      userId: B,
+    });
+
+    expect((await unmarkEpisodeWatched(episodeIds[0])).ok).toBe(true);
+
+    expect(await statusOf("500", A)).toBe("watchlist");
+    // B watched nothing differently and must not be moved.
+    expect(await statusOf("500", B)).toBe("watching");
+  });
+
+  it("sets aside and resumes a shared show for the caller only", async () => {
+    await seedShow({ showId: "500", offsets: [-1], status: "watching", userId: A });
+    await seedShow({ showId: "500", offsets: [-1], status: "watching", userId: B });
+
+    expect((await pauseShow("500")).ok).toBe(true);
+    expect(await statusOf("500", A)).toBe("paused");
+    expect(await statusOf("500", B)).toBe("watching");
+
+    expect((await resumeShow("500")).ok).toBe(true);
+    expect(await statusOf("500", A)).toBe("watching");
+    expect(await statusOf("500", B)).toBe("watching");
   });
 
   it("unmarks a season for the caller only", async () => {

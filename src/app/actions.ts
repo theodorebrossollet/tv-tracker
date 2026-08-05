@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { MAX_PROVIDERS } from "@/lib/alternate-countries";
 import {
+  clearSessionCookie,
   createSession,
   destroySession,
   hashCode,
@@ -105,6 +106,17 @@ function toResult(error: unknown): ActionResult {
  * The narrow version was also easy to get wrong: each new route that displays
  * progress had to remember to add itself here, and a missing line looks like
  * nothing at all.
+ *
+ * The settings actions used to reach for `revalidatePath("/show", "layout")`
+ * instead, which is not a narrower version of this — it is very likely nothing
+ * at all. `type: "layout"` names the `layout.tsx` *at that segment*, and there
+ * is no `app/show/layout.tsx`; the route is `/show/[id]`, and Next's own
+ * documentation says a path with a dynamic segment has to be spelled out as the
+ * pattern. A call that matches no layout fails silently, and the symptom is
+ * three navigations away: change your country, go back to a show page you have
+ * already opened, and read last country's availability out of the client router
+ * cache. Use this instead — it is the one form documented to cover everything
+ * beneath the root layout, which includes every show page.
  */
 function revalidateShowViews() {
   revalidatePath("/", "layout");
@@ -274,16 +286,31 @@ export async function loginWithPassword(
     }
 
     if (!(await verifyPassword(password, user.passwordHash))) {
-      const failedLogins = user.failedLogins + 1;
+      // The database does the arithmetic, not Node. `user.failedLogins + 1`
+      // reads a value fetched by the lookup above, and the two statements are
+      // separate round trips with nothing holding a lock between them — so N
+      // attempts fired at once all read the same count and all write the same
+      // successor, advancing it by one for the whole batch. Vercel scales out
+      // per request, so that concurrency is free to an attacker, and it is the
+      // reason this counter lives in the database rather than in-process at
+      // all. `increment` makes it monotonic: N attempts cost N.
+      const { failedLogins } = await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLogins: { increment: 1 } },
+        select: { failedLogins: true },
+      });
+
       const lockFor = lockoutMs(failedLogins);
 
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLogins,
-          lockedUntil: lockFor > 0 ? new Date(Date.now() + lockFor) : null,
-        },
-      });
+      // Only written once there is a lock to record. Clearing it on every
+      // failure below the threshold would be the one write that *undoes* a
+      // lock a concurrent request just set.
+      if (lockFor > 0) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lockedUntil: new Date(Date.now() + lockFor) },
+        });
+      }
 
       logger.warn("auth.login_failed", { userId: user.id, failedLogins });
       return { ok: false, error: "Wrong nickname or password." };
@@ -342,10 +369,11 @@ export async function signOutEverywhere(): Promise<ActionResult> {
       where: { userId: session.user.id },
     });
 
-    // The cookie outlives its row otherwise: the row is gone, but the browser
-    // keeps presenting a token until it expires, and every request pays a
-    // lookup to be told it's invalid.
-    await destroySession();
+    // Cookie only. The deleteMany above already took this session's row with
+    // the rest, so `destroySession` would spend a round trip deleting nothing —
+    // but the cookie still has to go, or the browser keeps presenting a token
+    // until it expires and every request pays a lookup to be told it's invalid.
+    await clearSessionCookie();
 
     logger.info("auth.signed_out_everywhere", {
       userId: session.user.id,
@@ -465,12 +493,27 @@ export async function changePassword(
   if (!checkedPassword.ok) return { ok: false, error: checkedPassword.error };
 
   try {
+    // The code is checked before the hash, not after. scrypt here is ~100ms and
+    // 32MB, and hashing first spent all of it on every wrong-code attempt — an
+    // allocation an authenticated caller could ask for in a loop, for a write
+    // that was never going to land. There is no timing argument for the old
+    // order either: this caller is already signed in, and the code isn't being
+    // probed for existence, only matched against their own account.
+    const matches = await prisma.user.count({
+      where: { id: session.user.id, codeHash: hashCode(trimmedCode) },
+    });
+
+    // Same message for "wrong code" as a failed `loginWithCode` lookup:
+    // nothing useful to distinguish, and no account enumeration to enable.
+    if (matches === 0) return { ok: false, error: "That code isn't recognised." };
+
     const passwordHash = await hashPassword(newPassword);
 
-    // `codeHash` in the filter is the actual check — a valid session doesn't
-    // satisfy it on its own. Same message for "wrong code" as a failed
-    // `loginWithCode` lookup: nothing useful to distinguish, and no account
-    // enumeration to enable.
+    // `codeHash` stays in the filter rather than relying on the check above —
+    // a valid session doesn't satisfy it on its own, and re-stating it makes
+    // the write itself conditional on the credential instead of on a decision
+    // made a statement earlier. A code rotated in between lands here as a
+    // no-op, which is the correct outcome.
     const { count } = await prisma.user.updateMany({
       where: { id: session.user.id, codeHash: hashCode(trimmedCode) },
       data: { passwordHash, failedLogins: 0, lockedUntil: null },
@@ -1058,7 +1101,7 @@ export async function updateCountry(country: string): Promise<ActionResult> {
   }
 
   revalidatePath("/settings");
-  revalidatePath("/show", "layout");
+  revalidateShowViews();
   return { ok: true };
 }
 
@@ -1093,7 +1136,7 @@ export async function updateProviders(ids: number[]): Promise<ActionResult> {
   }
 
   revalidatePath("/settings");
-  revalidatePath("/show", "layout");
+  revalidateShowViews();
   return { ok: true };
 }
 

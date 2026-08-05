@@ -205,6 +205,30 @@ served to whoever asks next — including a different signed-in user.
 that isn't a clean same-origin 200. `tests/service-worker.test.ts` runs the
 real file in a fake worker scope; extend it before widening what gets cached.
 
+Note the worker never updates itself: this file is byte-identical between
+builds, so the browser has nothing to install after the first visit and
+`activate` — the only thing that deletes anything — never runs again. Anything
+you add to the cache is therefore added forever, which is why `MAX_ENTRIES`
+exists. Don't reach for a versioned cache name; a file served verbatim from
+`public/` has no build id to version with.
+
+**A counter kept in the database must be incremented by the database.**
+`failedLogins` was read into Node, had 1 added to it, and was written back, so
+a batch of parallel sign-in attempts all read the same value and all wrote the
+same successor — the throttle counted N guesses as one. Instances here are
+short-lived and scale out per request, which is *why* the counter is in a shared
+table at all; doing its arithmetic in process gives back exactly what that
+bought. Use `{ increment: 1 }`, and be careful what else the same write clears.
+
+**`revalidatePath(path, "layout")` names a real `layout.tsx`, not a URL
+prefix.** `revalidatePath("/show", "layout")` looks like "everything under
+/show" and is nothing at all: there is no `app/show/layout.tsx`, the route is
+`/show/[id]`, and Next's docs require a dynamic segment be written as the
+pattern. A call that matches nothing throws no error and logs nothing — the
+symptom surfaces navigations later as a stale client router cache. Prefer
+`revalidateShowViews()`, which is the `/` layout and documented to cover
+everything beneath it.
+
 **TMDB caching is in-process, not Next's.** These pages are
 `dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and
 silently discards any `next: { revalidate }`. Setting `fetchCache` does not

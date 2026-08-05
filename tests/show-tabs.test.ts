@@ -90,4 +90,27 @@ describe("building a link that changes one param", () => {
     expect(href).toContain("season=2");
     expect(href).not.toContain("season=1");
   });
+
+  it("drops params the app doesn't read", () => {
+    // Every link on the page used to copy the URL wholesale, so anything a
+    // visitor arrived with was reflected into all of them. A crafted link is
+    // then params × links of render and payload, chosen by whoever wrote it.
+    const href = showHref(
+      { tab: "watch", season: "2", utm_source: "x", "<script>": "y" },
+      { tab: "about" },
+    );
+
+    expect(href).toContain("season=2");
+    expect(href).toContain("tab=about");
+    expect(href).not.toContain("utm_source");
+    expect(href).not.toContain("script");
+  });
+
+  it("emits carried params in a stable order", () => {
+    // Same state, same href, however the visitor arrived at it.
+    const fromOne = showHref({ season: "2", country: "FR" }, { tab: "about" });
+    const fromOther = showHref({ country: "FR", season: "2" }, { tab: "about" });
+
+    expect(fromOne).toBe(fromOther);
+  });
 });

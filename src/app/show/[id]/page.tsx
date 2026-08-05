@@ -37,7 +37,11 @@ import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
-import { getSettings } from "@/lib/shows";
+// STALE_AFTER_MS is imported rather than restated: it is the threshold
+// `ensureShowCached` schedules the background re-sync on, and the "Checking for
+// new episodes…" line below is a claim about that. Two copies would drift and
+// the page would start announcing a refresh nothing had queued.
+import { getSettings, STALE_AFTER_MS } from "@/lib/shows";
 import {
   getSeasonTrailers,
   getShowTrailer,
@@ -50,8 +54,6 @@ import {
 const ALT_COUNTRY_PARAM = "altCountries";
 /** Rows shown before "show more" in the alternate-countries list. */
 const ALT_COUNTRY_PAGE_SIZE = 6;
-/** How long before the on-view refresh considers the cache stale. */
-const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export const dynamic = "force-dynamic";
 
