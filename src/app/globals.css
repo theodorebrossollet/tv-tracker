@@ -7,22 +7,37 @@
  * end up each holding their own copy of #17171a — so a component that reaches
  * for a literal colour is a component that missed a token.
  *
- * `faint` deliberately does NOT match the handoff's table. It specified
- * #9ca3af on white and #6b7280 on near-black, which are 2.5:1 and 4.1:1 —
- * both under WCAG AA's 4.5:1, and it is the token carrying the smallest type
- * in the app (10-11px mono metadata, section labels, inactive tab labels).
- * The cause is visible in the handoff's own table: each scheme's "faint" is
- * the other scheme's `muted`, a value picked for the opposite background. The
- * values below sit at ~4.8:1 in both schemes and stay a clear step below
- * `muted`.
+ * None of the greys match the handoff's table any more, and `tests/contrast.ts`
+ * is why: it reads this file and measures every text token against every
+ * surface it is drawn on. Three separate rounds of "can't see much" came back
+ * from a phone before that existed, and each time the values had looked
+ * perfectly reasonable here — because a hex code tells you nothing about the
+ * *distance* between two colours, which is the thing that was actually wrong.
+ *
+ * Two rules the numbers encode, so nobody has to rediscover them:
+ *
+ *   - Text is measured against `surface`, not `background`. Almost all of it
+ *     sits on a card, and a value tuned to the page is a value that fails on
+ *     everything drawn on top of it. That is exactly how `faint` shipped at
+ *     4.47:1 in light mode.
+ *   - The elevation steps have to be a step. Levels four units apart per
+ *     channel are the same colour on a dimmed phone screen, however carefully
+ *     each one was chosen.
  */
 :root {
   --background: #ffffff;
   /* Settings only: grouped rows read as cards against a tinted page. */
   --background-grouped: #f4f4f5;
   --foreground: #171717;
-  --muted: #6b7280;
-  --faint: #71717a;
+  /* Both were picked against white and then used on cards, where they landed
+     at 4.48 and 4.47 — under the line, in the scheme nobody had looked at yet.
+     The contrast test found them.
+     `faint` is the binding constraint, being the lighter of the two: it sits
+     just clear of 4.5 on `surface`, and `muted` is pushed down from there to
+     keep a visible step between them rather than two tokens that read the
+     same. */
+  --muted: #575e6b;
+  --faint: #6d6d76;
   --surface: #f6f6f7;
   --surface-sunken: #fafafa;
   /* The raised element on a sunken track — a selected segment. */
@@ -72,13 +87,19 @@
     --background-grouped: #0b0b0d;
     --foreground: #ededed;
     --muted: #9ca3af;
-    --faint: #7c7c86;
-    --surface: #17171a;
+    --faint: #94949f;
+    /* The elevation steps used to sit 4-12 units apart per channel, which is
+       arithmetic rather than design: on a phone at anything below full
+       brightness, a card and the page behind it were the same black, and the
+       sheet's icon tiles were invisible. Reported twice as "can't see much".
+       Each level is now a step you can actually see, and every text token still
+       clears 4.5:1 on the lightest of them — `faint` was lifted to keep up. */
+    --surface: #1e1e24;
     --surface-sunken: #131317;
-    --surface-raised: #23232a;
-    --border: #2a2a30;
-    --border-faint: #1c1c21;
-    --icon-faint: #3a3a42;
+    --surface-raised: #2b2b34;
+    --border: #383842;
+    --border-faint: #26262d;
+    --icon-faint: #52525e;
     --accent: #818cf8;
     /* The dark accent is already light enough to read on its own tint. */
     --accent-deep: #818cf8;
