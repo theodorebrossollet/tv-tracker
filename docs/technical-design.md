@@ -341,13 +341,28 @@ No session/auth check needed in v1 — every action just operates on the single 
 - Trailers: `GET /tv/{id}/videos` and `GET /tv/{id}/season/{n}/videos` — the best YouTube trailer is picked by preferring official trailers over teasers, and anything that isn't a trailer or teaser (featurettes, recaps, opening credits — which dominate season video lists) is rejected rather than shown under a "Trailer" heading. Season coverage is patchy; only seasons that yield one appear in the picker.
 
 **Caching these is done in-process, not by Next.** `lib/tmdb.ts` keeps a small
-TTL map for the region list and video lists. Next's own fetch cache can't do it
-here: these pages are `dynamic = "force-dynamic"`, which forces
-`fetchCache: "force-no-store"` and discards any `next: { revalidate }` a fetch
-asks for. Setting `export const fetchCache = "default-cache"` does *not*
-override it — measured, not assumed. Before the in-process cache, one Game of
-Thrones page view cost 11 TMDB requests every single time; it is now 11 cold
-and 1 warm.
+TTL map for the provider matrix, the region list, video lists and search
+results. Next's own fetch cache can't do it here: these pages are
+`dynamic = "force-dynamic"`, which forces `fetchCache: "force-no-store"` and
+discards any `next: { revalidate }` a fetch asks for. Setting
+`export const fetchCache = "default-cache"` does *not* override it — measured,
+not assumed. Before the in-process cache, one Game of Thrones page view cost 11
+TMDB requests every single time; it is now 11 cold and 1 warm.
+
+The per-show sync (`/tv/{id}` and each season) is deliberately **not** in that
+map: it is the thing a manual refresh exists to redo, so serving it from a cache
+would make the refresh button a lie. Its bound is the five-minute `lastSynced`
+cooldown instead. Search is cached for only 60s, which is less about repeat
+requests than about being the one path a signed-in caller can drive without any
+bound — `searchSuggestions` is POST-able directly and has no cooldown of its own.
+
+**Every request carries a timeout** (`REQUEST_TIMEOUT_MS`, 8s). Node's `fetch`
+defaults to 300s, five times the 60s `maxDuration` on the cron route and the
+show page, so without one an unresponsive TMDB doesn't fail — it takes the whole
+function down. That matters most to the cron, whose deadline check runs
+*between* shows while a show is a sequential walk of every season: one slow show
+is one unbounded iteration, and being killed mid-loop costs the completion log
+and the expired-session sweep both.
 
 The map stores the **in-flight promise**, not the resolved value. Storing the
 value meant every concurrent miss on a cold instance fired its own request — and
@@ -588,7 +603,16 @@ Covered:
 - **TMDB client** — v3-key vs v4-token auth, error mapping, trailer ranking
   (rejects featurettes and recaps), provider grouping, the in-process cache.
 - **Query aggregation** — aired vs upcoming counts, "fully watched", next-up,
-  upcoming across both lists.
+  upcoming across both lists. These are computed in SQL now, which changed what
+  the tests are for: a wrong `GROUP BY` returns a plausible number rather than
+  an error, so `tests/large-library.test.ts` checks sizes where a smeared join
+  would still look believable, and the subtle rules are pinned individually
+  (a watch mark on an unaired episode is activity but not progress; a tracked
+  show with no episodes yet still renders; next-up crosses season boundaries).
+- **Account isolation** — `tests/isolation.test.ts`, written so each case fails
+  against the version that drops its `userId`. The most valuable suite here.
+- **Route gates and the service worker** — a page with no session gate, and a
+  worker that caches something it shouldn't, are both silent in review.
 - **Formatting** — timezone-stable dates, relative air dates.
 - **Components** (jsdom) — status badge covers all four statuses, list
   pagination including the partial final page.
@@ -640,16 +664,51 @@ inside it are same-origin — and the Danger Zone is two clicks from wiping an
 account.
 
 The CSP carries `frame-ancestors 'none'`, `base-uri 'none'`, `object-src 'none'`
-and `form-action 'self'`. There is still no `script-src`: that one genuinely
-needs a nonce for Next's inline bootstrap and remains a separate project. The
-other three don't, which is the whole reason they are there — "a real CSP needs
-a nonce" was being read as "no CSP directives are affordable", and `base-uri` is
-the one that matters most in the meantime. Without a `script-src`, an injected
-`<base>` silently retargets every relative script URL on the page and nothing
-else in this policy stops it.
+and `form-action 'self'`. Those three beyond `frame-ancestors` are there because
+"a real CSP needs a nonce" had been read as "no CSP directives are affordable",
+which is not the same claim — none of them needs one. `base-uri` is the one that
+earns its place: without a `script-src`, an injected `<base>` silently retargets
+every relative script URL on the page, and nothing else in this policy stops it.
 
-When the `script-src` work does land, the trailer needs
-`frame-src https://www.youtube-nocookie.com` the moment a `default-src` appears.
+### No `script-src`, decided rather than deferred
+
+This was weighed on 6 Aug 2026 and **deliberately left out**. It had been
+carried as "a separate project", which reads like a queue item; it isn't one.
+
+The blocker is real: Next serves an inline bootstrap script, a strict
+`script-src` blocks inline scripts, and the standard fix is a per-request nonce.
+Minting a fresh nonce for every request needs **middleware**, and this app has
+none by design — route protection is a gate called inside each page, with
+`tests/route-gates.test.ts` as the backstop. Middleware would add a layer every
+request passes through and a new place for a check to sit and quietly not fire.
+
+Set against that, the thing it defends is close to unreachable here:
+
+- React escapes what it renders, so injected markup does not become live code.
+- There is no `dangerouslySetInnerHTML` anywhere in the app.
+- The TMDB values that could carry a payload are validated where the response is
+  mapped: provider links must be https, YouTube ids are charset-checked.
+- Accounts are invitation-only and the app renders no user-written content —
+  a nickname is the only user-supplied string that reaches a page, and it is
+  restricted to `[A-Za-z0-9@#$&*!_.-]`.
+
+So it is a structural change to the request path, buying a second line of
+defence for a first line that has no known way through. **Revisit when either of
+these becomes true**, because both widen the surface enough to change the answer:
+
+- the app starts rendering user-written content (notes, reviews, shared lists —
+  all on the roadmap), or
+- sign-up stops being invitation-only.
+
+`Content-Security-Policy-Report-Only` is the cheap first step whenever that
+happens: it sends the strict policy, blocks nothing, and reports what *would*
+have broken. It needs somewhere to receive the reports, which is why it isn't
+already on.
+
+Two things to carry into that work: the trailer needs
+`frame-src https://www.youtube-nocookie.com` the moment a `default-src` appears,
+and `/sw.js` already sets its own stricter policy that would have to be kept in
+step (see the ordering trap below).
 
 Note the ordering trap: matching `headers()` entries do **not** merge per key —
 the last one to set a key wins. The catch-all is listed first and the `/sw.js`

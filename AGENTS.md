@@ -21,7 +21,7 @@ or the manifest/service worker.
 
 ```bash
 npm run dev        # local server (localhost:3000)
-npm test           # vitest, ~290 tests, no network or server needed
+npm test           # vitest, ~450 tests, no network or server needed
 npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally
@@ -47,7 +47,8 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 ```
 src/app/          routes; actions.ts holds every write
 src/components/   UI; search is an overlay here, NOT a route
-src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger
+src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
+                  search-params (the URL params any screen is allowed to read)
 prisma/           schema + migrations
 scripts/          migrate, backup, one-off backfills, icon generation
 public/sw.js      service worker: caches the app shell ONLY (see below)
@@ -176,6 +177,15 @@ returns. Both halves are required. The gate goes *above* each `try` block —
 `userId` filter returns someone else's rows and still type-checks.
 `tests/isolation.test.ts` covers this; add to it when adding a query.
 
+Sharper in the two raw queries in `lib/queries.ts`: `userId` is a join
+condition there, not a `where` clause, so there is no field to omit — only
+`AND w."userId" = ${userId}` to drop, which reads like a formatting change and
+turns one account's progress into the household's. Raw SQL also gives up the
+one guardrail Prisma still offered, since a bad `where` at least had to
+type-check against the model. Bind dates as `Date`, never as epoch
+milliseconds: `DateTime` is stored as ISO text, so an integer comparison matches
+nothing and silently reports every show as having nothing aired.
+
 **Route protection is per-file convention, with one backstop.** Nothing
 enforces that a new page or route handler calls a gate — there is no middleware,
 and the `APP_PASSWORD` net that used to catch the omission is gone, so a
@@ -196,12 +206,16 @@ if either changes.
 **Header entries in `next.config.ts` do not stack per key.** Two matching
 `headers()` entries that set the *same* key don't merge; the last one wins.
 A catch-all listed after the `/sw.js` entry silently replaced the worker's
-`default-src 'self'; script-src 'self'` with a weaker policy — the response
-still carried a `Content-Security-Policy`, just the wrong one, and different
-keys (`Content-Type`, `Cache-Control`) survived, which is what makes it hard to
-spot. The catch-all goes first and `/sw.js` restates the full policy it needs.
-Check header changes against a built server (`npm run build && npx next start`,
-then `curl -sI`), not by reading the config.
+own policy with a weaker one — the response still carried a
+`Content-Security-Policy`, just the wrong one, and different keys
+(`Content-Type`, `Cache-Control`) survived, which is what makes it hard to spot.
+The catch-all goes first and `/sw.js` restates the full policy it needs.
+
+The consequence to remember when editing either: **anything added to the
+catch-all has to be repeated in the `/sw.js` entry**, or the worker silently
+loses it. The two have drifted apart once already. Check header changes against
+a built server (`npm run build && npx next start`, then `curl -sI`), not by
+reading the config.
 
 **The service worker must never cache a page.** Every route is
 `force-dynamic` and renders per-account watch state, so a cached page is

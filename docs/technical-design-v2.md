@@ -134,6 +134,13 @@ just filters. In `src/lib/queries.ts`:
 - `getTrackedShows` selects `watched: { select: { watchedAt: true } }` and then
   tests `episode.watched !== null` three times (aired/next-unwatched/last-watched).
   All three now read an array.
+
+  *(Historical, as of 6 Aug 2026: this function no longer reads through the
+  relation at all. The counts, `MAX(watchedAt)` and next-unwatched are computed
+  by the database in two raw queries — see `docs/roadmap.md`. The trap it
+  describes is still live everywhere else the relation is read, and the raw
+  version replaces it with a sharper one: there is no `where` clause to leave
+  out, only a join condition to get wrong, and no type error either way.)*
 - `getUpcomingEpisodes` filters `show: { tracked: { status: { in: [...] } } }` —
   a to-one filter that becomes `tracked: { some: { ... } }` — and then reads
   `episode.show.tracked!.status`.
@@ -603,13 +610,18 @@ choices below are settled rather than deferred.
   Turbopack. Since §6's whole point is that this project caches the shell and
   nothing else, taking on a webpack config to get a library we'd use a tenth of
   is the wrong trade. The guide hand-writes `public/sw.js` too.
-- **Add a `headers()` block to `next.config.ts` for `/sw.js`** — it has none
-  today. Specifically `Cache-Control: no-cache, no-store, must-revalidate`:
-  without it, a cached service worker is how users get permanently stuck on an
-  old one, which is the failure mode that makes people hate PWAs. The guide
-  also suggests `Content-Type: application/javascript; charset=utf-8` and
-  `Content-Security-Policy: default-src 'self'; script-src 'self'` on that
-  path.
+- **Add a `headers()` block to `next.config.ts` for `/sw.js`** — it had none
+  when this was written. Specifically `Cache-Control: no-cache, no-store,
+  must-revalidate`: without it, a cached service worker is how users get
+  permanently stuck on an old one, which is the failure mode that makes people
+  hate PWAs. The guide also suggests
+  `Content-Type: application/javascript; charset=utf-8` and
+  `Content-Security-Policy: default-src 'self'; script-src 'self'` on that path.
+
+  *Shipped, and the policy has since grown past what the guide suggested —
+  read `next.config.ts` for what it actually sends rather than this bullet. Note
+  the entry restates its policy in full on purpose; see the ordering trap in
+  `AGENTS.md`.*
 - **Install criteria are just a valid manifest plus HTTPS.** Confirmed in the
   guide: install prompts do not require offline support. That is what makes the
   shell-only decision below viable rather than a compromise.
