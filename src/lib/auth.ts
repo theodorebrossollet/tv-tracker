@@ -190,6 +190,21 @@ export async function requireOnboardedSession(): Promise<SessionContext> {
   return session;
 }
 
+/**
+ * Drops the session cookie without touching the database.
+ *
+ * Split out for callers that have *already* deleted the rows —
+ * `signOutEverywhere` deletes every session on the account, so the row behind
+ * this cookie is provably gone and `destroySession` would spend a round trip
+ * deleting nothing. The cookie still has to go: left in place the browser keeps
+ * presenting a token until it expires, and every request pays a lookup to be
+ * told it is invalid.
+ */
+export async function clearSessionCookie(): Promise<void> {
+  const store = await cookies();
+  store.delete(SESSION_COOKIE);
+}
+
 /** Revokes the current session. Clears the cookie, so actions only. */
 export async function destroySession(): Promise<void> {
   const store = await cookies();

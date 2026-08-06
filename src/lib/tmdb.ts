@@ -134,6 +134,23 @@ async function cached<T>(
   return value;
 }
 
+/**
+ * How long to wait on TMDB before giving up on a single request.
+ *
+ * Node's fetch defaults to a 300s headers/body timeout — five times the 60s
+ * `maxDuration` on both the cron route and the show page, so without a bound of
+ * our own an unresponsive TMDB doesn't fail, it just takes the whole function
+ * down with it.
+ *
+ * The cron is where that actually costs something. Its deadline check runs
+ * *between* shows, and a show is a sequential walk of every season, so one slow
+ * show is one unbounded iteration — the run gets killed mid-loop and takes the
+ * completion log and the expired-session sweep with it, which is precisely what
+ * `DEADLINE_MS` exists to prevent. Eight seconds is many times TMDB's normal
+ * response and still leaves a ten-season walk inside the budget.
+ */
+const REQUEST_TIMEOUT_MS = 8_000;
+
 async function tmdbFetch<T>(
   path: string,
   params: Record<string, string> = {},
@@ -145,8 +162,15 @@ async function tmdbFetch<T>(
     // Show data isn't cached here — it's cached in our own database instead
     // (see the Show/Episode models), which is the caching layer the design doc
     // calls for. Endpoints that aren't per-show go through `cached()` above.
-    response = await fetch(url, { headers, cache: "no-store" });
+    response = await fetch(url, {
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   } catch (cause) {
+    // Covers the timeout above as well as a genuine transport failure — both
+    // arrive here, and "couldn't reach TMDB" is the honest answer to each.
+    //
     // `TmdbError.message` is handed straight to the browser by `toResult`, and
     // a transport failure's message is not ours to vet — undici doesn't
     // normally put the URL in it, but the request URL carries the v3 API key in
@@ -268,16 +292,36 @@ interface RawSearchResponse {
   }>;
 }
 
+/**
+ * Short, because a search result is the one thing here that genuinely changes:
+ * a new show appears the day TMDB adds it. A minute is long enough to cover
+ * what the overlay actually does — reopening it, retyping a title, backing out
+ * of a show and searching the same thing again — without holding a stale answer
+ * long enough for anyone to notice.
+ *
+ * Worth caching at all because this is the only TMDB call an ordinary
+ * interaction makes on every use, and the only one a signed-in caller can drive
+ * at will: the action is POST-able directly with no cooldown, and TMDB's rate
+ * limit is shared by everyone using the app.
+ */
+const SEARCH_CACHE_SECONDS = 60;
+
 export async function searchTvShows(
   query: string,
 ): Promise<TmdbSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const data = await tmdbFetch<RawSearchResponse>("/search/tv", {
-    query: trimmed,
-    include_adult: "false",
-  });
+  // Keyed on the exact query string, so two people searching the same title
+  // within the window share one request. Case included: TMDB treats "The Wire"
+  // and "the wire" as the same search, but folding them here would be this
+  // module deciding that on its behalf.
+  const data = await cached(`search:${trimmed}`, SEARCH_CACHE_SECONDS, () =>
+    tmdbFetch<RawSearchResponse>("/search/tv", {
+      query: trimmed,
+      include_adult: "false",
+    }),
+  );
 
   return data.results.map((result) => ({
     id: result.id,
@@ -311,6 +355,15 @@ export async function getShowDetails(
   return {
     id: data.id,
     name: data.name,
+    // Not validated here, unlike provider links and YouTube ids — the two
+    // exceptions to this module's "check TMDB's values where the response is
+    // mapped" rule, and worth knowing why rather than reading as an omission.
+    // Image paths are only ever concatenated into an `image.tmdb.org` URL by
+    // `lib/images.ts` and handed to `next/image`, whose `remotePatterns` in
+    // next.config.ts pins both host and `/t/p/**` path. A path trying to escape
+    // normalises to something that fails that check and simply doesn't render.
+    // The guarantee is the allow-list, so it belongs there; if these paths ever
+    // reach a plain <img>, it moves here.
     posterPath: data.poster_path,
     overview: data.overview || null,
     // Season 0 is TMDB's "Specials" bucket; skip it, and skip empty seasons

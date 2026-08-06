@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { carryParams, oneParam } from "@/lib/search-params";
+
 interface ShowMoreLinkProps {
   /** Search-param name this list reveals itself with. */
   param: string;
@@ -27,7 +29,9 @@ interface ShowMoreLinkProps {
  * reader back where they started every time they asked for more.
  *
  * Other params are carried across so two lists on one page (Archive's Finished
- * and Stopped) expand independently rather than collapsing each other.
+ * and Stopped) expand independently rather than collapsing each other — but
+ * only the ones this app actually reads. See `lib/search-params.ts` for why
+ * copying the URL wholesale was the wrong shape.
  */
 export function ShowMoreLink({
   param,
@@ -37,12 +41,7 @@ export function ShowMoreLink({
   remaining,
   label,
 }: ShowMoreLinkProps) {
-  const next = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(current)) {
-    if (key === param || value === undefined) continue;
-    next.set(key, Array.isArray(value) ? (value.at(-1) ?? "") : value);
-  }
+  const next = carryParams(current, param);
 
   next.set(param, String(shown + step));
 
@@ -71,9 +70,7 @@ export function limitFrom(
   fallback: number,
   max = 500,
 ): number {
-  const raw = searchParams[param];
-  const value = Array.isArray(raw) ? raw.at(-1) : raw;
-  const parsed = Number(value);
+  const parsed = Number(oneParam(searchParams, param));
 
   if (!Number.isInteger(parsed) || parsed < 1) return fallback;
 

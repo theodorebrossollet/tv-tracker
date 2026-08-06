@@ -55,6 +55,48 @@ changes to it need a device — Chrome on Android and an installed iOS PWA both
 have their own pull-to-refresh, suppressed by `overscroll-behavior-y: contain`
 on `body`.
 
+## Shipped from the second review (5 Aug 2026)
+
+Kept for the reasoning, which outlives the diffs:
+
+- **The login throttle counted a parallel batch as one attempt.** See
+  `docs/technical-design-v2.md` §4. The lesson generalises past this counter:
+  putting state in the database because instances are short-lived buys nothing
+  if the arithmetic on it still happens in Node.
+- **Nothing bounded a TMDB request.** Node's fetch defaults to a 300s timeout,
+  five times the 60s `maxDuration` on the cron route and the show page, so an
+  unresponsive TMDB didn't fail — it took the function down. The cron's
+  `DEADLINE_MS` couldn't help: it checks *between* shows, and a show is a
+  sequential walk of every season, so one slow show is one unbounded iteration
+  and the run dies mid-loop without its completion log or the session sweep.
+  `REQUEST_TIMEOUT_MS` in `lib/tmdb.ts` is what makes the deadline real.
+- **The service worker's shell cache had no upper bound.** `activate` is the
+  only thing that deletes anything and it never runs again, because `sw.js` is
+  byte-identical between builds and the browser sees no update to install —
+  while every deploy renames every chunk it stores. It grew until the browser
+  evicted the origin wholesale. Capped at `MAX_ENTRIES`, anchored to the ~35
+  files one build produces.
+- **`revalidatePath("/show", "layout")` named a layout that doesn't exist.**
+  `app/show/` has no `layout.tsx` and the route is `/show/[id]`; per Next's own
+  docs a dynamic segment has to be spelled out as the pattern. A call matching
+  no layout fails silently. Both callers use `revalidateShowViews()` now.
+- **`msPerShow` divided by shows the deadline never visited** — understating
+  the headroom figure on precisely the runs it exists to describe.
+- **Search was the one TMDB path a signed-in caller could drive without a
+  bound.** Every other expensive path has one; `searchTvShows` now goes through
+  the same `cached()` helper as regions and trailers.
+- **Links copied the whole URL forward.** Every "show more" and tab link
+  reflected every param a visitor arrived with, so a crafted link cost
+  params × links of render. `lib/search-params.ts` names the set instead, which
+  also documents in one place what a URL here is allowed to say.
+- **Isolation coverage had three gaps** — `demoteIfNothingWatched`,
+  `searchSuggestions` and `setAside`/`resumeShow`. The first is the one that
+  mattered: a `count` through a relation, the exact shape this file exists for.
+
+Not done, and deliberately: the session cookie has no `__Host-` prefix.
+Renaming it signs everyone out, which is a real cost against a marginal gain
+given `secure` already has to vary by environment for localhost.
+
 ## Deferred performance work
 
 Carried over from the security & efficiency review (2 Aug 2026), whose other

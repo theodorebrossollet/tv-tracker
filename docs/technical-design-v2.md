@@ -385,6 +385,20 @@ rather than per IP for the reason the old `proxy.ts` already documented — an
 in-process counter resets constantly across serverless instances and reads as
 protection while providing none.
 
+**The counter is incremented by the database, and has to be.** It was computed
+in Node for a while — `failedLogins + 1` against a row read a statement earlier,
+with no transaction between the read and the write. Attempts sent *in parallel*
+therefore all read the same count and all wrote the same successor, so a batch
+of N wrong guesses advanced the counter by one. Past the 5-minute cap that is
+the difference between ~288 guesses a day and ~288 × N, and the concurrency
+costs an attacker nothing on a platform that scales out per request — the same
+observation that put this counter in the database in the first place applies to
+the arithmetic done on it. `{ increment: 1 }` makes it monotonic; `lockedUntil`
+is written only when there is a lock to record, because writing `null` on every
+sub-threshold failure is the one statement that could clear a lock a concurrent
+request had just set. `tests/auth.test.ts` fires a batch at it and fails against
+the read-modify-write version.
+
 The cap and the escape hatch are what make locking safe. An uncapped doubling
 would eventually lock someone out for weeks, and a lockout with no way around
 it would let a stranger who knows your nickname deny you your own account.

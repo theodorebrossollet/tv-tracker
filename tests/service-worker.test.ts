@@ -35,10 +35,14 @@ function loadWorker() {
   const listeners = new Map<string, (event: unknown) => void>();
   const store = new Map<string, FakeResponse>();
 
+  // A Map preserves insertion order, which is what the Cache API guarantees for
+  // `keys()` and what the worker's eviction relies on to drop the oldest entry.
   const cache = {
     put: vi.fn(async (request: { url: string }, value: FakeResponse) => {
       store.set(request.url, value);
     }),
+    keys: vi.fn(async () => [...store.keys()].map((url) => ({ url }))),
+    delete: vi.fn(async (request: { url: string }) => store.delete(request.url)),
   };
 
   const fetchMock = vi.fn(async () => response());
@@ -150,5 +154,41 @@ describe("what the shell cache stores", () => {
     const result = await worker.handleFetch("https://image.tmdb.org/t/p/w500/x.jpg");
 
     expect(result.intercepted).toBe(false);
+  });
+});
+
+describe("how the shell cache is bounded", () => {
+  // Nothing else prunes it. `activate` only deletes caches under a *different*
+  // name, and this file never changes between builds, so after the first
+  // install the browser sees no update and activate never runs again — while
+  // every deploy renames every chunk it stores. Without a cap the cache grows
+  // for the lifetime of the installation.
+  it("stops growing, and drops the oldest entries first", async () => {
+    const total = 400;
+
+    for (let i = 0; i < total; i++) {
+      await worker.handleFetch(`${ORIGIN}/_next/static/chunks/${i}.js`);
+    }
+
+    const cached = [...worker.store.keys()];
+
+    expect(cached.length).toBeLessThan(total);
+
+    // Oldest gone, newest kept — content-hashed filenames mean the oldest
+    // entries are the previous builds' and the newest are the current one's.
+    expect(cached).not.toContain(`${ORIGIN}/_next/static/chunks/0.js`);
+    expect(cached).toContain(`${ORIGIN}/_next/static/chunks/${total - 1}.js`);
+  });
+
+  it("holds more than a single build's worth of assets", async () => {
+    // The cap has to clear one build comfortably. Set too close to it, every
+    // request would evict something the same build is about to ask for again —
+    // which is worse than the unbounded growth it replaced. A build is ~35
+    // files today; 100 is a floor that stays true if the app doubles.
+    for (let i = 0; i < 100; i++) {
+      await worker.handleFetch(`${ORIGIN}/_next/static/chunks/${i}.js`);
+    }
+
+    expect(worker.store.size).toBe(100);
   });
 });

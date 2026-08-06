@@ -17,6 +17,45 @@ const CACHE = "tv-tracker-shell-v1";
 // stale before it was useful.
 const CACHEABLE = [/^\/_next\/static\//, /^\/icon-.*\.png$/, /^\/apple-touch-icon\.png$/];
 
+/**
+ * Ceiling on cached entries, because nothing else ever removes one.
+ *
+ * `activate` is the only thing here that deletes anything, and it runs when the
+ * worker changes — which this one doesn't. This file is byte-identical from one
+ * build to the next, so after the first install the browser has no update to
+ * install and `activate` never fires again. Every deploy, meanwhile, renames
+ * every asset it caches, because Next content-hashes them. So the cache only
+ * ever grows: nothing prunes the previous build's chunks, and the ceiling ends
+ * up being the browser evicting this origin's storage wholesale under quota
+ * pressure — which takes the cache with it and reads as "the app got slow".
+ *
+ * A cap rather than a versioned cache name: there is no build id available in a
+ * file served verbatim from public/, and nothing tells the worker which assets
+ * the current build still wants. One build is ~35 files today, so this holds
+ * several of them — enough that a visit spanning a deploy keeps both the new
+ * build's assets and the ones still being requested, and far enough above one
+ * build that a growing app doesn't start evicting entries it is about to want
+ * again.
+ */
+const MAX_ENTRIES = 150;
+
+/**
+ * Stores a response, then trims the cache back to `MAX_ENTRIES`.
+ *
+ * `cache.keys()` resolves in insertion order per the Cache API, so taking from
+ * the front drops the least recently added — for content-hashed assets, the
+ * oldest build's.
+ */
+async function putCapped(cache, request, response) {
+  await cache.put(request, response);
+
+  const keys = await cache.keys();
+
+  for (let i = 0; i < keys.length - MAX_ENTRIES; i++) {
+    await cache.delete(keys[i]);
+  }
+}
+
 self.addEventListener("install", (event) => {
   // Take over without waiting for existing tabs to close, so a fixed worker
   // ships on the next visit rather than the next cold start.
@@ -57,7 +96,7 @@ self.addEventListener("fetch", (event) => {
       // later visitor of that URL — including one who is signed in.
       if (response.ok && response.status === 200 && response.type === "basic") {
         const cache = await caches.open(CACHE);
-        cache.put(request, response.clone());
+        await putCapped(cache, request, response.clone());
       }
 
       return response;

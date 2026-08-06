@@ -190,8 +190,16 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
   );
 }
 
-/** How long a cached-but-untracked show may go without a re-sync. */
-const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+/**
+ * How long a cached-but-untracked show may go without a re-sync.
+ *
+ * Exported because the show page reads it too, to decide whether to tell the
+ * visitor a refresh is under way. That claim is only true if it is measured
+ * against the same threshold `ensureShowCached` actually schedules on — two
+ * constants that merely start out equal would let the page announce a refresh
+ * nothing is doing.
+ */
+export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Refreshes currently running, keyed by show id.

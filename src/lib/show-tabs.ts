@@ -16,19 +16,18 @@
  * `limitFrom` bounds the list params.
  */
 
+import {
+  carryParams,
+  oneParam as one,
+  type SearchParams as Params,
+} from "@/lib/search-params";
+
 export const SHOW_TABS = ["episodes", "watch", "about"] as const;
 
 export type ShowTab = (typeof SHOW_TABS)[number];
 
 export const TAB_PARAM = "tab";
 export const SEASON_PARAM = "season";
-
-type Params = Record<string, string | string[] | undefined>;
-
-function one(params: Params, key: string): string | undefined {
-  const raw = params[key];
-  return Array.isArray(raw) ? raw.at(-1) : raw;
-}
 
 /** Anything that isn't a known tab is the default one, not an error. */
 export function tabFrom(params: Params): ShowTab {
@@ -63,17 +62,16 @@ export function seasonFrom(
  * The tab and the season have to travel together: switching tab while holding
  * season 3 and coming back to a page that forgot it is the kind of small
  * betrayal that makes a control feel broken.
+ *
+ * "The rest" means the params in `KNOWN_PARAMS`, not everything in the URL —
+ * see `lib/search-params.ts`. `changes` is not filtered, because it comes from
+ * this codebase rather than from the request.
  */
 export function showHref(
   current: Params,
   changes: Record<string, string | number | undefined>,
 ): string {
-  const next = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(current)) {
-    if (value === undefined) continue;
-    next.set(key, Array.isArray(value) ? (value.at(-1) ?? "") : value);
-  }
+  const next = carryParams(current);
 
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) next.delete(key);

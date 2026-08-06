@@ -110,6 +110,12 @@ export async function GET(request: Request) {
 
   const durationMs = Date.now() - startedAt;
 
+  // Shows the loop actually spent time on. `tracked.length` counts the ones the
+  // deadline never reached too, so dividing by it understates the cost per show
+  // — and understates it *only* on a run that hit the deadline, which is the
+  // one run anybody goes and reads this figure for.
+  const visited = refreshed.length + failed.length;
+
   // A run that hit the deadline is the one worth noticing, and an info line
   // among a year of identical info lines is not noticing. Warnings go to
   // stderr, so this separates itself out without anyone having to remember to
@@ -123,13 +129,13 @@ export async function GET(request: Request) {
     // How many the deadline left untouched. Non-zero is the signal that the
     // library has outgrown one run — they'll be first in line tomorrow, but
     // it's worth knowing before the backlog does something visible.
-    skipped: tracked.length - refreshed.length - failed.length,
+    skipped: tracked.length - visited,
     deadlineHit,
     expiredSessions,
     durationMs,
     // Pre-divided: this is the figure the timeout headroom is read off, and
     // doing the arithmetic by hand at 6am is how it stops being read at all.
-    msPerShow: tracked.length ? Math.round(durationMs / tracked.length) : null,
+    msPerShow: visited ? Math.round(durationMs / visited) : null,
   });
 
   return Response.json({

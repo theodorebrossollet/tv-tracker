@@ -482,6 +482,30 @@ describe("login throttling", () => {
     ).resolves.toMatchObject({ failedLogins: 3, lockedUntil: null });
   });
 
+  it("counts every failure when they arrive at once", async () => {
+    // The throttle's whole value is the count, and the count used to be
+    // computed in Node from a row read a statement earlier: `failedLogins + 1`
+    // against a value every concurrent request had already fetched. All of them
+    // wrote the same successor, so a batch of N wrong guesses advanced the
+    // counter by one — worth roughly a 200x increase in guesses per lockout
+    // window against an attacker who simply doesn't send them in series, which
+    // is free on a platform that scales out per request.
+    //
+    // Fails against the read-modify-write version, which lands on 1.
+    const user = await makeOnboardedUser();
+    const attempts = 6;
+
+    await Promise.all(
+      Array.from({ length: attempts }, () =>
+        loginWithPassword("theo", "not-the-password"),
+      ),
+    );
+
+    await expect(
+      prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).resolves.toMatchObject({ failedLogins: attempts });
+  });
+
   it("locks the account once the threshold is crossed", async () => {
     const user = await makeOnboardedUser();
 

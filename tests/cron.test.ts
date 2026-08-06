@@ -278,6 +278,12 @@ describe("finishing inside the deadline", () => {
     expect(fields!.deadlineHit).toBe(true);
     expect(fields!.skipped).toBe(2);
 
+    // Divided by the shows the loop actually visited, not by everything it was
+    // handed. One show cost the whole minute; dividing by all three reports 20s
+    // and makes the budget look three times healthier than it is — on the only
+    // kind of run anyone reads this number for.
+    expect(fields!.msPerShow).toBe(60_000);
+
     info.mockRestore();
     warn.mockRestore();
     vi.mocked(Date.now).mockRestore();
