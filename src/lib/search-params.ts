@@ -39,6 +39,7 @@ export const KNOWN_PARAMS = [
   // Library — watchlist segment, then archive.
   "watchlist",
   "paused",
+  "caughtUp",
   "finished",
   "stopped",
   // Settings.

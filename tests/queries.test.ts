@@ -436,8 +436,11 @@ describe("bucketing", () => {
     await seedShow({ showId: "a", offsets: [-10, -3], status: "watching", watched: [0] });
     await seedShow({ showId: "b", offsets: [-10], status: "watchlist" });
     await seedShow({ showId: "c", offsets: [-10, -3], status: "paused", watched: [0] });
-    await seedShow({ showId: "d", offsets: [-10], status: "watching", watched: [0] });
+    await seedShow({ showId: "d", offsets: [-10], status: "watching", watched: [0],
+                     showStatus: "Ended" });
     await seedShow({ showId: "e", offsets: [-10], status: "stopped", watched: [0] });
+    await seedShow({ showId: "f", offsets: [-10], status: "watching", watched: [0],
+                     showStatus: "Returning Series" });
 
     const buckets = await getShowBuckets(TEST_USER_ID);
     const ids = (list: { showId: string }[]) => list.map((s) => s.showId);
@@ -447,18 +450,52 @@ describe("bucketing", () => {
     expect(ids(buckets.paused)).toEqual(["c"]);
     expect(ids(buckets.finished)).toEqual(["d"]);
     expect(ids(buckets.stopped)).toEqual(["e"]);
+    expect(ids(buckets.caughtUp)).toEqual(["f"]);
 
     // The real invariant: no show is listed twice.
     const all = [...ids(buckets.watching), ...ids(buckets.watchlist),
-                 ...ids(buckets.paused), ...ids(buckets.finished), ...ids(buckets.stopped)];
+                 ...ids(buckets.paused), ...ids(buckets.caughtUp),
+                 ...ids(buckets.finished), ...ids(buckets.stopped)];
     expect(new Set(all).size).toBe(all.length);
-    expect(all).toHaveLength(5);
+    expect(all).toHaveLength(6);
+  });
+
+  it("splits fully watched shows by whether the series is over", async () => {
+    // The two mean opposite things: one is done, the other is between seasons
+    // and will come back on its own.
+    const { getShowBuckets } = await import("@/lib/queries");
+
+    await seedShow({ showId: "over", offsets: [-10], status: "watching", watched: [0],
+                     showStatus: "Ended" });
+    await seedShow({ showId: "cancelled", offsets: [-10], status: "watching", watched: [0],
+                     showStatus: "Canceled" });
+    await seedShow({ showId: "returning", offsets: [-10], status: "watching", watched: [0],
+                     showStatus: "Returning Series" });
+
+    const buckets = await getShowBuckets(TEST_USER_ID);
+
+    expect(buckets.finished.map((s) => s.showId).sort()).toEqual(["cancelled", "over"]);
+    expect(buckets.caughtUp.map((s) => s.showId)).toEqual(["returning"]);
+  });
+
+  it("treats a show with no TMDB status as still running", async () => {
+    // Same rule `caughtUpLabel` uses: only an explicit Ended or Canceled means
+    // over, so a row cached before the status was synced isn't declared
+    // finished on the strength of a missing field.
+    const { getShowBuckets } = await import("@/lib/queries");
+
+    await seedShow({ offsets: [-10], status: "watching", watched: [0], showStatus: null });
+
+    const buckets = await getShowBuckets(TEST_USER_ID);
+
+    expect(buckets.caughtUp.map((s) => s.showId)).toEqual(["101"]);
+    expect(buckets.finished).toEqual([]);
   });
 
   it("finished wins over paused", async () => {
     // A paused show you'd already completed belongs in the Archive, not in the
     // list of things you mean to get back to.
-    await seedShow({ offsets: [-10], status: "paused", watched: [0] });
+    await seedShow({ offsets: [-10], status: "paused", watched: [0], showStatus: "Ended" });
 
     const { getShowBuckets } = await import("@/lib/queries");
     const buckets = await getShowBuckets(TEST_USER_ID);
@@ -467,16 +504,31 @@ describe("bucketing", () => {
     expect(buckets.paused).toEqual([]);
   });
 
+  it("caught up wins over paused too", async () => {
+    // The split has to happen on the same side of the precedence chain as
+    // finished did, or pausing a running show you're up to date with would
+    // move it somewhere else entirely.
+    await seedShow({ offsets: [-10], status: "paused", watched: [0],
+                     showStatus: "Returning Series" });
+
+    const { getShowBuckets } = await import("@/lib/queries");
+    const buckets = await getShowBuckets(TEST_USER_ID);
+
+    expect(buckets.caughtUp.map((s) => s.showId)).toEqual(["101"]);
+    expect(buckets.paused).toEqual([]);
+  });
+
   it("stopped wins over finished", async () => {
     // Abandoning a show is a decision; finishing it is an episode count. The
     // decision is the more useful label.
-    await seedShow({ offsets: [-10], status: "stopped", watched: [0] });
+    await seedShow({ offsets: [-10], status: "stopped", watched: [0], showStatus: "Ended" });
 
     const { getShowBuckets } = await import("@/lib/queries");
     const buckets = await getShowBuckets(TEST_USER_ID);
 
     expect(buckets.stopped.map((s) => s.showId)).toEqual(["101"]);
     expect(buckets.finished).toEqual([]);
+    expect(buckets.caughtUp).toEqual([]);
   });
 
   it("keeps finished shows out of Watching entirely", async () => {
@@ -496,6 +548,7 @@ describe("bucketing", () => {
       offsets: [-10],
       status: "watching",
       watched: [0],
+      showStatus: "Ended",
     });
 
     const { getShowBuckets } = await import("@/lib/queries");
