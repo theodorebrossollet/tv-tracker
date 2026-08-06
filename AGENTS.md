@@ -73,9 +73,14 @@ broadcast date — which is what makes `formatAirDate` (which formats in UTC)
 correct. Don't "simplify" this to `new Date(str)`.
 
 **"Finished" is derived, never stored.** It means every aired episode is
-watched. `getShowBuckets` in `src/lib/queries.ts` owns the precedence that puts
-each show in exactly one place: `stopped → finished → paused → watchlist →
+watched, *and* TMDB says the series is over — otherwise the show is "caught up",
+a separate bucket, because one is done and the other is between seasons.
+`getShowBuckets` in `src/lib/queries.ts` owns the precedence that puts each show
+in exactly one place: `stopped → caught up / finished → paused → watchlist →
 watching`. Adding a status means updating that function, not just the union type.
+The ended/still-running test is `hasSeriesEnded` in `lib/format.ts`, shared with
+`caughtUpLabel` and `showMetaLine` so the Archive and the show card can't
+disagree about the same show.
 
 **Adding a column needs a backfill.** Both refresh paths key on *time*, not
 completeness — the cron visits tracked shows on a schedule, and the on-view

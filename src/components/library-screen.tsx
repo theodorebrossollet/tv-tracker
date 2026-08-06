@@ -32,7 +32,7 @@ export function LibraryScreen({
   buckets,
   searchParams,
 }: LibraryScreenProps) {
-  const { watchlist, paused, finished, stopped } = buckets;
+  const { watchlist, paused, caughtUp, finished, stopped } = buckets;
 
   const limit = (param: string) =>
     limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
@@ -93,7 +93,9 @@ export function LibraryScreen({
         </>
       ) : (
         <>
-          {finished.length === 0 && stopped.length === 0 ? (
+          {caughtUp.length === 0 &&
+          finished.length === 0 &&
+          stopped.length === 0 ? (
             <div className="mt-[18px]">
               <EmptyState
                 title="Nothing archived yet"
@@ -103,11 +105,32 @@ export function LibraryScreen({
             </div>
           ) : null}
 
+          {/*
+           * Caught up leads the segment: these are the only shows here that are
+           * coming back, so they're the ones worth a glance. Finished and
+           * Stopped are both settled.
+           */}
+          {caughtUp.length > 0 ? (
+            <Section
+              title="Caught up"
+              description="Every aired episode watched, but the series is still running. Each of these returns to Watching on its own when the next episode airs."
+              first
+            >
+              <LibraryList
+                shows={caughtUp}
+                detail="progress"
+                param="caughtUp"
+                searchParams={searchParams}
+                limit={limit("caughtUp")}
+              />
+            </Section>
+          ) : null}
+
           {finished.length > 0 ? (
             <Section
               title="Finished"
-              description="Every aired episode watched. If one returns with a new season it moves back to Watching on its own."
-              first
+              description="Watched to the end, and the series is over. If one is revived and a new episode airs it moves back to Watching."
+              first={caughtUp.length === 0}
             >
               <LibraryList
                 shows={finished}
@@ -124,7 +147,7 @@ export function LibraryScreen({
             <Section
               title="Stopped"
               description="Started, then given up on. Marking any episode watched brings a show back."
-              first={finished.length === 0}
+              first={caughtUp.length === 0 && finished.length === 0}
             >
               <LibraryList
                 shows={stopped}

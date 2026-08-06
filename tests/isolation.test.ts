@@ -139,7 +139,8 @@ describe("reads never cross accounts", () => {
   });
 
   it("buckets each account independently", async () => {
-    await seedShow({ showId: "500", offsets: [-1], status: "watching", watched: [0], userId: A });
+    await seedShow({ showId: "500", offsets: [-1], status: "watching", watched: [0],
+                     showStatus: "Ended", userId: A });
     await seedShow({ showId: "500", offsets: [-1], status: "watchlist", userId: B });
 
     const forA = await getShowBuckets(A);

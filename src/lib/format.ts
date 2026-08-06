@@ -123,10 +123,7 @@ export function showMetaLine(show: {
   const first = year(show.firstAirDate);
   const last = year(show.lastAirDate);
 
-  // TMDB reports most cancelled shows as "Ended" too, so treating anything
-  // that isn't explicitly ended as ongoing is the safer default.
-  const hasEnded =
-    show.showStatus === "Ended" || show.showStatus === "Canceled";
+  const hasEnded = hasSeriesEnded(show.showStatus);
 
   let years: string | null = null;
   if (first !== null) {
@@ -157,13 +154,29 @@ export function showMetaLine(show: {
 }
 
 /**
+ * Whether TMDB says the series itself is over, as opposed to between seasons.
+ *
+ * TMDB reports most cancelled shows as "Ended" too, so treating anything that
+ * isn't explicitly one of those two as still running is the safer default —
+ * including a null status, which is what a show cached before this field was
+ * synced still has.
+ *
+ * One definition rather than three: the Archive splits its fully-watched shows
+ * on this, `caughtUpLabel` picks its wording from it, and `showMetaLine`
+ * decides whether to close the year range with it. Two of those disagreeing
+ * would file a show under "Finished" and then have its own card call it caught
+ * up.
+ */
+export function hasSeriesEnded(showStatus: string | null): boolean {
+  return showStatus === "Ended" || showStatus === "Canceled";
+}
+
+/**
  * What to say when there's nothing left to watch.
  *
  * A finished series and a show you're merely up to date with are different
  * situations, and TMDB's status is what tells them apart.
  */
 export function caughtUpLabel(showStatus: string | null): string {
-  return showStatus === "Ended" || showStatus === "Canceled"
-    ? "Series finished"
-    : "Caught up";
+  return hasSeriesEnded(showStatus) ? "Series finished" : "Caught up";
 }

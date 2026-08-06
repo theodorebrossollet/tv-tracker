@@ -219,18 +219,32 @@ The categories overlap (a stopped show can also be fully watched), so
 `getShowBuckets` applies one precedence order and every show lands in exactly
 one place:
 
-    stopped → finished → paused → watchlist → watching
+    stopped → caught up / finished → paused → watchlist → watching
 
 Stopped beats finished because abandoning a show is a decision you made, while
 finishing it is a fact about episode counts — the decision is the more useful
 label. Finished beats paused for the same reason in reverse: a show you
 completed doesn't belong in the list of things you mean to get back to.
 
+Fully watched then splits in two on TMDB's lifecycle, via `hasSeriesEnded`:
+**finished** if the series is over (`Ended` or `Canceled`), **caught up** if it
+is still running. Both mean "nothing left to watch" and they read as opposites
+— one is done, the other is between seasons and returns to Watching by itself.
+Sharing a section made the Archive look final when half of it wasn't, and made
+the section's own copy hedge ("if one returns with a new season…") rather than
+say which of these a given row was. Anything else, including a null status, is
+treated as still running: only an explicit end is an end, which is the same
+rule `caughtUpLabel` uses on the show card. Sharing that one predicate is what
+stops a row filed under Finished from calling itself "Caught up".
+
 | Bucket | Page |
 |---|---|
 | watching | `/` |
 | watchlist, paused | `/watchlist` |
-| finished, stopped | `/archive` |
+| caught up, finished, stopped | `/archive` |
+
+Caught up leads the archive segment, ahead of Finished and Stopped: it holds
+the only shows there that are coming back.
 
 Moving finished shows off the Watching page is what removed the old "hide
 finished shows" toggle: the page can now only contain work in progress, so
@@ -502,10 +516,13 @@ needs rather than riding along with every field of every show.
 
 Three details hold it together:
 
-- **Each list owns a param** (`watchlist`, `paused`, `finished`, `stopped`,
-  `upcoming`), so Archive's two sections expand independently. The expand link
-  copies the other params across, which is the only thing keeping that true —
-  drop that and expanding one section collapses the other.
+- **Each list owns a param** (`watchlist`, `paused`, `caughtUp`, `finished`,
+  `stopped`, `upcoming`), so Archive's three sections expand independently. The
+  expand link copies the other params across, which is the only thing keeping
+  that true — drop that and expanding one section collapses the others. A new
+  section needs its param added to `KNOWN_PARAMS` as well as to the list;
+  without that it survives being read off the URL but is dropped by every link
+  the page generates, so a second "show more" click quietly collapses it.
 - **`scroll={false}`**, because Next scrolls to top on navigation and the
   control sits at the bottom of a long list.
 - **`limitFrom` floors and caps the value.** The param is as attacker-supplied

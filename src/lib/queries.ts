@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { hasSeriesEnded } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
 import type { TrackStatus } from "@/lib/types";
@@ -201,7 +202,16 @@ export interface ShowBuckets {
   watchlist: TrackedShowSummary[];
   /** Set aside, meaning to return. */
   paused: TrackedShowSummary[];
-  /** Every aired episode watched. Derived, not a stored status. */
+  /**
+   * Every aired episode watched, but the series is still running — so this one
+   * comes back to Watching on its own when the next episode airs. Derived, not
+   * a stored status.
+   */
+  caughtUp: TrackedShowSummary[];
+  /**
+   * Every aired episode watched and TMDB says the series is over. Also derived
+   * — a show does leave this bucket if TMDB revives it and a new episode airs.
+   */
   finished: TrackedShowSummary[];
   /** Abandoned for good. */
   stopped: TrackedShowSummary[];
@@ -214,12 +224,17 @@ export interface ShowBuckets {
  * fully watched and paused, or stopped *and* fully watched. Without a single
  * ordering it would appear twice, in two places that disagree about what it is.
  *
- *   stopped → finished → paused → watchlist → watching
+ *   stopped → caught up / finished → paused → watchlist → watching
  *
  * "Stopped" wins over "finished" because abandoning a show is a decision you
  * made, while finishing it is merely a fact about episode counts — and if you
  * stopped watching something you'd happened to complete, the decision is the
  * more useful label.
+ *
+ * Fully watched splits in two on TMDB's lifecycle, because the two mean
+ * opposite things to the reader: a finished series is over and a caught-up one
+ * is coming back. They shared a section for a while and it made the Archive
+ * read as final when half of it wasn't.
  *
  * One query for all of them: the pages each need a different slice, but the
  * per-show episode data is the expensive part and fetching it repeatedly to
@@ -232,14 +247,17 @@ export async function getShowBuckets(userId: string): Promise<ShowBuckets> {
     watching: [],
     watchlist: [],
     paused: [],
+    caughtUp: [],
     finished: [],
     stopped: [],
   };
 
   for (const show of all) {
     if (show.status === "stopped") buckets.stopped.push(show);
-    else if (show.fullyWatched) buckets.finished.push(show);
-    else if (show.status === "paused") buckets.paused.push(show);
+    else if (show.fullyWatched) {
+      if (hasSeriesEnded(show.showStatus)) buckets.finished.push(show);
+      else buckets.caughtUp.push(show);
+    } else if (show.status === "paused") buckets.paused.push(show);
     else if (show.status === "watchlist") buckets.watchlist.push(show);
     else buckets.watching.push(show);
   }
