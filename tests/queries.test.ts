@@ -245,6 +245,68 @@ describe("watch progress", () => {
   });
 });
 
+describe("the list view and the detail view agree", () => {
+  // "Aired" and "finished" exist twice by necessity — once in SQL for the
+  // lists, once in TypeScript for one show's detail. Two implementations of one
+  // rule drift silently: the show page would put a "Finished" pill on something
+  // the Library files under Watching, and nothing would error. Neither version
+  // can call the other, so this asserts they answer the same, rather than
+  // trusting them to.
+  const cases: Array<{ name: string; offsets: number[]; watched: number[] }> = [
+    { name: "nothing aired", offsets: [5, 10], watched: [] },
+    { name: "part aired, none watched", offsets: [-5, 10], watched: [] },
+    { name: "part aired, part watched", offsets: [-10, -5, 3], watched: [0] },
+    { name: "every aired episode watched", offsets: [-10, -5, 3], watched: [0, 1] },
+    { name: "all aired, all watched", offsets: [-10, -5], watched: [0, 1] },
+    // The boundary the two express differently: SQL `IS NOT NULL` versus a
+    // TypeScript `!== null`.
+    { name: "watch mark on an unaired episode", offsets: [-10, 5], watched: [0, 1] },
+    { name: "no episodes at all", offsets: [], watched: [] },
+  ];
+
+  for (const { name, offsets, watched } of cases) {
+    it(`agrees on "${name}"`, async () => {
+      await seedShow({ showId: "agree", offsets, status: "watching", watched });
+
+      const [fromList] = await getTrackedShows(TEST_USER_ID, "watching");
+      const detail = await getShowDetail(TEST_USER_ID, "agree");
+
+      expect(detail).not.toBeNull();
+      expect({
+        airedCount: detail!.airedCount,
+        watchedCount: detail!.watchedCount,
+        finished: detail!.finished,
+      }).toEqual({
+        airedCount: fromList.airedCount,
+        watchedCount: fromList.watchedCount,
+        finished: fromList.fullyWatched,
+      });
+    });
+  }
+
+  it("agrees about which episode is next up", async () => {
+    // The lists carry one next-unwatched episode; the detail view builds a
+    // queue. They must start at the same place, or the dashboard's inline tick
+    // marks a different episode than the show page's Next-up card.
+    const { episodeIds } = await seedShow({
+      showId: "agree",
+      offsets: [-30, -20, -10],
+      status: "watching",
+      watched: [0],
+    });
+
+    const [fromList] = await getTrackedShows(TEST_USER_ID, "watching");
+    const detail = await getShowDetail(TEST_USER_ID, "agree");
+
+    const firstUnwatched = detail!.seasons
+      .flatMap((season) => season.episodes)
+      .find((episode) => episode.aired && !episode.watched);
+
+    expect(fromList.nextUnwatched?.id).toBe(episodeIds[1]);
+    expect(firstUnwatched?.id).toBe(fromList.nextUnwatched?.id);
+  });
+});
+
 describe("upcoming episodes", () => {
   it("includes shows on the watchlist as well as those being watched", async () => {
     await seedShow({ showId: "w", offsets: [5], status: "watching" });

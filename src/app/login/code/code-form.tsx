@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { loginWithCode } from "@/app/actions";
+import { loginWithCode } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
 
 export function CodeForm() {

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { logout, signOutEverywhere } from "@/app/actions";
+import { logout, signOutEverywhere } from "@/app/account-actions";
 import { ButtonRow } from "@/components/settings-rows";
 
 /**

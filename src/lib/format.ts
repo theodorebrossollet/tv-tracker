@@ -60,6 +60,21 @@ export function relativeAirDate(iso: string): string {
   return formatAirDateShort(iso);
 }
 
+/**
+ * Watch progress as a whole percentage, for the bars on the cards and the show
+ * header.
+ *
+ * The zero guard is the whole reason this is shared: a tracked show with
+ * nothing aired yet is a real state — added from a search result before its
+ * premiere — and `0 / 0` renders as "NaN%" in a progress bar rather than
+ * failing anywhere a test would notice.
+ */
+export function progressPercent(watched: number, aired: number): number {
+  if (aired <= 0) return 0;
+
+  return Math.round((watched / aired) * 100);
+}
+
 /** 49 → "49m", 95 → "1h 35m". */
 export function formatRuntime(minutes: number): string {
   if (minutes < 60) return `${minutes}m`;

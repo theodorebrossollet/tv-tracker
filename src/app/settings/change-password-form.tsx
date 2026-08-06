@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { changePassword } from "@/app/actions";
+import { changePassword } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password-rules";
 

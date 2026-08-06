@@ -453,6 +453,27 @@ export async function getUpcomingEpisodes(
 }
 
 /**
+ * Whether an episode is available to watch.
+ *
+ * The one definition. "Aired" excludes episodes with no air date at all — TMDB
+ * leaves the date empty for announced-but-unscheduled episodes, and counting
+ * those as available would leave progress permanently short of complete.
+ *
+ * The list queries express the same rule in SQL, because they have to; that is
+ * the one place this exists twice, and `tests/queries.test.ts` asserts the two
+ * agree rather than trusting them to. Nothing above this layer should be
+ * writing the comparison a third time.
+ */
+function isAired(airDate: Date | null, now: Date): boolean {
+  return airDate !== null && airDate <= now;
+}
+
+/** Every aired episode watched. Derived, never stored — see AGENTS.md. */
+function isFinished(airedCount: number, watchedCount: number): boolean {
+  return airedCount > 0 && watchedCount === airedCount;
+}
+
+/**
  * Full detail for one show, with episodes grouped into seasons.
  *
  * Falls back to fetching from TMDB when the show isn't in the local cache yet,
@@ -464,6 +485,13 @@ export async function getUpcomingEpisodes(
  * loads per view, and, for a stale or uncached show, two concurrent
  * `syncShowFromTmdb` runs racing each other through hundreds of upserts.
  * Next only deduplicates `fetch` on its own; everything else needs this.
+ *
+ * Returns the progress counts as well as the episodes. The show page used to
+ * derive them itself, which meant "aired" and "finished" had two independent
+ * implementations — one here for the lists, one there for the detail view — and
+ * `StatusMenu` was handed `finished` from whichever happened to be nearer. They
+ * agreed, but nothing made them: drift would have shown a "Finished" pill on a
+ * show the Library filed under Watching, with no error anywhere.
  */
 export const getShowDetail = cache(async function getShowDetail(
   userId: string,
@@ -477,15 +505,23 @@ export const getShowDetail = cache(async function getShowDetail(
   const show = await loadShow(userId, showId);
   if (!show) return null;
 
+  // One clock reading for the whole derivation, so two episodes either side of
+  // "now" can't be judged against different instants.
+  const now = new Date();
+
   // `watched` is resolved to a boolean here rather than handed to the page as
   // a relation. It is a *list* now — one row per user — so `!== null` is true
   // for every episode, including unwatched ones, and TypeScript is happy to
   // compare an array to null. That shipped: every episode on the show page
   // rendered as watched, for everyone. Collapsing it at the query boundary
   // means callers cannot make that mistake again.
+  //
+  // `aired` is resolved here for the same reason: it is a rule, and a rule the
+  // caller re-implements is a rule that can disagree.
   const episodes = show.episodes.map(({ watched, ...episode }) => ({
     ...episode,
     watched: watched.length > 0,
+    aired: isAired(episode.airDate, now),
   }));
 
   const seasons = new Map<number, typeof episodes>();
@@ -497,6 +533,28 @@ export const getShowDetail = cache(async function getShowDetail(
       seasons.set(episode.seasonNumber, [episode]);
     }
   }
+
+  let airedCount = 0;
+  let watchedCount = 0;
+
+  const seasonSummaries = [...seasons.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([seasonNumber, episodes]) => {
+      const aired = episodes.filter((episode) => episode.aired);
+      const watched = aired.filter((episode) => episode.watched);
+
+      airedCount += aired.length;
+      watchedCount += watched.length;
+
+      return {
+        seasonNumber,
+        episodes,
+        airedCount: aired.length,
+        watchedCount: watched.length,
+        /** Every aired episode of *this* season watched. */
+        allWatched: isFinished(aired.length, watched.length),
+      };
+    });
 
   return {
     id: show.id,
@@ -510,9 +568,10 @@ export const getShowDetail = cache(async function getShowDetail(
     showStatus: show.status,
     network: show.network,
     genres: show.genres,
-    seasons: [...seasons.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([seasonNumber, episodes]) => ({ seasonNumber, episodes })),
+    airedCount,
+    watchedCount,
+    finished: isFinished(airedCount, watchedCount),
+    seasons: seasonSummaries,
   };
 });
 

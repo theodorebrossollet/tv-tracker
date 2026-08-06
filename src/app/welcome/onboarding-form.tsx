@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { completeOnboarding } from "@/app/actions";
+import { completeOnboarding } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
 import { NICKNAME_RULES, validateNickname } from "@/lib/nickname";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password-rules";
