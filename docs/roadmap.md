@@ -35,8 +35,12 @@ that re-syncs on demand:
   primary-key race against another instance still moved the timestamp, and
   reporting that as a failure would be wrong.
 - The TMDB in-process cache is not in the way: `getShowDetails` and
-  `getSeasonEpisodes` go through `tmdbFetch` with `cache: "no-store"`. Only
-  providers, regions and trailers go through `cached()`.
+  `getSeasonEpisodes` go through `tmdbFetch` with `cache: "no-store"`. The
+  per-show sync is the thing a refresh exists to redo, so it must never be
+  served from a cache. Everything else does go through `cached()` — providers,
+  regions, trailers, and now search (60s, added 5 Aug 2026 because
+  `searchSuggestions` was the one signed-in path that could drive TMDB with no
+  bound at all).
 - The five-minute cooldown on `lastSynced` is the rate limit *and* the honest
   answer, so no throttling table was needed. `syncShowFromTmdb` is the most
   expensive operation in the app and a server action is POST-able directly, so
