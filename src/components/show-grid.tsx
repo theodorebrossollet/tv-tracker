@@ -3,7 +3,7 @@ import Link from "next/link";
 import { MarkWatchedButton } from "@/components/mark-watched-button";
 import { Poster } from "@/components/poster";
 import { episodeCode } from "@/lib/episode-code";
-import { caughtUpLabel } from "@/lib/format";
+import { caughtUpLabel, progressPercent } from "@/lib/format";
 import type { TrackedShowSummary } from "@/lib/queries";
 
 /**
@@ -32,10 +32,7 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
 
       <ul className="mt-3.5 flex flex-col gap-2">
         {shows.map((show) => {
-          const percent =
-            show.airedCount === 0
-              ? 0
-              : Math.round((show.watchedCount / show.airedCount) * 100);
+          const percent = progressPercent(show.watchedCount, show.airedCount);
 
           return (
             <li

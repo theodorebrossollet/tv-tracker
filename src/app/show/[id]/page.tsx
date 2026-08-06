@@ -110,66 +110,45 @@ export default async function ShowPage({
   // Progress, next up, and what the seasons strip says.
   // ---------------------------------------------------------------------
 
-  const aired = (episode: { airDate: Date | null }) =>
-    episode.airDate !== null && episode.airDate <= now;
+  // Counts, per-episode `aired`, and `finished` all come from `getShowDetail`.
+  // This page used to derive them, which put a second implementation of both
+  // rules a directory away from the one the lists use — see the note there.
+  const { airedCount, watchedCount, finished } = show;
 
-  // Its own pass rather than a variable assigned inside the map below. Seasons
-  // are sorted and episodes are ordered within them, so the first unaired one
-  // carrying a date is the next to land — and React's purity rules rightly
-  // object to a `let` being reassigned from inside a render callback.
+  // Seasons are sorted and episodes ordered within them, so the first unaired
+  // one carrying a date is the next to land.
   const nextUnaired =
     show.seasons
       .flatMap((entry) => entry.episodes)
-      .find((episode) => !aired(episode) && episode.airDate !== null) ?? null;
+      .find((episode) => !episode.aired && episode.airDate !== null) ?? null;
 
-  let airedCount = 0;
-  let watchedCount = 0;
-  const unwatchedQueue: NextUpEpisode[] = [];
+  // Presentation, so it stays here: the queue is capped for the payload's sake
+  // and each entry carries a pre-formatted line. What it must *not* do is
+  // decide again what "aired" means.
+  const unwatchedQueue: NextUpEpisode[] = show.seasons
+    .flatMap((entry) => entry.episodes)
+    .filter((episode) => episode.aired && !episode.watched)
+    .slice(0, NEXT_UP_QUEUE)
+    .map((episode) => ({
+      id: episode.id,
+      seasonNumber: episode.seasonNumber,
+      episodeNumber: episode.episodeNumber,
+      name: episode.name,
+      meta: [
+        `Season ${episode.seasonNumber}`,
+        episode.runtime ? formatRuntime(episode.runtime) : null,
+        formatAirDate(episode.airDate?.toISOString() ?? null),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    }));
 
-  // A plain loop rather than `.map`: these counters accumulate across seasons,
-  // and React's immutability rule objects to a callback reassigning anything
-  // outside itself — reasonably, since a callback is free to run again.
-  const seasonSummaries: SeasonSummary[] = [];
-
-  for (const season of show.seasons) {
-    let seasonAired = 0;
-    let seasonWatched = 0;
-
-    for (const episode of season.episodes) {
-      if (!aired(episode)) continue;
-
-      seasonAired += 1;
-      if (episode.watched) {
-        seasonWatched += 1;
-      } else if (unwatchedQueue.length < NEXT_UP_QUEUE) {
-        unwatchedQueue.push({
-          id: episode.id,
-          seasonNumber: episode.seasonNumber,
-          episodeNumber: episode.episodeNumber,
-          name: episode.name,
-          meta: [
-            `Season ${episode.seasonNumber}`,
-            episode.runtime ? formatRuntime(episode.runtime) : null,
-            formatAirDate(episode.airDate?.toISOString() ?? null),
-          ]
-            .filter(Boolean)
-            .join(" · "),
-        });
-      }
-    }
-
-    airedCount += seasonAired;
-    watchedCount += seasonWatched;
-
-    seasonSummaries.push({
-      seasonNumber: season.seasonNumber,
-      unwatched: seasonAired - seasonWatched,
-      hasAired: seasonAired > 0,
-      allWatched: seasonAired > 0 && seasonWatched === seasonAired,
-    });
-  }
-
-  const finished = airedCount > 0 && watchedCount === airedCount;
+  const seasonSummaries: SeasonSummary[] = show.seasons.map((season) => ({
+    seasonNumber: season.seasonNumber,
+    unwatched: season.airedCount - season.watchedCount,
+    hasAired: season.airedCount > 0,
+    allWatched: season.allWatched,
+  }));
 
   // Opening a show you're partway through should land on the part you're
   // partway through.
@@ -356,7 +335,7 @@ export default async function ShowPage({
                 name={episode.name}
                 airDate={episode.airDate?.toISOString() ?? null}
                 watched={episode.watched}
-                aired={aired(episode)}
+                aired={episode.aired}
                 runtime={episode.runtime}
                 overview={episode.overview}
               />

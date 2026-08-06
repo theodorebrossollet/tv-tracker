@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { loginWithPassword } from "@/app/actions";
+import { loginWithPassword } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
 
 export function PasswordForm() {

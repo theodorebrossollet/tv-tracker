@@ -50,7 +50,7 @@ const {
   loginWithPassword,
   logout,
   signOutEverywhere,
-} = await import("@/app/actions");
+} = await import("@/app/account-actions");
 const { FAILURE_THRESHOLD } = await import("@/lib/login-throttle");
 const { PASSWORD_MAX } = await import("@/lib/password-rules");
 const { NICKNAME_MAX } = await import("@/lib/nickname");

@@ -4,8 +4,8 @@ import {
   removeShow,
   resumeShow,
   stopShow,
-  type ActionResult,
 } from "@/app/actions";
+import type { ActionResult } from "@/lib/action-result";
 import type { StatusTarget } from "@/lib/status-transitions";
 
 /**

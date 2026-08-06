@@ -45,10 +45,14 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 ## Where things are
 
 ```
-src/app/          routes; actions.ts holds every write
+src/app/          routes; actions.ts holds every write except the account ones,
+                  which are in account-actions.ts — the rules in actions.ts's
+                  header govern both
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
-                  search-params (the URL params any screen is allowed to read)
+                  search-params (the URL params any screen is allowed to read),
+                  action-result (ActionResult + toResult, shared by both action
+                  modules; deliberately not "use server")
 prisma/           schema + migrations
 scripts/          migrate, backup, one-off backfills, icon generation
 public/sw.js      service worker: caches the app shell ONLY (see below)
@@ -79,6 +83,16 @@ a separate bucket, because one is done and the other is between seasons.
 `getShowBuckets` in `src/lib/queries.ts` owns the precedence that puts each show
 in exactly one place: `stopped → caught up / finished → paused → watchlist →
 watching`. Adding a status means updating that function, not just the union type.
+
+**That ownership is literal: derive neither "aired" nor "finished" outside
+`lib/queries.ts`.** The show page used to compute both itself, so `StatusMenu`
+was handed `finished` from the query layer in a library row and from a local
+loop on the show page — two implementations of one rule, agreeing only by
+coincidence. `getShowDetail` now returns `aired` per episode plus the counts, so
+a page consumes them instead. The rule still exists twice by necessity, once in
+SQL for the lists and once in TypeScript for one show's detail, and neither can
+call the other — so `tests/queries.test.ts` asserts the two answer the same
+across a table of cases rather than trusting them to.
 The ended/still-running test is `hasSeriesEnded` in `lib/format.ts`, shared with
 `caughtUpLabel` and `showMetaLine` so the Archive and the show card can't
 disagree about the same show.

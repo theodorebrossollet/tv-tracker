@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { Poster } from "@/components/poster";
 import { StatusMenu } from "@/components/status-sheet";
+import { progressPercent } from "@/lib/format";
 import { posterUrl } from "@/lib/images";
 import type { TrackStatus } from "@/lib/types";
 
@@ -41,8 +42,7 @@ export function ShowHeader({
   finished,
   nextAiring,
 }: ShowHeaderProps) {
-  const percent =
-    airedCount === 0 ? 0 : Math.round((watchedCount / airedCount) * 100);
+  const percent = progressPercent(watchedCount, airedCount);
   const backdrop = posterUrl(posterPath, "w500");
 
   return (

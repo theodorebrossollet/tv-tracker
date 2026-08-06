@@ -7,6 +7,7 @@ import {
   formatAirDate,
   formatAirDateShort,
   formatRuntime,
+  progressPercent,
   relativeAirDate,
   showMetaLine,
 } from "@/lib/format";
@@ -170,6 +171,23 @@ describe("caughtUpLabel", () => {
     expect(caughtUpLabel("Canceled")).toBe("Series finished");
     expect(caughtUpLabel("Returning Series")).toBe("Caught up");
     expect(caughtUpLabel(null)).toBe("Caught up");
+  });
+});
+
+describe("progressPercent", () => {
+  it("rounds to a whole percent", () => {
+    expect(progressPercent(1, 3)).toBe(33);
+    expect(progressPercent(2, 3)).toBe(67);
+    expect(progressPercent(3, 3)).toBe(100);
+  });
+
+  it("is 0 when nothing has aired, rather than NaN", () => {
+    // The reason this is shared rather than written at each call site. A show
+    // added from a search result before its premiere has 0 aired episodes, and
+    // `0 / 0` reaches a progress bar as `width: NaN%` — which renders as an
+    // empty bar and fails nowhere a test would catch.
+    expect(progressPercent(0, 0)).toBe(0);
+    expect(Number.isNaN(progressPercent(0, 0))).toBe(false);
   });
 });
 
