@@ -103,20 +103,35 @@ Carried over from the security & efficiency review (2 Aug 2026), whose other
 findings all shipped. Not a bug — the app is correct and fast enough today.
 This is the thing that gets worse as the library grows.
 
-- **Compute bucket counts in SQL.** `getTrackedShows` ships every episode row
-  (plus watch marks) of every tracked show to Node to derive four counts and one
-  episode name, on **every** dashboard, watchlist and archive render — so the
-  payload grows with shows × episodes. At 40 shows × 120 episodes that's ~4,800
-  rows per page view. The fix is a grouped aggregate for the counts plus one
-  narrow query for next-unwatched. The field-level `select` already in place is
-  what keeps it tolerable; the single-pass loop over the result changed the
-  constant, not the shape. *Trigger: the dashboard feeling slow, or the library
-  passing a few dozen shows with long runs.*
+- ~~**Compute bucket counts in SQL.**~~ **Done (6 Aug 2026).** `getTrackedShows`
+  no longer ships every episode row to Node. Two raw queries do the work —
+  a `GROUP BY` for the counts and `MAX(watchedAt)`, and a `ROW_NUMBER()` window
+  for next-unwatched — because neither can be expressed in Prisma's `groupBy`,
+  which cannot group by a relation's column.
 
-  Worth budgeting properly rather than squeezing in. `getShowBuckets` decides
-  which list a show appears in from these counts, so an aggregate that is
-  subtly wrong doesn't error — it quietly files a show under the wrong heading.
-  Every aggregate also needs its own `userId` filter, or it sums the household.
+  Measured on a local file: **75ms → 13ms** at 40 shows × 120 episodes,
+  **358ms → 44ms** at 80 × 250. Round trips went from `1 + ceil(episodes / 999)`
+  to a flat 3, which matters more in production than locally, since each one is
+  a Turso network hop.
+
+  The warning in this entry was the right one and is now the standing risk:
+  `getShowBuckets` decides which list a show appears in from these counts, so a
+  subtly wrong aggregate files a show under the wrong heading rather than
+  erroring. `tests/queries.test.ts` gained cases for the three behaviours that
+  are easy to lose in the translation — a watch mark on an unaired episode
+  counts as *activity* but not as *progress*, a show with no episodes at all
+  still has to render, and next-up crosses season boundaries in season order —
+  and `tests/large-library.test.ts` covers sizes where a smeared join would
+  still look plausible.
+
+**A correction to what this entry used to say.** It claimed the old read would
+eventually *throw*, on SQLite's 32,766 bind-variable cap, because the nested
+`watched: { where: { userId } }` select compiles to `episodeId IN (…)`. The cap
+is real — a hand-written `IN` list breaks between 32,766 and 33,000 binds — but
+this read never reached it: **Prisma chunks a nested relation read at 999 binds
+per statement.** A 40,000-episode show cost 44 queries, not an exception. The
+claim went unchecked long enough to be repeated as a reason to prioritise the
+work; the real reasons are the two measurements above.
 
 The other two items here shipped in the meantime:
 
@@ -132,12 +147,14 @@ The other two items here shipped in the meantime:
   changing country, which is the right trade for a control most people never
   touch on a page that previously always paid for it.
 
-There's also one latent limit worth knowing rather than fixing: the nested
-`watched: { where: { userId } }` reads compile to `episodeId IN (…)` with one
-bind variable per episode, and SQLite caps those at 32,766. The write side
-already chunks at 500 for exactly this reason. A tracked daytime soap (10,000+
-episodes) would make the *read* throw. Restructuring falls out of the first item
-above, so it's worth doing then rather than on its own.
+One limit worth knowing rather than fearing, since it is easy to re-derive and
+get wrong: SQLite caps bind variables at 32,766, and the write side chunks at
+500 for exactly that reason. **Prisma's own reads are not exposed to it** — it
+chunks nested relation loads at 999 binds per statement, so a large `IN` list
+arrives as many statements rather than one oversized one. Hand-written
+`$queryRaw` gets no such help: `Prisma.join` over an unbounded array is the one
+place in this codebase that can actually hit the cap. `getTrackedShows` binds
+*show* ids there, which is dozens.
 
 ## Already captured elsewhere
 
