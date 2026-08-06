@@ -81,7 +81,10 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
           // the tab order, and no ring, because it is a container rather than
           // something you can operate.
           tabIndex={-1}
-          className="rounded-t-[22px] border-t border-border bg-surface px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] outline-none animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none"
+          // `surface-raised`, not `surface`: a sheet sits above everything
+          // else on the screen and should read that way. On the card surface it
+          // was the same near-black as the page it covers.
+          className="rounded-t-[22px] border-t border-border bg-surface-raised px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-2.5 shadow-[0_-12px_30px_-18px_rgba(0,0,0,.35)] outline-none animate-[sheet-up_.26s_cubic-bezier(.32,.72,0,1)] motion-reduce:animate-none"
         >
           {/* A button, not decoration. Tapping outside is the usual way out,
               but it is invisible — this is the one part of the sheet that

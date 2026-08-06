@@ -204,17 +204,17 @@ interface RowProps {
 function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
   const body = (
     <>
-      {/* `surface-sunken` is *darker* than the sheet's own `surface`, so tiles
-          drawn on it read as holes punched in the row rather than as tiles —
-          and the icon inside all but disappeared. Raised and outlined instead,
-          and the current one goes solid rather than tinted: the row behind it
-          already carries the tint, and tint-on-tint left the tile invisible
-          exactly where it matters most. */}
+      {/* Inset against the raised panel, rather than trying to sit proud of it.
+          Two earlier attempts put the tile a hair lighter or a hair darker than
+          the sheet and both vanished on a phone; a full step down plus a border
+          is the version you can actually see. The current one goes solid
+          accent, because the row behind it already carries the tint and
+          tint-on-tint left the tile invisible exactly where it matters most. */}
       <span
         className={`flex size-[34px] shrink-0 items-center justify-center rounded-[11px] border ${
           checked
             ? "border-transparent bg-accent text-on-accent"
-            : "border-border bg-surface-raised text-muted"
+            : "border-border bg-surface text-muted"
         }`}
       >
         <StatusIcon status={icon} className="size-[15px]" />
@@ -243,7 +243,7 @@ function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
       type="button"
       onClick={onSelect}
       disabled={disabled}
-      className="flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+      className="flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
     >
       {body}
     </button>
