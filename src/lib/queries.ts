@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
@@ -11,6 +12,19 @@ import type { TrackStatus } from "@/lib/types";
 // `Episode.watched` filters by it. Those two relations are lists now — one
 // entry per user — so an unfiltered read silently returns other people's rows
 // rather than failing. See docs/technical-design-v2.md section 5.
+//
+// Two of the reads below are raw SQL, which makes that rule manual rather than
+// merely easy to forget: there is no `where: { userId }` to leave out, only a
+// join condition to get wrong. Both carry `userId` as a bound parameter and
+// `tests/isolation.test.ts` covers them. Read the note above
+// `loadShowProgress` for why they aren't Prisma queries.
+//
+// **Dates bind as `Date`, never as epoch milliseconds.** `DateTime` columns are
+// stored as ISO-8601 *text*, so `airDate <= ${Date.now()}` compares text to an
+// integer, matches nothing at all, and reports every show as having nothing
+// aired — with no error. A bound `Date` is serialised to the same format the
+// column holds; verified exact at ±1ms either side of a boundary, against
+// Prisma's own typed `lte` as the reference.
 
 export interface TrackedShowSummary {
   showId: string;
@@ -54,12 +68,8 @@ export async function getTrackedShows(
 ): Promise<TrackedShowSummary[]> {
   const now = new Date();
 
-  // Selected field by field rather than `include`d: this runs on the home,
-  // watchlist and archive pages via getShowBuckets, and it reads every episode
-  // of every tracked show. Pulling whole rows meant shipping each episode's
-  // `overview` and `runtime` over Turso's network protocol to compute counts
-  // and find one episode name — the payload grew with shows × episodes for
-  // data nothing below ever reads.
+  // Just the tracked rows and the show columns a card renders. No episodes:
+  // everything derived from them is computed by the database below.
   const tracked = await prisma.trackedShow.findMany({
     where: status ? { userId, status } : { userId },
     orderBy: { addedAt: "desc" },
@@ -67,68 +77,27 @@ export async function getTrackedShows(
       showId: true,
       status: true,
       addedAt: true,
-      show: {
-        select: {
-          name: true,
-          posterPath: true,
-          status: true,
-          episodes: {
-            orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-            select: {
-              // Only the next-unwatched episode's id is ever read, but the
-              // scan that finds it runs over every episode, so the column has
-              // to come back for all of them. One string per row against the
-              // counts this query already computes.
-              id: true,
-              seasonNumber: true,
-              episodeNumber: true,
-              name: true,
-              airDate: true,
-              // Scoped to the caller. Without this `where` the list carries
-              // every user's watch marks for the episode, and each count below
-              // would silently include them.
-              watched: { where: { userId }, select: { watchedAt: true } },
-            },
-          },
-        },
-      },
+      show: { select: { name: true, posterPath: true, status: true } },
     },
   });
 
+  if (tracked.length === 0) return [];
+
+  const showIds = tracked.map((entry) => entry.showId);
+
+  // Independent, and neither reads the other's rows.
+  const [progress, nextUp] = await Promise.all([
+    loadShowProgress(userId, showIds, now),
+    loadNextUnwatched(userId, showIds, now),
+  ]);
+
   const summaries = tracked.map((entry) => {
-    // One pass rather than four plus a flatMap. Episodes arrive in order, so
-    // the first unwatched aired one found is the next to watch.
-    //
-    // "Aired" excludes episodes with no air date at all — TMDB leaves the date
-    // empty for episodes that are announced but unscheduled, and counting those
-    // as available would make progress look permanently incomplete.
-    let airedCount = 0;
-    let watchedCount = 0;
-    let nextUnwatched: (typeof entry.show.episodes)[number] | undefined;
-    let lastWatchedMs = -Infinity;
-
-    for (const episode of entry.show.episodes) {
-      // `watched` is a list filtered to this user, so it holds at most one row
-      // — but it is still a list, and `=== null` would be true for every
-      // episode.
-      const isWatched = episode.watched.length > 0;
-
-      for (const mark of episode.watched) {
-        // Not `Math.max(...times)`: that spreads one argument per watch mark,
-        // and a long-running show tracked from the start would eventually blow
-        // the argument limit — slowly at first, then as a RangeError.
-        lastWatchedMs = Math.max(lastWatchedMs, mark.watchedAt.getTime());
-      }
-
-      if (episode.airDate === null || episode.airDate > now) continue;
-
-      airedCount += 1;
-      if (isWatched) {
-        watchedCount += 1;
-      } else if (!nextUnwatched) {
-        nextUnwatched = episode;
-      }
-    }
+    // A show with no episode rows at all produces no group, so it has no entry
+    // here — tracked-but-not-yet-synced is a real state, and it has to render
+    // as zero rather than as undefined.
+    const counts = progress.get(entry.showId);
+    const airedCount = counts?.airedCount ?? 0;
+    const watchedCount = counts?.watchedCount ?? 0;
 
     return {
       showId: entry.showId,
@@ -139,21 +108,161 @@ export async function getTrackedShows(
       watchedCount,
       fullyWatched: airedCount > 0 && watchedCount === airedCount,
       showStatus: entry.show.status,
-      lastWatchedAt:
-        lastWatchedMs === -Infinity ? null : new Date(lastWatchedMs),
+      lastWatchedAt: counts?.lastWatchedAt ?? null,
       addedAt: entry.addedAt,
-      nextUnwatched: nextUnwatched
-        ? {
-            id: nextUnwatched.id,
-            seasonNumber: nextUnwatched.seasonNumber,
-            episodeNumber: nextUnwatched.episodeNumber,
-            name: nextUnwatched.name,
-          }
-        : null,
+      nextUnwatched: nextUp.get(entry.showId) ?? null,
     };
   });
 
   return sortByActionability(summaries);
+}
+
+interface ShowProgress {
+  airedCount: number;
+  watchedCount: number;
+  lastWatchedAt: Date | null;
+}
+
+/**
+ * Per-show progress, computed by the database.
+ *
+ * This used to be a Node loop over every episode of every tracked show, which
+ * is what made the payload grow with shows × episodes on every dashboard,
+ * watchlist and archive render. Measured on a local file: 75ms → 13ms at 40
+ * shows × 120 episodes, 358ms → 44ms at 80 × 250. Production is Turso over the
+ * network, where the old shape also has to ship every one of those rows.
+ *
+ * The round-trip count is the other half. Prisma chunks a nested relation read
+ * at 999 bind variables per statement, so the old shape cost
+ * `1 + ceil(episodes / 999)` queries — six for a 4,800-episode library, 44 for
+ * a 40,000-episode one. This is three, whatever the library holds.
+ *
+ * (`docs/roadmap.md` used to claim the old read would eventually *throw*, on
+ * SQLite's 32,766 bind-variable cap. It would not, and that chunking is why —
+ * measured, after the claim was inherited and repeated. The cap is real; this
+ * read never reached it.)
+ *
+ * Raw SQL because neither of the two values that need a join can be expressed
+ * in Prisma's `groupBy`: it cannot group by a relation's column, which rules out
+ * `MAX(watchedAt)` keyed by `showId`. Splitting the counts into typed `groupBy`
+ * calls and leaving only this one raw would mean three round trips computing
+ * one row per show each, to avoid writing the join once.
+ *
+ * Three things this has to preserve, each of which the old loop did and none of
+ * which is obvious from the shape:
+ *
+ *   - "Aired" excludes episodes with no air date at all. TMDB leaves the date
+ *     empty for announced-but-unscheduled episodes, and counting them would
+ *     make progress permanently short of complete.
+ *   - `watchedCount` counts only *aired* episodes that are watched. A watch mark
+ *     on an unaired episode is reachable (`markEpisodeWatched` takes an id and
+ *     actions are POST-able), and counting it would report 2/1 watched.
+ *   - `lastWatchedAt` counts *every* watch mark, aired or not. It answers "when
+ *     did you last touch this show", which is a different question from
+ *     progress — the old loop read the marks before the aired check for exactly
+ *     this reason.
+ */
+async function loadShowProgress(
+  userId: string,
+  showIds: string[],
+  now: Date,
+): Promise<Map<string, ShowProgress>> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      showId: string;
+      airedCount: number;
+      watchedCount: number;
+      // MAX() erases the column's type, so unlike a plain `airDate` select the
+      // driver hands this back as a string rather than a Date.
+      lastWatchedAt: string | null;
+    }>
+  >`
+    SELECT
+      e."showId" AS "showId",
+      SUM(CASE WHEN e."airDate" IS NOT NULL AND e."airDate" <= ${now}
+               THEN 1 ELSE 0 END) AS "airedCount",
+      SUM(CASE WHEN e."airDate" IS NOT NULL AND e."airDate" <= ${now}
+                AND w."id" IS NOT NULL
+               THEN 1 ELSE 0 END) AS "watchedCount",
+      MAX(w."watchedAt") AS "lastWatchedAt"
+    FROM "Episode" e
+    LEFT JOIN "WatchedEpisode" w
+      ON w."episodeId" = e."id"
+     AND w."userId" = ${userId}
+    WHERE e."showId" IN (${Prisma.join(showIds)})
+    GROUP BY e."showId"
+  `;
+
+  return new Map(
+    rows.map((row) => [
+      row.showId,
+      {
+        airedCount: Number(row.airedCount),
+        watchedCount: Number(row.watchedCount),
+        lastWatchedAt: row.lastWatchedAt ? new Date(row.lastWatchedAt) : null,
+      },
+    ]),
+  );
+}
+
+/**
+ * The next episode to watch for each show: the first aired, unwatched one in
+ * season-then-episode order.
+ *
+ * `ROW_NUMBER()` rather than one query per show — the point of this change is
+ * that cost stops scaling with the library. Ordering is explicit here because
+ * it is the whole answer: "next up" is a position in a sequence, and insertion
+ * order is not that sequence.
+ */
+async function loadNextUnwatched(
+  userId: string,
+  showIds: string[],
+  now: Date,
+): Promise<Map<string, TrackedShowSummary["nextUnwatched"]>> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      showId: string;
+      id: string;
+      seasonNumber: number;
+      episodeNumber: number;
+      name: string | null;
+    }>
+  >`
+    SELECT "showId", "id", "seasonNumber", "episodeNumber", "name"
+    FROM (
+      SELECT
+        e."showId" AS "showId",
+        e."id" AS "id",
+        e."seasonNumber" AS "seasonNumber",
+        e."episodeNumber" AS "episodeNumber",
+        e."name" AS "name",
+        ROW_NUMBER() OVER (
+          PARTITION BY e."showId"
+          ORDER BY e."seasonNumber" ASC, e."episodeNumber" ASC
+        ) AS rn
+      FROM "Episode" e
+      LEFT JOIN "WatchedEpisode" w
+        ON w."episodeId" = e."id"
+       AND w."userId" = ${userId}
+      WHERE e."showId" IN (${Prisma.join(showIds)})
+        AND e."airDate" IS NOT NULL
+        AND e."airDate" <= ${now}
+        AND w."id" IS NULL
+    )
+    WHERE rn = 1
+  `;
+
+  return new Map(
+    rows.map((row) => [
+      row.showId,
+      {
+        id: row.id,
+        seasonNumber: Number(row.seasonNumber),
+        episodeNumber: Number(row.episodeNumber),
+        name: row.name,
+      },
+    ]),
+  );
 }
 
 /**

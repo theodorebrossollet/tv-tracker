@@ -140,6 +140,109 @@ describe("watch progress", () => {
       "b",
     ]);
   });
+
+  it("does not count a watch mark on an episode that hasn't aired", async () => {
+    // Nothing in the UI offers this — `EpisodeRow` refuses, and
+    // `setSeasonWatched` filters to aired — but `markEpisodeWatched` takes an
+    // episode id and a server action is POST-able directly, so the row can
+    // exist. Progress is measured against what has aired, so counting it would
+    // report 2/1 watched.
+    await seedShow({ offsets: [-10, 5], status: "watching", watched: [0, 1] });
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
+
+    expect(show.airedCount).toBe(1);
+    expect(show.watchedCount).toBe(1);
+    expect(show.fullyWatched).toBe(true);
+  });
+
+  it("still counts that mark as activity, for ordering", async () => {
+    // The aired filter applies to *progress*, not to "when did you last touch
+    // this show" — watching something early is still activity, and the two
+    // numbers are derived in the same pass, which is exactly how they get
+    // conflated. Asserted directly because `sortByActionability` reads it.
+    const { showId } = await seedShow({
+      offsets: [-10, 5],
+      status: "watching",
+      watched: [1],
+    });
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
+
+    expect(show.showId).toBe(showId);
+    expect(show.watchedCount).toBe(0);
+    expect(show.lastWatchedAt).not.toBeNull();
+  });
+
+  it("has no last-watched time for a show never watched", async () => {
+    await seedShow({ offsets: [-10], status: "watching" });
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
+
+    expect(show.lastWatchedAt).toBeNull();
+  });
+
+  it("reports a tracked show that has no episodes cached yet", async () => {
+    // A show is tracked the moment it is added, and the episode rows arrive
+    // with the sync. Between the two — or if a sync failed — the row exists
+    // with nothing under it, and it still has to appear on the watchlist.
+    await seedShow({ showId: "bare", offsets: [], status: "watchlist" });
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watchlist");
+
+    expect(show.showId).toBe("bare");
+    expect(show.airedCount).toBe(0);
+    expect(show.watchedCount).toBe(0);
+    expect(show.fullyWatched).toBe(false);
+    expect(show.nextUnwatched).toBeNull();
+  });
+
+  it("finds next-up across a season boundary, in season order", async () => {
+    // `seedShow` puts everything in season 1, so nothing else here exercises
+    // the season-then-episode ordering that "next up" depends on. Inserted out
+    // of order so a query relying on insertion order gets it wrong.
+    const { prisma } = await import("@/lib/prisma");
+
+    await prisma.show.create({ data: { id: "multi", name: "Multi" } });
+    await prisma.trackedShow.create({
+      data: { userId: TEST_USER_ID, showId: "multi", status: "watching" },
+    });
+
+    const aired = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    for (const [season, episode] of [
+      [2, 1],
+      [1, 2],
+      [1, 1],
+      [2, 2],
+    ]) {
+      await prisma.episode.create({
+        data: {
+          id: `multi-s${season}e${episode}`,
+          showId: "multi",
+          seasonNumber: season,
+          episodeNumber: episode,
+          name: `S${season}E${episode}`,
+          airDate: aired,
+        },
+      });
+    }
+
+    // Everything in season 1 watched; season 2 untouched.
+    for (const id of ["multi-s1e1", "multi-s1e2"]) {
+      await prisma.watchedEpisode.create({
+        data: { userId: TEST_USER_ID, episodeId: id },
+      });
+    }
+
+    const [show] = await getTrackedShows(TEST_USER_ID, "watching");
+
+    expect(show.airedCount).toBe(4);
+    expect(show.watchedCount).toBe(2);
+    expect(show.nextUnwatched?.id).toBe("multi-s2e1");
+    expect(show.nextUnwatched?.seasonNumber).toBe(2);
+    expect(show.nextUnwatched?.episodeNumber).toBe(1);
+    expect(show.nextUnwatched?.name).toBe("S2E1");
+  });
 });
 
 describe("upcoming episodes", () => {
