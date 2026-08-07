@@ -54,7 +54,8 @@ src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logg
                   action-result (ActionResult + toResult, shared by both action
                   modules; deliberately not "use server")
 prisma/           schema + migrations
-scripts/          migrate, backup, one-off backfills, icon generation
+scripts/          migrate, backup, one-off backfills, icon generation;
+                  icons/ holds the outlined SVGs the icons are rendered from
 public/sw.js      service worker: caches the app shell ONLY (see below)
 tests/            vitest
 ```
@@ -179,6 +180,19 @@ off a param with `limitFrom`: it's as attacker-supplied as any other input.
 **Anything importing `server-only` must never reach a client component.** That's
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date
 formatting (`lib/format.ts`) live apart from `lib/tmdb.ts`.
+
+**The icon SVGs in `scripts/icons/` contain no text, and must not grow any.**
+The mark is the wordmark "tv", and it arrived from design as a `<text>` element
+in Geist. Text in an SVG is resolved by whatever rasterises it, and every way
+that goes wrong is quiet: a machine without Geist substitutes a fallback and
+draws a plausible, wrong wordmark; librsvg — which is what `sharp` uses, and
+what the handoff's own pipeline recommended — draws it wrong *with* the font
+installed, because it leaves the trailing letter-spacing out of the advance
+width it centres on, putting the mark 15px left of centre on a 1024 canvas.
+Neither fails, and the icon is not something anyone looks at twice after the
+first day. The committed SVGs are outlined paths, which measured identical
+across rasterisers to within antialiasing. `tests/icons.test.ts` fails on a
+reintroduced `<text>` or `font-family`, because nothing else would.
 
 **Server actions are POST-able directly, and nothing sits in front of them.**
 The shared `APP_PASSWORD` gate is gone; every action opens with
