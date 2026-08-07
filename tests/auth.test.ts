@@ -60,9 +60,20 @@ const { resetDatabase } = await import("./helpers");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Codes in the shape the scripts actually issue: 32 lowercase hex characters
+// from `randomBytes(16)`. The fixtures used to be words like "correct-horse",
+// which no real code can be — `loginWithCode` now rejects anything that isn't
+// this shape before it reaches the database, so a test using a word would be
+// testing the reject path while looking like it tested a login.
+const CODE_A = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+/** A different, equally well-formed code — for "wrong but plausible". */
+const CODE_B = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+/** As pasted by a human: stray whitespace and an autocapitalised character. */
+const CODE_A_MESSY = "  A1B2C3D4E5F60718293A4B5C6D7E8F90\n";
+
 async function makeUser(
   nickname: string | null = null,
-  code = "code-1",
+  code = CODE_A,
   password: string | null = null,
 ) {
   return prisma.user.create({
@@ -76,7 +87,7 @@ async function makeUser(
 }
 
 /** A finished account: nickname and password both set. */
-const makeOnboardedUser = (nickname = "theo", code = "code-1", password = "hunter2hunter2") =>
+const makeOnboardedUser = (nickname = "theo", code = CODE_A, password = "hunter2hunter2") =>
   makeUser(nickname, code, password);
 
 /** The destination of a redirect thrown by the call, or null if it returned. */
@@ -209,7 +220,7 @@ describe("gates", () => {
     // The state every account was left in before passwords existed. A gate
     // that only checks the nickname would wave these straight through with no
     // usable credential set.
-    const user = await makeUser("theo", "code-1", null);
+    const user = await makeUser("theo", CODE_A, null);
     await createSession(user.id);
 
     expect(await redirectedTo(requireSession)).toBeNull();
@@ -226,13 +237,13 @@ describe("gates", () => {
 
 describe("loginWithCode", () => {
   it("issues a session and redirects by onboarding state", async () => {
-    await makeUser(null, "correct-horse");
+    await makeUser(null, CODE_A);
 
     // Success redirects rather than returning. Navigating on the client
     // instead needed router.replace plus router.refresh, and those two in one
     // transition deadlock — the action returns 200, the destination renders,
     // and the form sits on "Signing in…" forever.
-    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/welcome");
+    expect(await redirectedTo(() => loginWithCode(CODE_A))).toBe("/welcome");
     await expect(prisma.session.count()).resolves.toBe(1);
   });
 
@@ -240,9 +251,9 @@ describe("loginWithCode", () => {
     // The code is the recovery route for a forgotten password — signing in
     // with it and landing in the app with the old, still-forgotten password
     // intact would just bring them back here next time.
-    const user = await makeOnboardedUser("theo", "correct-horse");
+    const user = await makeOnboardedUser("theo", CODE_A);
 
-    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/welcome");
+    expect(await redirectedTo(() => loginWithCode(CODE_A))).toBe("/welcome");
 
     const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(after.passwordHash).toBeNull();
@@ -250,8 +261,8 @@ describe("loginWithCode", () => {
   });
 
   it("lets a recovered account finish with a new password", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
-    await redirectedTo(() => loginWithCode("correct-horse"));
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
+    await redirectedTo(() => loginWithCode(CODE_A));
 
     expect(
       await redirectedTo(() => completeOnboarding("theo", "new-password1")),
@@ -271,9 +282,9 @@ describe("loginWithCode", () => {
   it("leaves an unfinished account (no password yet) alone", async () => {
     // Nickname set, password never chosen — the existing "keep the nickname,
     // only ask for a password" welcome path, not the reset path.
-    const user = await makeUser("theo", "correct-horse", null);
+    const user = await makeUser("theo", CODE_A, null);
 
-    await redirectedTo(() => loginWithCode("correct-horse"));
+    await redirectedTo(() => loginWithCode(CODE_A));
 
     const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(after.passwordHash).toBeNull();
@@ -283,12 +294,12 @@ describe("loginWithCode", () => {
     // Recovery is the other half of the same story as changePassword: someone
     // reaching for their code has lost control of something, so the sessions
     // that predate it can't be trusted either.
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
 
     await createSession(user.id);
     const staleCookie = jar.get(SESSION_COOKIE)!;
 
-    await redirectedTo(() => loginWithCode("correct-horse"));
+    await redirectedTo(() => loginWithCode(CODE_A));
 
     // Exactly one session: the one the code sign-in just minted.
     expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
@@ -300,27 +311,78 @@ describe("loginWithCode", () => {
   it("keeps a mid-onboarding session when there is no password to recover", async () => {
     // No password set means nothing has been lost — this is someone still
     // finishing setup, and signing them out mid-flow would be gratuitous.
-    const user = await makeUser("theo", "correct-horse", null);
+    const user = await makeUser("theo", CODE_A, null);
 
     await createSession(user.id);
     const existing = jar.get(SESSION_COOKIE)!;
 
-    await redirectedTo(() => loginWithCode("correct-horse"));
+    await redirectedTo(() => loginWithCode(CODE_A));
 
     jar.set(SESSION_COOKIE, existing);
     await expect(getSession()).resolves.not.toBeNull();
   });
 
-  it("tolerates a pasted code with surrounding whitespace", async () => {
-    await makeUser(null, "correct-horse");
+  it("tolerates a pasted code with stray whitespace or capitals", async () => {
+    // `hashCode` is a plain SHA-256, so an autocapitalised character used to
+    // fail with "That code isn't recognised" on a code that was entirely
+    // correct — a miserable thing to hit on the one credential with no
+    // self-serve recovery. Every issued code is lowercase hex, so folding case
+    // can only rescue an input that would otherwise have failed.
+    await makeUser(null, CODE_A);
 
-    expect(await redirectedTo(() => loginWithCode("  correct-horse\n"))).toBe("/welcome");
+    expect(await redirectedTo(() => loginWithCode(CODE_A_MESSY))).toBe("/welcome");
+  });
+
+  it("refuses a malformed code without touching the database", async () => {
+    // The bound on an action nothing else bounds. `loginWithCode` is reachable
+    // without a session, and each attempt that reaches Prisma costs a Vercel
+    // invocation and an indexed Turso read — which is a bill, not a break-in,
+    // but a bill anyone can run up once the endpoint is public. Input that
+    // cannot be a code this app issued is rejected before any of that.
+    //
+    // Spying on Prisma rather than asserting `ok: false`, because a wrong code
+    // also returns `ok: false` — the whole point is *where* it stops.
+    await makeUser(null, CODE_A);
+    const lookup = vi.spyOn(prisma.user, "findUnique");
+
+    for (const malformed of [
+      "wrong",
+      "correct-horse-battery-staple",
+      CODE_A.slice(0, 31), // one character short
+      `${CODE_A}0`, // one too long
+      CODE_A.replace("a", "g"), // not hex
+      "../../etc/passwd",
+      "%00",
+    ]) {
+      const result = await loginWithCode(malformed);
+      expect(result.ok, malformed).toBe(false);
+      // Same message as a genuinely wrong code: telling a script it sent the
+      // wrong *shape* tells it what shape to send.
+      expect(result.error, malformed).toMatch(/isn't recognised/i);
+    }
+
+    expect(lookup).not.toHaveBeenCalled();
+    expect(jar.has(SESSION_COOKIE)).toBe(false);
+
+    lookup.mockRestore();
+  });
+
+  it("still reaches the database for a well-formed but wrong code", async () => {
+    // The other half: the shape check must not become the whole check. A code
+    // that looks right has to be tested against the stored hash.
+    await makeUser(null, CODE_A);
+    const lookup = vi.spyOn(prisma.user, "findUnique");
+
+    await loginWithCode(CODE_B);
+
+    expect(lookup).toHaveBeenCalled();
+    lookup.mockRestore();
   });
 
   it("rejects a wrong code without creating a session", async () => {
-    await makeUser(null, "correct-horse");
+    await makeUser(null, CODE_A);
 
-    const result = await loginWithCode("wrong");
+    const result = await loginWithCode(CODE_B);
 
     expect(result.ok).toBe(false);
     // Asserting the *message*, not just `ok: false`. Without the "no such user"
@@ -358,8 +420,8 @@ describe("loginWithCode", () => {
   });
 
   it("clears the session on logout", async () => {
-    await makeUser(null, "correct-horse");
-    await redirectedTo(() => loginWithCode("correct-horse"));
+    await makeUser(null, CODE_A);
+    await redirectedTo(() => loginWithCode(CODE_A));
 
     expect(await redirectedTo(logout)).toBe("/login");
     await expect(prisma.session.count()).resolves.toBe(0);
@@ -369,7 +431,7 @@ describe("loginWithCode", () => {
 
 describe("loginWithPassword", () => {
   it("signs in a finished account", async () => {
-    await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+    await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     expect(
       await redirectedTo(() => loginWithPassword("theo", "hunter2hunter2")),
@@ -378,7 +440,7 @@ describe("loginWithPassword", () => {
   });
 
   it("matches the nickname case-insensitively", async () => {
-    await makeOnboardedUser("Theo", "code-1", "hunter2hunter2");
+    await makeOnboardedUser("Theo", CODE_A, "hunter2hunter2");
 
     expect(
       await redirectedTo(() => loginWithPassword("  tHeO ", "hunter2hunter2")),
@@ -386,7 +448,7 @@ describe("loginWithPassword", () => {
   });
 
   it("rejects a wrong password without creating a session", async () => {
-    await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+    await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     const result = await loginWithPassword("theo", "wrong-password");
 
@@ -398,7 +460,7 @@ describe("loginWithPassword", () => {
   });
 
   it("says the same thing for an unknown nickname as for a wrong password", async () => {
-    await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+    await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     const unknown = await loginWithPassword("nobody", "hunter2hunter2");
     const wrong = await loginWithPassword("theo", "not-the-password");
@@ -408,7 +470,7 @@ describe("loginWithPassword", () => {
   });
 
   it("turns away an over-length password without hashing it", async () => {
-    const user = await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+    const user = await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     // Hashing is ~100ms of CPU and 32MB, and this action is reachable by an
     // unauthenticated POST — so the input it hands to scrypt has to be bounded.
@@ -430,7 +492,7 @@ describe("loginWithPassword", () => {
   });
 
   it("turns away an over-length nickname the same way", async () => {
-    await makeOnboardedUser("theo", "code-1", "hunter2hunter2");
+    await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     const lookup = vi.spyOn(prisma.user, "findUnique");
     const result = await loginWithPassword("n".repeat(NICKNAME_MAX + 1), "hunter2hunter2");
@@ -444,7 +506,7 @@ describe("loginWithPassword", () => {
   it("refuses an account that hasn't set a password yet", async () => {
     // Nickname set, password still null — reachable for accounts that existed
     // before passwords, and it must not be a way in without one.
-    await makeUser("theo", "code-1", null);
+    await makeUser("theo", CODE_A, null);
 
     // A real-looking password, not "" — an empty one is rejected by the
     // required-fields check before the password branch is ever reached, so it
@@ -559,12 +621,12 @@ describe("login throttling", () => {
     // The escape hatch that makes locking safe: a stranger who trips someone
     // else's lockout cannot keep them out, because the way back in never
     // depended on the password.
-    const user = await makeOnboardedUser("theo", "correct-horse");
+    const user = await makeOnboardedUser("theo", CODE_A);
     await failTimes(FAILURE_THRESHOLD);
 
     // Also sent to set a new password, same as any other code recovery — see
     // the "loginWithCode" describe block above.
-    expect(await redirectedTo(() => loginWithCode("correct-horse"))).toBe("/welcome");
+    expect(await redirectedTo(() => loginWithCode(CODE_A))).toBe("/welcome");
 
     await expect(
       prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
@@ -615,7 +677,7 @@ describe("completeOnboarding", () => {
 
   it("keeps the existing nickname and only adds a password", async () => {
     // The state accounts were left in before passwords existed.
-    const user = await makeUser("theo", "code-1", null);
+    const user = await makeUser("theo", CODE_A, null);
     await createSession(user.id);
 
     // A different nickname is submitted; it must be ignored, not applied.
@@ -696,7 +758,7 @@ describe("signOutEverywhere", () => {
     // The gap this fills: revocation existed, but only as a side effect of
     // changing a password. "I left myself signed in on a borrowed laptop"
     // shouldn't require picking a new password and re-entering it everywhere.
-    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+    const user = await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
 
     await createSession(user.id);
     const otherCookie = jar.get(SESSION_COOKIE)!;
@@ -716,7 +778,7 @@ describe("signOutEverywhere", () => {
     // The row is gone either way, but a cookie left behind means the browser
     // keeps presenting a dead token and every request pays a lookup to be
     // told so.
-    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+    const user = await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
     await createSession(user.id);
 
     await redirectedTo(() => signOutEverywhere());
@@ -725,7 +787,7 @@ describe("signOutEverywhere", () => {
   });
 
   it("leaves another account alone", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "hunter2hunter2");
+    const user = await makeOnboardedUser("theo", CODE_A, "hunter2hunter2");
     const other = await makeOnboardedUser("sam", "code-2", "other-password1");
 
     await createSession(other.id);
@@ -743,10 +805,10 @@ describe("signOutEverywhere", () => {
 
 describe("changePassword", () => {
   it("changes the password when the code matches", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
     await createSession(user.id);
 
-    const result = await changePassword("correct-horse", "new-password1");
+    const result = await changePassword(CODE_A, "new-password1");
     expect(result.ok).toBe(true);
 
     const before = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
@@ -766,7 +828,7 @@ describe("changePassword", () => {
   });
 
   it("rejects a wrong code without touching the password", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
     await createSession(user.id);
 
     const before = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
@@ -780,10 +842,10 @@ describe("changePassword", () => {
   });
 
   it("rejects a new password that fails the shared validation", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
     await createSession(user.id);
 
-    const result = await changePassword("correct-horse", "short");
+    const result = await changePassword(CODE_A, "short");
     expect(result.ok).toBe(false);
 
     // The old password is still the one that works.
@@ -794,7 +856,7 @@ describe("changePassword", () => {
 
   it("redirects a signed-out caller instead of writing", async () => {
     expect(
-      await redirectedTo(() => changePassword("correct-horse", "new-password1")),
+      await redirectedTo(() => changePassword(CODE_A, "new-password1")),
     ).toBe("/login");
   });
 
@@ -803,7 +865,7 @@ describe("changePassword", () => {
     // password has to end that, or "change your password" is advice that
     // doesn't work — expiry slides forward on every visit, so their session
     // never lapses on its own.
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
 
     await createSession(user.id);
     const otherCookie = jar.get(SESSION_COOKIE)!;
@@ -816,7 +878,7 @@ describe("changePassword", () => {
     expect(otherCookie).not.toBe(ownCookie);
     expect(await prisma.session.count({ where: { userId: user.id } })).toBe(2);
 
-    expect(await changePassword("correct-horse", "new-password1")).toMatchObject(
+    expect(await changePassword(CODE_A, "new-password1")).toMatchObject(
       { ok: true },
     );
 
@@ -831,13 +893,13 @@ describe("changePassword", () => {
   });
 
   it("leaves another account's sessions alone", async () => {
-    const user = await makeOnboardedUser("theo", "correct-horse", "old-password1");
+    const user = await makeOnboardedUser("theo", CODE_A, "old-password1");
     const other = await makeOnboardedUser("sam", "code-2", "other-password1");
 
     await createSession(other.id);
     await createSession(user.id);
 
-    await changePassword("correct-horse", "new-password1");
+    await changePassword(CODE_A, "new-password1");
 
     // The revoking `deleteMany` is scoped by userId; without that filter this
     // would sign the whole household out.

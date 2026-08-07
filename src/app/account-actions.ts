@@ -11,6 +11,7 @@ import {
   requireOnboardedSession,
   requireSession,
 } from "@/lib/auth";
+import { isAccountCode, normalizeCode } from "@/lib/account-code";
 import {
   isUniqueConstraintError,
   toResult,
@@ -57,9 +58,21 @@ import { prisma } from "@/lib/prisma";
  * works by throwing, so `toResult` would swallow it into a generic error.
  */
 export async function loginWithCode(code: string): Promise<ActionResult> {
-  const trimmed = code.trim();
+  const trimmed = normalizeCode(code);
 
   if (!trimmed) return { ok: false, error: "Enter your account code." };
+
+  // Checked before anything touches the database. This action is the only one
+  // reachable without a session and nothing bounds it, so every attempt that
+  // gets past here costs an invocation and an indexed read — see the note in
+  // lib/account-code.ts. Malformed input cannot be a code this app issued, so
+  // rejecting it spends nothing.
+  //
+  // Same message as a wrong code on purpose: "that isn't the right shape" tells
+  // a script what shape to send.
+  if (!isAccountCode(trimmed)) {
+    return { ok: false, error: "That code isn't recognised." };
+  }
 
   let destination: string;
 
@@ -390,8 +403,14 @@ export async function changePassword(
   // Above the try — same reasoning as every other action in this section.
   const session = await requireOnboardedSession();
 
-  const trimmedCode = code.trim();
+  // Normalized and shape-checked the same way `loginWithCode` does — a code
+  // pasted with a capital letter should work in both places, and neither should
+  // reach the database with something that cannot be a code.
+  const trimmedCode = normalizeCode(code);
   if (!trimmedCode) return { ok: false, error: "Enter your account code." };
+  if (!isAccountCode(trimmedCode)) {
+    return { ok: false, error: "That code isn't recognised." };
+  }
 
   const checkedPassword = validatePassword(newPassword, {
     nickname: session.user.nickname ?? undefined,
