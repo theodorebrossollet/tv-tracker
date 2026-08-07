@@ -1,166 +1,123 @@
-// Generates the PWA icons in public/ from the shapes described below.
+// Rasterises the app icons in public/ (and the favicon) from the SVGs in
+// scripts/icons/.
 //
-// Committed as a generator rather than as four opaque PNGs so the icons have a
-// source: changing the accent colour or the glyph is an edit here and one
-// command, not a round trip through a design tool. There is no image library in
-// this project's dependencies and none is worth adding for four flat icons, so
-// the PNG encoder is inline — it only needs the uncompressed, non-interlaced
-// RGBA case.
+// The SVGs are the source of truth, and their text is OUTLINED — there is no
+// live <text> in them and no font to install. That is deliberate and worth not
+// undoing: the artwork came from the design handoff as live <text> in Geist,
+// and a rasteriser that lays text out even slightly differently produces a
+// different icon while reporting success. librsvg, which is what sharp uses and
+// what the handoff's own pipeline recommended, does exactly that — it leaves
+// the trailing letter-spacing out of the advance width it centres on, so the
+// mark landed 15px left of centre on a 1024 canvas versus a browser. With the
+// font missing entirely it is worse and just as quiet: a fallback face renders
+// a plausible, wrong wordmark. Outlined paths render identically everywhere,
+// measured at 0.27% of pixels differing between librsvg and Chromium, all of it
+// antialiasing.
+//
+// So: edit the SVGs, re-run this. To change the wordmark itself you need Geist
+// as a font file and a text-to-path step — that is a deliberate speed bump,
+// not an oversight.
+//
+// sharp is a devDependency rather than something this file hand-rolls. The
+// previous version of this script encoded PNGs inline to avoid adding an image
+// library, which was reasonable when the icons were flat rectangles drawn in
+// code; it cannot fill a bezier. sharp is already installed either way — Next
+// depends on it for image optimisation — so declaring it costs nothing.
 //
 // Usage: node scripts/generate-icons.mjs
 
-import { deflateSync } from "node:zlib";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
-/** Indigo, matching --accent in globals.css (the light-mode value). */
-const ACCENT = [0x4f, 0x46, 0xe5];
-const WHITE = [0xff, 0xff, 0xff];
+import sharp from "sharp";
 
-// --- PNG encoding ----------------------------------------------------------
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const src = (name) => readFileSync(join(root, "scripts/icons", name));
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-function crc32(buffer) {
-  let c = 0xffffffff;
-  for (const byte of buffer) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function chunk(type, data) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-
-  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-
-  return Buffer.concat([length, body, crc]);
-}
-
-function encodePng(width, height, rgba) {
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header[8] = 8; // bit depth
-  header[9] = 6; // colour type: RGBA
-  // bytes 10-12 stay zero: deflate, adaptive filtering, no interlacing.
-
-  // Each scanline is prefixed with its filter type. Filter 0 (none) costs a
-  // little size on flat art and keeps this readable.
-  const stride = width * 4;
-  const raw = Buffer.alloc((stride + 1) * height);
-  for (let y = 0; y < height; y++) {
-    raw[y * (stride + 1)] = 0;
-    rgba.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
-  }
-
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", header),
-    chunk("IDAT", deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-// --- Drawing ---------------------------------------------------------------
-
-function canvas(size, background) {
-  const pixels = Buffer.alloc(size * size * 4);
-
-  for (let i = 0; i < size * size; i++) {
-    pixels[i * 4] = background[0];
-    pixels[i * 4 + 1] = background[1];
-    pixels[i * 4 + 2] = background[2];
-    pixels[i * 4 + 3] = 255;
-  }
-
-  return pixels;
-}
-
-const put = (pixels, size, x, y, colour) => {
-  const i = (y * size + x) * 4;
-  pixels[i] = colour[0];
-  pixels[i + 1] = colour[1];
-  pixels[i + 2] = colour[2];
-  pixels[i + 3] = 255;
-};
-
-/** Rounded rectangle, corners approximated by a circle at each corner. */
-function roundedRect(pixels, size, { x, y, w, h, r }, colour) {
-  for (let py = Math.max(0, y); py < Math.min(size, y + h); py++) {
-    for (let px = Math.max(0, x); px < Math.min(size, x + w); px++) {
-      const dx = Math.max(x + r - px, px - (x + w - 1 - r), 0);
-      const dy = Math.max(y + r - py, py - (y + h - 1 - r), 0);
-      if (dx * dx + dy * dy <= r * r) put(pixels, size, px, py, colour);
-    }
-  }
-}
-
-/** Right-pointing triangle inscribed in the given box. */
-function playTriangle(pixels, size, { x, y, w, h }, colour) {
-  for (let py = y; py < y + h; py++) {
-    // Distance from the vertical centre, 0 at the middle row and 1 at the tips.
-    const t = Math.abs(py - (y + h / 2)) / (h / 2);
-    const rowWidth = Math.round(w * (1 - t));
-
-    for (let px = x; px < x + rowWidth; px++) {
-      if (px >= 0 && px < size && py >= 0 && py < size) {
-        put(pixels, size, px, py, colour);
-      }
-    }
-  }
+/**
+ * Renders at 3x and downsamples.
+ *
+ * librsvg rasterises at the SVG's own pixel size before any resize, so asking
+ * for 16px directly antialiases a 16px render rather than a good one — the
+ * curve of the "v" turns to steps. `density` scales that internal render.
+ */
+async function png(svg, size) {
+  return sharp(svg, { density: 96 * 3 })
+    .resize(size, size, { fit: "fill" })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 }
 
 /**
- * A screen with a play triangle in it.
+ * A .ico wrapping PNGs, which every browser in use has understood for years.
  *
- * `scale` is the glyph's share of the canvas. The maskable variant uses a
- * smaller one because launchers crop maskable icons to a shape of their
- * choosing — anything outside the middle 80% may be cut off, so the glyph has
- * to sit well inside that safe zone while the background bleeds to the edge.
+ * Layout: a 6-byte ICONDIR, then one 16-byte ICONDIRENTRY per image, then the
+ * image data. Width and height are single bytes, where 0 means 256.
  */
-function drawIcon(size, scale) {
-  const pixels = canvas(size, ACCENT);
+function ico(images) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // 1 = icon
+  header.writeUInt16LE(images.length, 4);
 
-  const w = Math.round(size * scale);
-  const h = Math.round(w * 0.72);
-  const x = Math.round((size - w) / 2);
-  const y = Math.round((size - h) / 2);
+  let offset = 6 + images.length * 16;
+  const entries = images.map(({ size, data }) => {
+    const entry = Buffer.alloc(16);
+    entry.writeUInt8(size === 256 ? 0 : size, 0);
+    entry.writeUInt8(size === 256 ? 0 : size, 1);
+    entry.writeUInt8(0, 2); // palette size: not palettised
+    entry.writeUInt8(0, 3); // reserved
+    entry.writeUInt16LE(1, 4); // colour planes
+    entry.writeUInt16LE(32, 6); // bits per pixel
+    entry.writeUInt32LE(data.length, 8);
+    entry.writeUInt32LE(offset, 12);
+    offset += data.length;
+    return entry;
+  });
 
-  roundedRect(pixels, size, { x, y, w, h, r: Math.round(w * 0.12) }, WHITE);
-
-  const tw = Math.round(w * 0.26);
-  const th = Math.round(tw * 1.15);
-  playTriangle(
-    pixels,
-    size,
-    {
-      x: Math.round(x + w / 2 - tw * 0.4),
-      y: Math.round(y + h / 2 - th / 2),
-      w: tw,
-      h: th,
-    },
-    ACCENT,
-  );
-
-  return encodePng(size, size, pixels);
+  return Buffer.concat([header, ...entries, ...images.map((i) => i.data)]);
 }
 
-const icons = [
-  ["public/icon-192.png", drawIcon(192, 0.62)],
-  ["public/icon-512.png", drawIcon(512, 0.62)],
-  // Smaller glyph: launchers crop this one to a mask of their choosing.
-  ["public/icon-maskable-512.png", drawIcon(512, 0.46)],
-  // iOS ignores the manifest's icons for the home screen and uses this tag's
-  // image instead, at 180×180.
-  ["public/apple-touch-icon.png", drawIcon(180, 0.62)],
+const app = src("icon-app.svg");
+const maskable = src("icon-maskable.svg");
+const dark = src("icon-dark.svg");
+const small = src("favicon-small.svg");
+
+const outputs = [
+  // Indigo for anything the user sees as *the app* — home screen, launcher,
+  // install prompt. It carries --accent, which a dark tile does not.
+  ["public/icon-192.png", await png(app, 192)],
+  ["public/icon-512.png", await png(app, 512)],
+  // Android crops these to a shape of its choosing, so the mark is inset.
+  ["public/icon-maskable-192.png", await png(maskable, 192)],
+  ["public/icon-maskable-512.png", await png(maskable, 512)],
+  // iOS ignores the manifest's icons for the home screen and uses this one.
+  ["public/apple-touch-icon.png", await png(app, 180)],
 ];
 
-for (const [path, data] of icons) {
-  writeFileSync(path, data);
+for (const [path, data] of outputs) {
+  writeFileSync(join(root, path), data);
   console.log(`  ${String(data.length).padStart(7)} bytes  ${path}`);
 }
+
+// The favicon is dark rather than indigo: it sits in browser chrome, not on the
+// app's surface. 32 and 16 come from the redraw — larger type, no dot — because
+// the dot is roughly two pixels at 16 and reads as dirt, and the wordmark at
+// the app icon's proportions reads as a smudge. Downscaling the app icon here
+// was tried and is visibly worse.
+const favicon = ico([
+  { size: 48, data: await png(dark, 48) },
+  { size: 32, data: await png(small, 32) },
+  { size: 16, data: await png(small, 16) },
+]);
+
+// Lives in app/ rather than public/: it is the App Router file convention, and
+// Next serves it at /favicon.ico and emits the <link> itself. A public/favicon.ico
+// would be a second file claiming the same route.
+writeFileSync(join(root, "src/app/favicon.ico"), favicon);
+console.log(`  ${String(favicon.length).padStart(7)} bytes  src/app/favicon.ico`);
+
+// Served as-is; Safari masks and recolours it for pinned tabs.
+copyFileSync(join(root, "scripts/icons/icon-mono.svg"), join(root, "public/icon-mono.svg"));
+console.log(`           copied  public/icon-mono.svg`);

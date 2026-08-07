@@ -31,6 +31,10 @@ export const metadata: Metadata = {
   icons: {
     icon: "/icon-192.png",
     apple: "/apple-touch-icon.png",
+    // Safari's pinned-tab mask. It wants a solid black shape on transparency
+    // and applies `color` itself — a white one, which is how the artwork
+    // arrived, is invisible against the tab bar.
+    other: [{ rel: "mask-icon", url: "/icon-mono.svg", color: "#4f46e5" }],
   },
   appleWebApp: {
     capable: true,
