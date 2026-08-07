@@ -376,10 +376,41 @@ user-chosen password does not.
   anything resembling PII is what keeps this consistent with the rest of the
   account model.
 
-**No rate limiting on `loginWithCode`, deliberately.** At 128 bits of entropy
-(§8) brute force is infeasible at any request rate, so the
-`WRONG_PASSWORD_DELAY_MS` mitigation in `proxy.ts` has no analogue worth
-building there.
+**No rate limiting on `loginWithCode`, deliberately — but it does check the
+code's *shape*.** At 128 bits of entropy (§8) brute force is infeasible at any
+request rate, so the `WRONG_PASSWORD_DELAY_MS` mitigation in `proxy.ts` has no
+analogue worth building against a break-in.
+
+What that argument never covered is **cost**. This is the only action reachable
+without a session and nothing bounds it, so every attempt spends a Vercel
+invocation and an indexed Turso read. Nobody guesses a code; anybody can run up
+the bill, and the moment the repository is public the endpoint's shape is
+public with it.
+
+So `lib/account-code.ts` holds the format — 32 lowercase hex characters, derived
+from the `randomBytes(16)` the account scripts use rather than written down
+twice — and `loginWithCode` rejects anything that doesn't match *before* it
+touches Prisma. That removes the entire "send junk in a loop" class for free,
+and costs a legitimate visitor nothing, since every issued code matches by
+construction. `tests/auth.test.ts` spies on `prisma.user.findUnique` to prove
+malformed input never reaches it, and asserts a well-formed-but-wrong code still
+does — the shape check must not quietly become the whole check.
+
+Two things it deliberately does **not** do:
+
+- **It does not bound well-formed attempts.** That needs state shared across
+  instances, which means a round trip — the thing being conserved. Volume
+  belongs to the platform's rate limiting (Vercel's firewall), not to this
+  function. A per-IP table would also be weak against anything distributed while
+  costing a migration and a write per attempt.
+- **It does not say why it refused.** A malformed code and a wrong code return
+  the same message, because "that isn't the right shape" tells a script what
+  shape to send.
+
+`normalizeCode` lowercases as well as trimming, which is a fix rather than
+tidiness: `hashCode` is a plain SHA-256, so an autocapitalised first character
+used to fail as "That code isn't recognised" on a code that was completely
+correct — on the one credential with no self-serve recovery.
 
 **`loginWithPassword` needed one, and has one.** User-chosen passwords are
 guessable in a way codes are not, and once the shared gate came off the form
