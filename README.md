@@ -18,6 +18,17 @@ action now checks a real session.
 - [Technical design](docs/technical-design.md) — architecture, data model, routes
 - [Roadmap](docs/roadmap.md) — future feature ideas, not yet scheduled
 
+## Contributions
+
+This repo is public for transparency, not to solicit outside contributions —
+it's a personal project for a handful of invited users, and there's no
+roadmap for taking external PRs. Bug reports are still welcome as issues.
+
+No automation in this repo treats issue or PR text as instructions to
+execute — CI only runs the fixed steps in `.github/workflows/ci.yml`, nothing
+here reads a comment or PR description and runs it as a command, and nothing
+should be added that does, including AI code-review or PR-automation tools.
+
 ## Stack
 
 | Piece | Choice |
