@@ -88,6 +88,7 @@ describe("the caught-up card", () => {
       <CaughtUpCard
         next={{ code: "S03E01", name: "Cold Harbor", date: "21 Sep 2026" }}
         countdown="In 2 months"
+        showStatus="Returning Series"
       />,
     );
 
@@ -95,13 +96,34 @@ describe("the caught-up card", () => {
     expect(screen.getByText("In 2 months")).toBeTruthy();
   });
 
-  it("says nothing is scheduled when no date is announced", () => {
+  it("says nothing is scheduled when no date is announced, for a show that's still running", () => {
     // TMDB leaves the date empty for episodes that are announced but
     // unscheduled, and a countdown to nothing would be a lie.
-    render(<CaughtUpCard next={null} countdown={null} />);
+    render(
+      <CaughtUpCard next={null} countdown={null} showStatus="Returning Series" />,
+    );
 
+    expect(screen.getByText("Caught up")).toBeTruthy();
     expect(screen.getByText("Nothing scheduled")).toBeTruthy();
     expect(screen.getByText("No air date announced")).toBeTruthy();
+  });
+
+  it("says the series has ended rather than implying more might still air", () => {
+    // "All caught up" read identically whether TMDB had closed the book on
+    // the show or might still renew it — this is the same "Finished" vs
+    // "caught up" split `caughtUpLabel` makes for the Library list.
+    render(<CaughtUpCard next={null} countdown={null} showStatus="Ended" />);
+
+    expect(screen.getByText("Series finished")).toBeTruthy();
+    expect(screen.getByText("No more episodes")).toBeTruthy();
+    expect(screen.getByText("Series has ended")).toBeTruthy();
+    expect(screen.queryByText("Nothing scheduled")).toBeNull();
+  });
+
+  it("treats Canceled the same as Ended", () => {
+    render(<CaughtUpCard next={null} countdown={null} showStatus="Canceled" />);
+
+    expect(screen.getByText("Series finished")).toBeTruthy();
   });
 
   it("never offers Mark watched, having nothing to act on", () => {
@@ -111,6 +133,7 @@ describe("the caught-up card", () => {
       <CaughtUpCard
         next={{ code: "S03E01", name: "Cold Harbor", date: "21 Sep 2026" }}
         countdown="In 2 months"
+        showStatus="Returning Series"
       />,
     );
 

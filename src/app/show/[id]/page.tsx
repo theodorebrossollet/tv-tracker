@@ -315,6 +315,7 @@ export default async function ShowPage({
               countdown={
                 upcoming ? countdownTo(upcoming.date.toISOString()) : null
               }
+              showStatus={show.showStatus}
             />
           )}
 

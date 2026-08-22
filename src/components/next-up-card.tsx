@@ -4,6 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched } from "@/app/actions";
 import { episodeCode } from "@/lib/episode-code";
+import { caughtUpLabel, hasSeriesEnded } from "@/lib/format";
 
 export interface NextUpEpisode {
   id: string;
@@ -109,6 +110,8 @@ interface CaughtUpCardProps {
   /** The next unaired episode, when one is announced. */
   next: { code: string; name: string | null; date: string } | null;
   countdown: string | null;
+  /** TMDB's series status — tells a finished show apart from one between seasons. */
+  showStatus: string | null;
 }
 
 /**
@@ -117,8 +120,16 @@ interface CaughtUpCardProps {
  * A different shape rather than a disabled version of the same card: Mark
  * watched and Skip have nothing to act on, and a greyed-out button invites the
  * tap it will refuse.
+ *
+ * The label and the "nothing scheduled" copy both read `showStatus`, for the
+ * same reason `caughtUpLabel` exists: a show you're merely caught up on might
+ * still get another season, and "All caught up" read identically whether or
+ * not TMDB had actually closed the book on it. See AGENTS.md on "Finished" vs
+ * "caught up".
  */
-export function CaughtUpCard({ next, countdown }: CaughtUpCardProps) {
+export function CaughtUpCard({ next, countdown, showStatus }: CaughtUpCardProps) {
+  const ended = hasSeriesEnded(showStatus);
+
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface-sunken p-[15px]">
       <div className="flex items-center gap-2 text-accent-deep">
@@ -135,20 +146,26 @@ export function CaughtUpCard({ next, countdown }: CaughtUpCardProps) {
           <path d="m5 13 4 4L19 7" />
         </svg>
         <span className="font-mono text-[10px] uppercase tracking-[0.08em]">
-          All caught up
+          {caughtUpLabel(showStatus)}
         </span>
       </div>
 
       <div className="mt-3 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-medium">
-            {next ? (next.name ?? "Untitled episode") : "Nothing scheduled"}
+            {next
+              ? (next.name ?? "Untitled episode")
+              : ended
+                ? "No more episodes"
+                : "Nothing scheduled"}
           </p>
           <p className="mt-1 text-xs text-faint">
             {next ? (
               <>
                 <span className="font-mono">{next.code}</span> · {next.date}
               </>
+            ) : ended ? (
+              "Series has ended"
             ) : (
               "No air date announced"
             )}
