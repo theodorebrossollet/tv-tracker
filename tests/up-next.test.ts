@@ -45,6 +45,36 @@ describe("what the card says when nothing aired is left to watch", () => {
     expect(state.icon).toBe("clock");
   });
 
+  it("never claims more episodes watched than were watched", () => {
+    // The first version read `All ${airedCount} episodes watched` without
+    // consulting watchedCount, and shipped saying "All 20 episodes watched"
+    // on a show with 15 of 20 watched.
+    const state = upNextState({
+      showStatus: "Ended",
+      seasons: [season(1, 10, 10), season(2, 10, 8)],
+      next: null,
+    });
+
+    expect(state.detail).toBe("18 of 20 episodes watched");
+    expect(state.detail).not.toContain("All");
+  });
+
+  it("says you're behind rather than complete when aired episodes are unwatched", () => {
+    // This card only renders when nothing aired is left, so this state should
+    // be unreachable — and was seen anyway. It must not add a third answer to
+    // a page whose header and season strip both already say you're behind.
+    const state = upNextState({
+      showStatus: "Returning Series",
+      seasons: [season(1, 10, 10), season(2, 10, 5)],
+      next: null,
+    });
+
+    expect(state.kind).toBe("behind");
+    expect(state.title).toBe("5 episodes left to watch");
+    expect(state.detail).toBe("15 of 20 episodes watched");
+    expect(state.label).not.toContain("complete");
+  });
+
   it("calls a finished series finished", () => {
     const state = upNextState({
       showStatus: "Ended",

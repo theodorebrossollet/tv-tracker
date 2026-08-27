@@ -151,6 +151,29 @@ export default async function ShowPage({
         .join(" · "),
     }));
 
+  // The queue and the season pills answer one question — which aired episodes
+  // are unwatched — from one array, so they cannot legitimately disagree. They
+  // have: a show reading 15 of 20 watched, with the strip correctly showing 5
+  // outstanding on season 2, rendered the caught-up card, which only appears
+  // when this queue is empty. Nothing in this file can produce that, so the
+  // cause is upstream of `getShowDetail` and needs a render to point at.
+  if (unwatchedQueue.length === 0 && airedCount > watchedCount) {
+    logger.error("show.progress_mismatch", {
+      showId: show.id,
+      airedCount,
+      watchedCount,
+      episodeCount: allEpisodes.length,
+      // Named per season: whichever season the difference sits in is where the
+      // rows worth looking at are.
+      seasons: show.seasons.map((season) => ({
+        seasonNumber: season.seasonNumber,
+        aired: season.airedCount,
+        watched: season.watchedCount,
+        episodes: season.episodes.length,
+      })),
+    });
+  }
+
   const seasonSummaries: SeasonSummary[] = show.seasons.map((season) => ({
     seasonNumber: season.seasonNumber,
     unwatched: season.airedCount - season.watchedCount,
