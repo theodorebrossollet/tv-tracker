@@ -4,7 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched } from "@/app/actions";
 import { episodeCode } from "@/lib/episode-code";
-import { caughtUpLabel, hasSeriesEnded } from "@/lib/format";
+import type { UpNextState } from "@/lib/up-next";
 
 export interface NextUpEpisode {
   id: string;
@@ -107,11 +107,10 @@ export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
 }
 
 interface CaughtUpCardProps {
-  /** The next unaired episode, when one is announced. */
-  next: { code: string; name: string | null; date: string } | null;
+  /** Which of the no-episodes-left situations this is, from `upNextState`. */
+  state: UpNextState;
+  /** Only ever set when the state carries a date. */
   countdown: string | null;
-  /** TMDB's series status — tells a finished show apart from one between seasons. */
-  showStatus: string | null;
 }
 
 /**
@@ -121,55 +120,52 @@ interface CaughtUpCardProps {
  * watched and Skip have nothing to act on, and a greyed-out button invites the
  * tap it will refuse.
  *
- * The label and the "nothing scheduled" copy both read `showStatus`, for the
- * same reason `caughtUpLabel` exists: a show you're merely caught up on might
- * still get another season, and "All caught up" read identically whether or
- * not TMDB had actually closed the book on it. See AGENTS.md on "Finished" vs
- * "caught up".
+ * All the wording comes from `upNextState`, which is where the cases are
+ * enumerated and tested. This used to say "Caught up · Nothing scheduled" for
+ * every one of them, including a show midway through a season whose remaining
+ * episodes simply have no dates yet — see the note there.
  */
-export function CaughtUpCard({ next, countdown, showStatus }: CaughtUpCardProps) {
-  const ended = hasSeriesEnded(showStatus);
-
+export function CaughtUpCard({ state, countdown }: CaughtUpCardProps) {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface-sunken p-[15px]">
       <div className="flex items-center gap-2 text-accent-deep">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-3"
-          aria-hidden="true"
-        >
-          <path d="m5 13 4 4L19 7" />
-        </svg>
+        {state.icon === "check" ? (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-3"
+            aria-hidden="true"
+          >
+            <path d="m5 13 4 4L19 7" />
+          </svg>
+        ) : (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-3"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+        )}
         <span className="font-mono text-[10px] uppercase tracking-[0.08em]">
-          {caughtUpLabel(showStatus)}
+          {state.label}
         </span>
       </div>
 
       <div className="mt-3 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-medium">
-            {next
-              ? (next.name ?? "Untitled episode")
-              : ended
-                ? "No more episodes"
-                : "Nothing scheduled"}
-          </p>
-          <p className="mt-1 text-xs text-faint">
-            {next ? (
-              <>
-                <span className="font-mono">{next.code}</span> · {next.date}
-              </>
-            ) : ended ? (
-              "Series has ended"
-            ) : (
-              "No air date announced"
-            )}
-          </p>
+          <p className="text-[15px] font-medium">{state.title}</p>
+          <p className="mt-1 text-xs text-faint">{state.detail}</p>
         </div>
 
         {countdown ? (

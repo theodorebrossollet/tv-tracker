@@ -7,6 +7,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { UpNextState } from "@/lib/up-next";
+
 vi.mock("@/app/actions", () => ({ markEpisodeWatched: vi.fn() }));
 
 const { CaughtUpCard, NextUpCard } = await import(
@@ -83,59 +85,46 @@ describe("skipping through the queue", () => {
 });
 
 describe("the caught-up card", () => {
-  it("shows what is next and how far off it is", () => {
-    render(
-      <CaughtUpCard
-        next={{ code: "S03E01", name: "Cold Harbor", date: "21 Sep 2026" }}
-        countdown="In 2 months"
-        showStatus="Returning Series"
-      />,
-    );
+  const state = (overrides: Partial<UpNextState> = {}): UpNextState => ({
+    kind: "season-continues",
+    label: "Up to date with season 2",
+    title: "Season 2 continues 21 Sep 2026",
+    detail: "S03E01 · Cold Harbor",
+    icon: "check",
+    ...overrides,
+  });
 
-    expect(screen.getByText("Cold Harbor")).toBeTruthy();
+  it("shows the situation, its detail and how far off it is", () => {
+    render(<CaughtUpCard state={state()} countdown="In 2 months" />);
+
+    expect(screen.getByText("Season 2 continues 21 Sep 2026")).toBeTruthy();
+    expect(screen.getByText("S03E01 · Cold Harbor")).toBeTruthy();
+    expect(screen.getByText("Up to date with season 2")).toBeTruthy();
     expect(screen.getByText("In 2 months")).toBeTruthy();
   });
 
-  it("says nothing is scheduled when no date is announced, for a show that's still running", () => {
+  it("leaves the countdown out when there is no date to count to", () => {
     // TMDB leaves the date empty for episodes that are announced but
     // unscheduled, and a countdown to nothing would be a lie.
     render(
-      <CaughtUpCard next={null} countdown={null} showStatus="Returning Series" />,
+      <CaughtUpCard
+        state={state({
+          kind: "season-unscheduled",
+          title: "More of season 2 to come",
+          detail: "No air date announced for the rest of the season",
+        })}
+        countdown={null}
+      />,
     );
 
-    expect(screen.getByText("Caught up")).toBeTruthy();
-    expect(screen.getByText("Nothing scheduled")).toBeTruthy();
-    expect(screen.getByText("No air date announced")).toBeTruthy();
-  });
-
-  it("says the series has ended rather than implying more might still air", () => {
-    // "All caught up" read identically whether TMDB had closed the book on
-    // the show or might still renew it — this is the same "Finished" vs
-    // "caught up" split `caughtUpLabel` makes for the Library list.
-    render(<CaughtUpCard next={null} countdown={null} showStatus="Ended" />);
-
-    expect(screen.getByText("Series finished")).toBeTruthy();
-    expect(screen.getByText("No more episodes")).toBeTruthy();
-    expect(screen.getByText("Series has ended")).toBeTruthy();
-    expect(screen.queryByText("Nothing scheduled")).toBeNull();
-  });
-
-  it("treats Canceled the same as Ended", () => {
-    render(<CaughtUpCard next={null} countdown={null} showStatus="Canceled" />);
-
-    expect(screen.getByText("Series finished")).toBeTruthy();
+    expect(screen.getByText("More of season 2 to come")).toBeTruthy();
+    expect(screen.queryByText(/In 2 months/)).toBeNull();
   });
 
   it("never offers Mark watched, having nothing to act on", () => {
     // A different card rather than a disabled version of the Next-up one: a
     // greyed-out button invites the tap it will refuse.
-    render(
-      <CaughtUpCard
-        next={{ code: "S03E01", name: "Cold Harbor", date: "21 Sep 2026" }}
-        countdown="In 2 months"
-        showStatus="Returning Series"
-      />,
-    );
+    render(<CaughtUpCard state={state()} countdown="In 2 months" />);
 
     expect(screen.queryByRole("button")).toBeNull();
   });
