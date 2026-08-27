@@ -15,19 +15,6 @@ export interface NextUpEpisode {
   meta: string;
 }
 
-/**
- * The queue the Next-up card rotates through.
- *
- * Capped rather than complete. Skip walks to the following unwatched episode
- * without marking anything, so the card needs more than the one it is showing —
- * but a show you have just added has every episode unwatched, and shipping all
- * of them to power a button most visits never press is the payload problem the
- * rest of this page was rebuilt to avoid. Eight is several presses' worth; past
- * that the rotation wraps, which is what the handoff asks for when everything
- * left has been skipped.
- */
-export const NEXT_UP_QUEUE = 8;
-
 export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
   const [index, setIndex] = useState(0);
   const [marked, setMarked] = useOptimistic(false);
