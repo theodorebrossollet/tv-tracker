@@ -1,0 +1,76 @@
+name: Vercel log capture
+
+# Vercel's Hobby plan only retains runtime logs for about an hour (Pro is a
+# day; longer needs paid Log Drains), so this has to poll far more often than
+# anyone actually reads the output, or logs disappear before anything reads
+# them. The daily review Routine reads what this appends to the
+# vercel-logs-data branch — it does not talk to Vercel directly.
+#
+# Uses `vercel logs --since --until --json` rather than the raw
+# /runtime-logs REST endpoint: that endpoint is documented as a live stream
+# and has multiple reports (Vercel community) of hanging indefinitely or
+# 403ing on non-personal tokens. The CLI's bounded-window mode is the
+# supported non-interactive path.
+#
+# projects-tracker has its own identical copy of this workflow in its own
+# repo, writing to its own vercel-logs-data branch there — kept independent
+# on purpose so each project's capture can be iterated on and re-run without
+# touching the other, and so neither repo needs push credentials to the
+# other's branches.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: vercel-log-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      # Two checkouts: `repo` has the capture script (it lives on main like
+      # any other source file), `data` is the branch we actually write to.
+      # They have to be separate — vercel-logs-data doesn't carry the script.
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - uses: actions/checkout@v4
+        with:
+          ref: vercel-logs-data
+          path: data
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Capture tv-tracker logs
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_TVTRACKER }}
+        run: repo/.github/scripts/capture-vercel-logs.sh tv-tracker data/logs
+        continue-on-error: true
+
+      - name: Prune captures older than 14 days
+        working-directory: data
+        run: find logs -type f -name '*.jsonl' -mtime +14 -delete
+
+      - name: Commit and push
+        working-directory: data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add logs/
+          if git diff --cached --quiet; then
+            echo "Nothing new captured."
+            exit 0
+          fi
+          git commit -m "Capture Vercel logs $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          for attempt in 1 2 3; do
+            git push origin HEAD:vercel-logs-data && exit 0
+            echo "Push failed, retrying after rebase (attempt $attempt)..."
+            git fetch origin vercel-logs-data
+            git rebase origin/vercel-logs-data
+          done
+          exit 1
