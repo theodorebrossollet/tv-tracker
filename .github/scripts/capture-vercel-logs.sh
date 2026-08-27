@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pulls the last ~40 minutes of Vercel runtime logs for one project and
-# appends them to logs/<project>/<date>.jsonl. 40 minutes (not 30) gives
+# appends them to <out_dir>/<date>.jsonl. 40 minutes (not 30) gives
 # overlap margin against GitHub Actions' scheduling jitter and Vercel's
 # Hobby-plan 1-hour retention window; sort -u collapses the resulting
 # duplicate lines between runs.
