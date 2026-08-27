@@ -11,6 +11,12 @@ name: Vercel log capture
 # and has multiple reports (Vercel community) of hanging indefinitely or
 # 403ing on non-personal tokens. The CLI's bounded-window mode is the
 # supported non-interactive path.
+#
+# projects-tracker has its own identical copy of this workflow in its own
+# repo, writing to its own vercel-logs-data branch there — kept independent
+# on purpose so each project's capture can be iterated on and re-run without
+# touching the other, and so neither repo needs push credentials to the
+# other's branches.
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -43,13 +49,7 @@ jobs:
       - name: Capture tv-tracker logs
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_TVTRACKER }}
-        run: repo/.github/scripts/capture-vercel-logs.sh tv-tracker data/logs/tv-tracker
-        continue-on-error: true
-
-      - name: Capture projects-tracker logs
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN_PROJECTSTRACKER }}
-        run: repo/.github/scripts/capture-vercel-logs.sh projects-tracker data/logs/projects-tracker
+        run: repo/.github/scripts/capture-vercel-logs.sh tv-tracker data/logs
         continue-on-error: true
 
       - name: Prune captures older than 14 days
