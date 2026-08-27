@@ -18,6 +18,28 @@ const DATE_FORMAT_NO_YEAR = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 
+// Air dates are anchored to midnight US Eastern (see `parseAirDate` in
+// `lib/tmdb.ts`), so "today" has to be read in that same zone. Eastern is
+// behind UTC, so the UTC calendar day rolls over hours before the Eastern one
+// does — using `Date.now()`'s UTC day here made an episode airing at Eastern
+// midnight tonight show as "Today" while it was still airing tomorrow.
+const EASTERN_TODAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** Today's date in `America/New_York`, as a day index comparable to `daysUntil`'s target. */
+function easternTodayDayIndex(): number {
+  const parts = EASTERN_TODAY_FORMAT.formatToParts(new Date());
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  const utcMidnight = Date.UTC(read("year"), read("month") - 1, read("day"));
+  return Math.floor(utcMidnight / (24 * 60 * 60 * 1000));
+}
+
 /** ISO string → "14 Mar 2026". Returns "TBA" for missing dates. */
 export function formatAirDate(iso: string | null | undefined): string {
   if (!iso) return "TBA";
@@ -45,8 +67,7 @@ export function daysUntil(iso: string): number {
   if (Number.isNaN(target)) return 0;
 
   const dayMs = 24 * 60 * 60 * 1000;
-  const todayUtc = Math.floor(Date.now() / dayMs);
-  return Math.max(0, Math.floor(target / dayMs) - todayUtc);
+  return Math.max(0, Math.floor(target / dayMs) - easternTodayDayIndex());
 }
 
 /** "Today", "Tomorrow", "in 5 days", or the plain date further out. */

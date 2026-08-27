@@ -11,7 +11,10 @@ const { UpcomingList } = await import("@/components/upcoming-list");
 
 import type { TrackedShowSummary, UpcomingEpisode } from "@/lib/queries";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -114,11 +117,19 @@ describe("how soon an upcoming episode airs", () => {
   const paging = { searchParams: {}, limit: 15 };
 
   it("accents a date inside the week and leaves the rest quiet", () => {
+    // Pinned to noon UTC (safely inside the same calendar day in US Eastern
+    // too) rather than the real clock: `daysUntil` reads "today" in Eastern,
+    // so anchoring these fixtures to `Date.now()` made this test's outcome
+    // depend on what time it happened to run.
+    const now = new Date("2026-07-29T12:00:00.000Z").getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
     render(
       <UpcomingList
         episodes={[
-          episode({ episodeId: "soon", airDate: new Date(Date.now() + 2 * DAY_MS) }),
-          episode({ episodeId: "later", airDate: new Date(Date.now() + 30 * DAY_MS) }),
+          episode({ episodeId: "soon", airDate: new Date(now + 2 * DAY_MS) }),
+          episode({ episodeId: "later", airDate: new Date(now + 30 * DAY_MS) }),
         ]}
         {...paging}
       />,

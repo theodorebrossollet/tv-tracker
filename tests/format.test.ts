@@ -60,6 +60,16 @@ describe("daysUntil", () => {
 
     expect(daysUntil("2026-07-01T04:00:00.000Z")).toBe(0);
   });
+
+  it("stays on Eastern's calendar day, not UTC's, in the evening rollover window", () => {
+    // 2026-08-27T23:00:00-04:00 EDT is already 2026-08-28T03:00:00Z: the UTC
+    // calendar day has rolled over to the 28th while it's still the 27th in
+    // Eastern, which is the zone air dates are anchored to. An episode airing
+    // at Eastern midnight on the 28th is still a day away, not "today".
+    vi.setSystemTime(new Date("2026-08-28T03:00:00.000Z"));
+
+    expect(daysUntil("2026-08-28T04:00:00.000Z")).toBe(1);
+  });
 });
 
 describe("relativeAirDate", () => {
