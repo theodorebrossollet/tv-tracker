@@ -5,7 +5,6 @@ import { Availability } from "@/components/availability";
 import { EpisodeRow } from "@/components/episode-row";
 import {
   CaughtUpCard,
-  NEXT_UP_QUEUE,
   NextUpCard,
   type NextUpEpisode,
 } from "@/components/next-up-card";
@@ -35,7 +34,7 @@ import {
 import { getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
-import { currentSeason, upNextState } from "@/lib/up-next";
+import { NEXT_UP_QUEUE, currentSeason, upNextState } from "@/lib/up-next";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
 // STALE_AFTER_MS is imported rather than restated: it is the threshold
@@ -134,6 +133,14 @@ export default async function ShowPage({
   // Presentation, so it stays here: the queue is capped for the payload's sake
   // and each entry carries a pre-formatted line. What it must *not* do is
   // decide again what "aired" means.
+  //
+  // `NEXT_UP_QUEUE` comes from `lib/up-next.ts` and must keep coming from
+  // there. It used to be exported from `next-up-card.tsx`, which is
+  // `"use client"` — so the bundler handed this Server Component a client
+  // reference instead of `8`, `.slice(0, NaN)` returned `[]`, and the Next-up
+  // card never rendered for any show, for anyone. Nothing failed: it compiled,
+  // type checked, and showed the caught-up card, which is a plausible thing
+  // for a show page to say.
   const unwatchedQueue: NextUpEpisode[] = allEpisodes
     .filter((episode) => episode.aired && !episode.watched)
     .slice(0, NEXT_UP_QUEUE)
@@ -152,11 +159,10 @@ export default async function ShowPage({
     }));
 
   // The queue and the season pills answer one question — which aired episodes
-  // are unwatched — from one array, so they cannot legitimately disagree. They
-  // have: a show reading 15 of 20 watched, with the strip correctly showing 5
-  // outstanding on season 2, rendered the caught-up card, which only appears
-  // when this queue is empty. Nothing in this file can produce that, so the
-  // cause is upstream of `getShowDetail` and needs a render to point at.
+  // are unwatched — from one array, so they cannot disagree. They did, for the
+  // whole life of the client-reference bug above, and the disagreement was the
+  // only signal it gave: the pills were right and the queue was empty. Kept as
+  // a tripwire, because the next thing to break this way will be as quiet.
   if (unwatchedQueue.length === 0 && airedCount > watchedCount) {
     logger.error("show.progress_mismatch", {
       showId: show.id,

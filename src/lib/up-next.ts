@@ -25,6 +25,24 @@
 
 import { hasSeriesEnded } from "@/lib/format";
 
+/**
+ * How many unwatched episodes the Next-up card is given to rotate through.
+ *
+ * Capped rather than complete. Skip walks to the following unwatched episode
+ * without marking anything, so the card needs more than the one it is showing —
+ * but a show you have just added has every episode unwatched, and shipping all
+ * of them to power a button most visits never press is the payload problem the
+ * show page was rebuilt to avoid. Eight is several presses' worth; past that
+ * the rotation wraps.
+ *
+ * It lives here, and not beside the card it describes, because the *page*
+ * slices with it and the page is a Server Component. Exported from the card's
+ * `"use client"` module, it reached the server as a client reference rather
+ * than as `8` — see the note in `page.tsx`, and `tests/client-boundary.test.ts`,
+ * which fails if it ever moves back.
+ */
+export const NEXT_UP_QUEUE = 8;
+
 export interface SeasonProgress {
   seasonNumber: number;
   /** Episodes of this season that have aired, per `getShowDetail`. */
