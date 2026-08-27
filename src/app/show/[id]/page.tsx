@@ -35,6 +35,7 @@ import {
 import { getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
+import { currentSeason, upNextState } from "@/lib/up-next";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
 // STALE_AFTER_MS is imported rather than restated: it is the threshold
@@ -115,18 +116,25 @@ export default async function ShowPage({
   // rules a directory away from the one the lists use — see the note there.
   const { airedCount, watchedCount, finished } = show;
 
+  const allEpisodes = show.seasons.flatMap((entry) => entry.episodes);
+
   // Seasons are sorted and episodes ordered within them, so the first unaired
-  // one carrying a date is the next to land.
-  const nextUnaired =
-    show.seasons
-      .flatMap((entry) => entry.episodes)
-      .find((episode) => !episode.aired && episode.airDate !== null) ?? null;
+  // one is the next to come — whether or not TMDB has dated it. The undated
+  // ones matter: they are what tells "you're up to date with season 2, the
+  // rest isn't scheduled" apart from "season 2 is over".
+  const nextUnaired = allEpisodes.find((episode) => !episode.aired) ?? null;
+
+  // The next one that has actually been *scheduled*, which is the only kind
+  // the header can promise a date for.
+  const nextScheduled =
+    allEpisodes.find(
+      (episode) => !episode.aired && episode.airDate !== null,
+    ) ?? null;
 
   // Presentation, so it stays here: the queue is capped for the payload's sake
   // and each entry carries a pre-formatted line. What it must *not* do is
   // decide again what "aired" means.
-  const unwatchedQueue: NextUpEpisode[] = show.seasons
-    .flatMap((entry) => entry.episodes)
+  const unwatchedQueue: NextUpEpisode[] = allEpisodes
     .filter((episode) => episode.aired && !episode.watched)
     .slice(0, NEXT_UP_QUEUE)
     .map((episode) => ({
@@ -151,11 +159,12 @@ export default async function ShowPage({
   }));
 
   // Opening a show you're partway through should land on the part you're
-  // partway through.
+  // partway through — the season with the next unwatched episode, or, when
+  // there is nothing left to watch, the last one you watched into.
   const activeSeason = seasonFrom(
     params_,
     seasonSummaries.map((season) => season.seasonNumber),
-    unwatchedQueue[0]?.seasonNumber,
+    currentSeason(show.seasons, unwatchedQueue[0]?.seasonNumber),
   );
   const season = show.seasons.find(
     (entry) => entry.seasonNumber === activeSeason,
@@ -258,14 +267,36 @@ export default async function ShowPage({
     })),
   ];
 
-  const upcoming = nextUnaired
+  const upcoming = nextScheduled
     ? {
-        code: episodeCode(nextUnaired.seasonNumber, nextUnaired.episodeNumber),
-        name: nextUnaired.name,
-        // Safe: `nextUnaired` is only matched when it carries a date.
-        date: nextUnaired.airDate as Date,
+        code: episodeCode(
+          nextScheduled.seasonNumber,
+          nextScheduled.episodeNumber,
+        ),
+        // Safe: `nextScheduled` is only matched when it carries a date.
+        date: nextScheduled.airDate as Date,
       }
     : null;
+
+  // Which of the nothing-left-to-watch situations this show is in. Every case
+  // is enumerated in `upNextState`; the page only supplies the facts.
+  const upNext = upNextState({
+    showStatus: show.showStatus,
+    seasons: show.seasons,
+    next: nextUnaired
+      ? {
+          seasonNumber: nextUnaired.seasonNumber,
+          code: episodeCode(
+            nextUnaired.seasonNumber,
+            nextUnaired.episodeNumber,
+          ),
+          name: nextUnaired.name,
+          date: nextUnaired.airDate
+            ? formatAirDate(nextUnaired.airDate.toISOString())
+            : null,
+        }
+      : null,
+  });
 
   // `now`, not `Date.now()`: one clock reading per render, and calling an
   // impure function during render is exactly what React's rules forbid.
@@ -303,19 +334,15 @@ export default async function ShowPage({
             <NextUpCard queue={unwatchedQueue} />
           ) : (
             <CaughtUpCard
-              next={
-                upcoming
-                  ? {
-                      code: upcoming.code,
-                      name: upcoming.name,
-                      date: formatAirDate(upcoming.date.toISOString()),
-                    }
+              state={upNext}
+              // Tied to the episode the card is describing, not to whatever is
+              // next on the calendar: counting down to season 3 under a line
+              // about the rest of season 2 would be two different answers.
+              countdown={
+                nextUnaired?.airDate
+                  ? countdownTo(nextUnaired.airDate.toISOString())
                   : null
               }
-              countdown={
-                upcoming ? countdownTo(upcoming.date.toISOString()) : null
-              }
-              showStatus={show.showStatus}
             />
           )}
 
