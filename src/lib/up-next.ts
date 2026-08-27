@@ -58,7 +58,12 @@ export type UpNextKind =
   /** Season done, next one listed but unscheduled. */
   | "next-season-announced"
   /** Season done, nothing further announced, series still running. */
-  | "season-complete";
+  | "season-complete"
+  /**
+   * Aired episodes are still unwatched — which means this card should not be
+   * on screen at all. See the note on the branch that returns it.
+   */
+  | "behind";
 
 export interface UpNextState {
   kind: UpNextKind;
@@ -95,12 +100,44 @@ export function upNextState({
     (total, season) => total + season.airedCount,
     0,
   );
+  const watchedCount = seasons.reduce(
+    (total, season) => total + season.watchedCount,
+    0,
+  );
+  const behind = airedCount - watchedCount;
+
+  // Never claims more watched than was watched. The first version of this
+  // line read `All ${airedCount} episodes watched` and never looked at
+  // `watchedCount`, so it asserted a finished show whatever the truth was —
+  // and it shipped saying "All 20 episodes watched" on a show with 15 of 20
+  // watched, which is how it hid the mismatch the guard below now reports.
+  const watchedLine = () =>
+    watchedCount === airedCount
+      ? `All ${airedCount} episode${airedCount === 1 ? "" : "s"} watched`
+      : `${watchedCount} of ${airedCount} episodes watched`;
 
   // Which episode you're waiting on, named. TMDB usually has no title for an
   // unannounced episode, and "S02E06 · Untitled episode" is worse than
   // "S02E06" — the placeholder is longer than the fact and says less.
   const episodeLine = (episode: UpNextEpisode) =>
     episode.name ? `${episode.code} · ${episode.name}` : episode.code;
+
+  // This card is only rendered when nothing aired is left to watch, so a show
+  // with unwatched aired episodes cannot legitimately reach it. It has been
+  // seen doing so — a show 15 of 20 watched, with the season strip correctly
+  // showing 5 outstanding, rendered "Season 2 complete". Whatever produces
+  // that, the card's job is to not add a third answer to a page already giving
+  // two: it says what the counts say, and `show.progress_mismatch` in the page
+  // logs the render so the cause can be found.
+  if (behind > 0) {
+    return {
+      kind: "behind",
+      label: "Not caught up",
+      title: `${behind} episode${behind === 1 ? "" : "s"} left to watch`,
+      detail: watchedLine(),
+      icon: "clock",
+    };
+  }
 
   if (airedCount === 0) {
     return next?.date
@@ -135,14 +172,14 @@ export function upNextState({
           kind: "series-finished",
           label: "Series finished",
           title: "You've watched every episode",
-          detail: `All ${airedCount} episode${airedCount === 1 ? "" : "s"} watched`,
+          detail: watchedLine(),
           icon: "check",
         }
       : {
           kind: "season-complete",
           label: `Season ${currentNumber} complete`,
           title: "No new episodes announced yet",
-          detail: `All ${airedCount} episode${airedCount === 1 ? "" : "s"} watched`,
+          detail: watchedLine(),
           icon: "check",
         };
   }
