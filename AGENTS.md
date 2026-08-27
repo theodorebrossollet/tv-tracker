@@ -52,9 +52,14 @@ src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
                   action-result (ActionResult + toResult, shared by both action
-                  modules; deliberately not "use server")
+                  modules; deliberately not "use server"),
+                  up-next (what the show page says when nothing aired is left
+                  to watch, and NEXT_UP_QUEUE — which lives here rather than
+                  beside its card for the reason below)
 prisma/           schema + migrations
-scripts/          migrate, backup, one-off backfills, icon generation;
+scripts/          migrate, backup, one-off backfills, icon generation,
+                  inspect-show (read-only dump of one show's episode and watch
+                  rows, for when the app and the database seem to disagree);
                   icons/ holds the outlined SVGs the icons are rendered from
 public/sw.js      service worker: caches the app shell ONLY (see below)
 tests/            vitest
@@ -181,6 +186,37 @@ off a param with `limitFrom`: it's as attacker-supplied as any other input.
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date
 formatting (`lib/format.ts`) live apart from `lib/tmdb.ts`.
 
+**And the mirror of that: a server component may *render* a client component,
+but must never read a plain value out of a `"use client"` module.** The bundler
+replaces such a module with client references — stand-ins that throw when
+called. A component survives, because it is only ever rendered. A constant does
+not: what arrives is an object where a number was expected, and what happens
+next is whatever the server does with it.
+
+`NEXT_UP_QUEUE = 8` lived in `components/next-up-card.tsx`, and the show page
+capped its queue with `.slice(0, NEXT_UP_QUEUE)`. The reference coerced to
+`NaN`, `slice(0, NaN)` returns `[]`, and so the Next-up card never rendered —
+for any show, for anyone, for as long as the export existed. What showed
+instead was the caught-up card, which is a plausible thing for a show page to
+say, so it was reported and twice half-fixed as a copy problem.
+
+Nothing catches this on its own. `npm run build` succeeds — the substitution is
+a supported transformation, not an error. The types stay correct, because it
+happens in the bundler, after type checking; TypeScript goes on believing the
+export is a `number`. And no test renders a bundled page, so reproducing the
+data in vitest gives a *correct* queue and argues the code is fine. The defect
+exists only in `.next/server`, which is where it was eventually read.
+
+The one signal it gave was two derivations of the same fact disagreeing on
+screen: the season pills said five episodes were unwatched while the card said
+the season was complete. `show.progress_mismatch` logs any render where the
+queue is empty but the counts disagree, and it named the bug on the first
+request after it shipped. `tests/client-boundary.test.ts` is the actual guard —
+it walks `src/` for a server module importing a non-component value from a
+client one. Note its component test needs an initial capital *and* a lowercase
+letter: `SCREAMING_SNAKE_CASE` also starts with a capital, which is exactly how
+this shape slips past a first look.
+
 **The icon SVGs in `scripts/icons/` contain no text, and must not grow any.**
 The mark is the wordmark "tv", and it arrived from design as a `<text>` element
 in Geist. Text in an SVG is resolved by whatever rasterises it, and every way
@@ -301,6 +337,16 @@ When adding tests for ordering or filtering, **check the test fails without the
 code**. Three sorting tests here originally passed either way, because the
 fixtures happened to agree with the behaviour being replaced. Reintroduce the
 bug, confirm red, then restore.
+
+**Nothing here runs a bundled page**, and a green suite is not a claim that the
+built app behaves the same way. Vitest imports modules directly, so the
+server/client transformations Next applies at build time simply don't happen —
+which is how a page could render wrongly in production while a test
+reconstructing its exact data proved it correct. Three tests stand in for what
+the suite can't see, each by reading source rather than behaviour:
+`route-gates` (every page names a gate), `icons` (no `<text>` in the mark), and
+`client-boundary` (no value crossing out of a `"use client"` module). When a
+rule can only be broken at build time, that is the shape a test for it takes.
 
 ## Conventions
 
