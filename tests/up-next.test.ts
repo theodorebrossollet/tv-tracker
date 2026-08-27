@@ -39,6 +39,9 @@ describe("what the card says when nothing aired is left to watch", () => {
     });
 
     expect(state.kind).toBe("premiere-unannounced");
+    // The headline is the answer, not a restatement of the label above it.
+    expect(state.title).toBe("No release date yet");
+    expect(state.detail).toBe("S01E01 · Cold Harbor");
     expect(state.icon).toBe("clock");
   });
 
@@ -86,8 +89,10 @@ describe("what the card says when nothing aired is left to watch", () => {
 
     expect(state.kind).toBe("season-unscheduled");
     expect(state.label).toBe("Up to date with season 2");
-    expect(state.title).toBe("More of season 2 to come");
-    expect(state.detail).toContain("rest of the season");
+    expect(state.title).toBe("No release date yet for the rest of season 2");
+    // Which episode you're waiting on, named — the card is otherwise the one
+    // place in the app that tells a followed show's holder nothing at all.
+    expect(state.detail).toBe("S02E01 · Cold Harbor");
   });
 
   it("names the date when the rest of the season has one", () => {
@@ -122,7 +127,8 @@ describe("what the card says when nothing aired is left to watch", () => {
 
     expect(state.kind).toBe("next-season-announced");
     expect(state.label).toBe("Season 2 complete");
-    expect(state.title).toBe("Season 3 announced");
+    expect(state.title).toBe("No release date yet for season 3");
+    expect(state.detail).toBe("S03E01 · Cold Harbor");
   });
 
   it("says a running show has nothing announced at all", () => {
@@ -134,7 +140,20 @@ describe("what the card says when nothing aired is left to watch", () => {
 
     expect(state.kind).toBe("season-complete");
     expect(state.label).toBe("Season 2 complete");
-    expect(state.title).toBe("Waiting on a new season");
+    expect(state.title).toBe("No new episodes announced yet");
+    expect(state.detail).toBe("All 18 episodes watched");
+  });
+
+  it("names the episode by code alone when TMDB has no title for it", () => {
+    // Future episodes usually have no title, and "S03E01 · Untitled episode"
+    // is longer than the code and says less than it.
+    const state = upNextState({
+      showStatus: "Returning Series",
+      seasons: [season(1, 10, 10), season(2, 8, 8)],
+      next: { ...next(3, null), name: null },
+    });
+
+    expect(state.detail).toBe("S03E01");
   });
 
   it("reads the season you're in off what has aired, not off what TMDB lists", () => {

@@ -9,6 +9,12 @@
  * you you're caught up, with no hint that it means "on everything released so
  * far". Each case gets its own wording instead.
  *
+ * Two rules the wording follows. The headline answers the question you opened
+ * the show to ask — when do I get more? — rather than restating the label above
+ * it; and whenever an episode is known, the card names it, so a show you follow
+ * always tells you which episode you're waiting on even when nothing is
+ * scheduled.
+ *
  * Client-safe on purpose: the card that renders this is a client component, so
  * nothing here may reach `lib/tmdb.ts` or anything else importing `server-only`.
  *
@@ -90,20 +96,28 @@ export function upNextState({
     0,
   );
 
+  // Which episode you're waiting on, named. TMDB usually has no title for an
+  // unannounced episode, and "S02E06 · Untitled episode" is worse than
+  // "S02E06" — the placeholder is longer than the fact and says less.
+  const episodeLine = (episode: UpNextEpisode) =>
+    episode.name ? `${episode.code} · ${episode.name}` : episode.code;
+
   if (airedCount === 0) {
     return next?.date
       ? {
           kind: "premiere-scheduled",
           label: "Upcoming",
           title: `Premieres ${next.date}`,
-          detail: `${next.code} · ${next.name ?? "Untitled episode"}`,
+          detail: episodeLine(next),
           icon: "clock",
         }
       : {
           kind: "premiere-unannounced",
           label: "Upcoming",
-          title: "Not aired yet",
-          detail: "No air date announced",
+          // The headline carries the fact. "Not aired yet" restated the label
+          // and left the one thing you came to find out on the second line.
+          title: "No release date yet",
+          detail: next ? episodeLine(next) : "Nothing has aired yet",
           icon: "clock",
         };
   }
@@ -127,8 +141,8 @@ export function upNextState({
       : {
           kind: "season-complete",
           label: `Season ${currentNumber} complete`,
-          title: "Waiting on a new season",
-          detail: "No further episodes announced",
+          title: "No new episodes announced yet",
+          detail: `All ${airedCount} episode${airedCount === 1 ? "" : "s"} watched`,
           icon: "check",
         };
   }
@@ -144,14 +158,14 @@ export function upNextState({
           kind: "season-continues",
           label: `Up to date with season ${currentNumber}`,
           title: `Season ${currentNumber} continues ${next.date}`,
-          detail: `${next.code} · ${next.name ?? "Untitled episode"}`,
+          detail: episodeLine(next),
           icon: "check",
         }
       : {
           kind: "season-unscheduled",
           label: `Up to date with season ${currentNumber}`,
-          title: `More of season ${currentNumber} to come`,
-          detail: "No air date announced for the rest of the season",
+          title: `No release date yet for the rest of season ${currentNumber}`,
+          detail: episodeLine(next),
           icon: "check",
         };
   }
@@ -161,14 +175,14 @@ export function upNextState({
         kind: "next-season-scheduled",
         label: `Season ${currentNumber} complete`,
         title: `Season ${next.seasonNumber} premieres ${next.date}`,
-        detail: `${next.code} · ${next.name ?? "Untitled episode"}`,
+        detail: episodeLine(next),
         icon: "check",
       }
     : {
         kind: "next-season-announced",
         label: `Season ${currentNumber} complete`,
-        title: `Season ${next.seasonNumber} announced`,
-        detail: "No air date announced yet",
+        title: `No release date yet for season ${next.seasonNumber}`,
+        detail: episodeLine(next),
         icon: "check",
       };
 }
