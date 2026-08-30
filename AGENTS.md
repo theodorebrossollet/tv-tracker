@@ -217,6 +217,31 @@ client one. Note its component test needs an initial capital *and* a lowercase
 letter: `SCREAMING_SNAKE_CASE` also starts with a capital, which is exactly how
 this shape slips past a first look.
 
+**`<dialog>` does not inherit the app's text colour, and the palette does not
+own every colour on screen.** The UA stylesheet gives `<dialog>` its own
+`color: CanvasText` — a system colour, resolved against the element's *used*
+`color-scheme` rather than against `prefers-color-scheme`. Nothing declared one,
+so it was light: every string in the status sheet rendered pure black on the
+dark panel, while any child that named a token (the row hints, `text-muted`)
+stayed correct. What that looks like is a heading dimmer than its own subtitle,
+which reads as a grading mistake rather than a missing declaration.
+`SearchOverlay` set `text-foreground` on its dialog from the start and looked
+right throughout, which is what kept it from being one bug in one place.
+
+`color-scheme: light dark` on `:root` is the fix — that declaration, not the
+`@media (prefers-color-scheme: dark)` block, is what a system colour resolves
+against. The sheet also names `text-foreground` itself, so it no longer depends
+on a system colour at all. Form controls were never part of this: Tailwind's
+preflight already gives them `color: inherit`, and they measured correct both
+before and after.
+
+jsdom cannot see this — it has no system colours, so a rendered sheet reports an
+empty `color` in both schemes and the fixed version is indistinguishable from
+the broken one. `tests/system-colours.test.ts` reads source instead: the
+stylesheet declares a scheme, and every `<dialog>` names a text colour. Note
+that `tests/contrast.ts` is no help here either — it only parses hex tokens, so
+`accent-tint`, `accent-border` and `scrim` are outside what it measures.
+
 **The icon SVGs in `scripts/icons/` contain no text, and must not grow any.**
 The mark is the wordmark "tv", and it arrived from design as a `<text>` element
 in Geist. Text in an SVG is resolved by whatever rasterises it, and every way
