@@ -72,7 +72,14 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
       onClick={(event) => {
         if (!panelRef.current?.contains(event.target as Node)) onClose();
       }}
-      className="m-0 h-full max-h-full w-full max-w-full bg-neutral-900/40 p-0 backdrop-blur-[2px] animate-[scrim-in_.18s_ease-out] motion-reduce:animate-none dark:bg-black/60"
+      // `text-foreground` is not redundant with `body`. The UA stylesheet gives
+      // `<dialog>` its own `color: CanvasText`, which beats inheritance, so a
+      // sheet that names no colour draws its text in a system colour rather
+      // than ours. `color-scheme` in globals.css makes that system colour
+      // follow the scheme; naming the token as well means the sheet does not
+      // depend on it. `SearchOverlay` has always done this — it is why the
+      // overlay looked right while the sheet did not.
+      className="m-0 h-full max-h-full w-full max-w-full bg-scrim p-0 text-foreground backdrop-blur-[2px] animate-[scrim-in_.18s_ease-out] motion-reduce:animate-none"
     >
       <div className="flex h-full flex-col justify-end">
         <div

@@ -25,6 +25,20 @@
  *     each one was chosen.
  */
 :root {
+  /* Load-bearing, not a nicety. The UA stylesheet paints `<dialog>` with
+     `color: CanvasText`, and a *system* colour resolves against the element's
+     used colour scheme — not against `prefers-color-scheme`, which is why the
+     dark block below does nothing for it. Undeclared, that scheme is light, so
+     every string inside a sheet came out pure black on the dark panel while any
+     child that named a token (the row hints, `text-muted`) stayed correct. A
+     heading dimmer than its own subtitle is what it looked like from outside.
+
+     `light dark`, not `dark`: the palette still switches on the media query,
+     and pinning the scheme would hand a reader in light mode dark UA chrome.
+     Note this is not about form controls — Tailwind's preflight already gives
+     those `color: inherit`, and they measured correct before this line. */
+  color-scheme: light dark;
+
   --background: #ffffff;
   /* Settings only: grouped rows read as cards against a tinted page. */
   --background-grouped: #f4f4f5;
@@ -56,6 +70,10 @@
   /* Text and icons ON an accent fill. Not always white — see the dark block. */
   --on-accent: #ffffff;
   --danger: #dc2626;
+  /* Behind a modal. Was `bg-neutral-900/40` inline, which is Tailwind's palette
+     rather than ours — the one colour in the sheet that this file did not
+     name. These are the values that shipped, measured off a rendered page. */
+  --scrim: rgba(22, 22, 22, 0.4);
 }
 
 @theme inline {
@@ -76,6 +94,7 @@
   --color-accent-border: var(--accent-border);
   --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
+  --color-scrim: var(--scrim);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -110,6 +129,9 @@
     --on-accent: #0b0b0d;
     /* #dc2626 on near-black is 4.1:1; this is 7.1:1. */
     --danger: #f87171;
+    /* Heavier than in light: the panel is only a step above the page behind
+       it, so a 40% scrim left too little separating them. */
+    --scrim: rgba(0, 0, 0, 0.6);
   }
 }
 
