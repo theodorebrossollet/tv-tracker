@@ -191,7 +191,17 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
 }
 
 /**
- * How long a cached-but-untracked show may go without a re-sync.
+ * How long a cached show may go without a re-sync before viewing it queues one.
+ *
+ * One threshold for tracked and untracked shows alike. Tracked shows used to be
+ * left to the cron, but the cron can only run once a day on Vercel's Hobby
+ * plan, so an episode TMDB added after 06:00 UTC stayed invisible until the
+ * next morning. Six hours means opening a show picks up anything added since
+ * roughly the start of the evening, while a burst of views still costs one
+ * sync, not one per visit. Untracked shows used to wait a full day; bringing
+ * them down to match costs little, since they are only ever reached from a
+ * search result, and drops a branch the show page would otherwise have to
+ * mirror.
  *
  * Exported because the show page reads it too, to decide whether to tell the
  * visitor a refresh is under way. That claim is only true if it is measured
@@ -199,7 +209,7 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
  * constants that merely start out equal would let the page announce a refresh
  * nothing is doing.
  */
-export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+export const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Refreshes currently running, keyed by show id.
@@ -259,34 +269,29 @@ export function refreshShowDeduped(tmdbShowId: string): Promise<unknown> {
  * on a page view; it's deliberately limited to the Show/Episode cache, which
  * carries no personal data and is never cleared by `clearAllData`.
  *
- * The staleness check matters because the refresh cron only visits *tracked*
- * shows. Without it, a show cached from a search result would keep its
- * first-seen episode data forever — wrong air dates, and missing any field
- * added to the schema after it was cached.
+ * The staleness check matters for two reasons. The refresh cron only visits
+ * *tracked* shows, so without it a show cached from a search result would keep
+ * its first-seen episode data forever. And the cron only runs once a day, so
+ * without it a tracked show would miss an episode TMDB added that morning until
+ * the following one.
  *
  * A stale show is served from the cache and refreshed *after* the response,
  * because the refresh is a full re-sync — every season fetched from TMDB in
  * sequence, seconds of it for a long-running show — and the visitor is only
- * ever looking at data that is at most a day old. Blocking on it would put that
- * wait in front of the page ahead of the show page's own TMDB calls. The only
- * request that still waits is one for a show we hold nothing for, where there
- * is nothing to serve.
+ * ever looking at data that is at most a few hours old. Blocking on it would
+ * put that wait in front of the page ahead of the show page's own TMDB calls.
+ * The only request that still waits is one for a show we hold nothing for,
+ * where there is nothing to serve.
  *
  * Returns false when TMDB doesn't recognise the id.
  */
 export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
   const existing = await prisma.show.findUnique({
     where: { id: tmdbShowId },
-    select: { lastSynced: true, tracked: { select: { id: true } } },
+    select: { lastSynced: true },
   });
 
   if (existing) {
-    // Tracked shows are the cron's job; don't duplicate that work on page view.
-    // `tracked` is a list, so this has to ask about its length — an empty array
-    // is truthy, and testing the array itself made every cached show look
-    // tracked and the staleness check below unreachable.
-    if (existing.tracked.length > 0) return true;
-
     const age = Date.now() - existing.lastSynced.getTime();
     if (age < STALE_AFTER_MS) return true;
 

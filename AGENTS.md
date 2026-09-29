@@ -105,7 +105,7 @@ disagree about the same show.
 
 **Adding a column needs a backfill.** Both refresh paths key on *time*, not
 completeness — the cron visits tracked shows on a schedule, and the on-view
-refresh only fires once a row is 24h stale. Neither notices a new column is
+refresh only fires once a row is 6h stale. Neither notices a new column is
 empty on an otherwise fresh row, so existing rows render blanks until they age
 out. Write a one-off script, as `scripts/backfill-air-dates.mjs` does.
 
@@ -117,10 +117,13 @@ the branch below it was unreachable and untracked shows never re-synced. It is
 silent by construction: the wrong version compiles, type checks, and behaves
 plausibly. Ask about `.length`.
 
-**A stale untracked show is served from cache and refreshed afterwards.**
-`ensureShowCached` returns the cached copy and re-syncs via `after()` from
-`next/server`, because the refresh is a full multi-season TMDB walk and the data
-is at most a day old. Only a show with nothing cached still blocks. Two
+**A stale show is served from cache and refreshed afterwards.** Tracked or
+not: once a cached show is more than `STALE_AFTER_MS` (6h) old, viewing it
+queues a re-sync. Tracked shows used to be left to the cron, which only runs
+daily on the Hobby plan, so an episode TMDB added after 06:00 UTC stayed hidden
+until the next morning. `ensureShowCached` returns the cached copy and re-syncs
+via `after()` from `next/server`, because the refresh is a full multi-season
+TMDB walk and the data is at most a few hours old. Only a show with nothing cached still blocks. Two
 consequences: the `after()` callback must not touch request-time APIs
 (`cookies`, `headers`) — it throws in a Server Component — and refreshes are
 deduplicated by show id, because `lastSynced` only moves when a sync *finishes*
