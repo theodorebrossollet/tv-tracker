@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
+import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { SearchIconButton } from "@/components/search-icon-button";
 import { ShowGrid } from "@/components/show-grid";
 import { limitFrom } from "@/components/show-more-link";
@@ -14,7 +15,6 @@ import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 // Everything on this page comes from the database and changes as soon as you
 // mark an episode watched, so there's nothing worth prerendering at build time.
 export const dynamic = "force-dynamic";
-
 
 interface DashboardPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -36,54 +36,59 @@ export default async function DashboardPage({
   ]);
 
   return (
-    <div className="space-y-10">
-      <section>
-        <div className="flex items-center justify-between gap-2.5">
-          <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
-            Watching
-          </h1>
-          <SearchIconButton />
-        </div>
-
-        {watching.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              title="Nothing in progress"
-              description="Shows land here on their own once you mark an episode watched. Finished ones move to the Archive."
-              icon="shows"
-              action={<FindShowButton />}
-            />
+    <>
+      {/* Outside the `space-y` wrapper, which would otherwise add a top
+          margin to the first section beneath it. */}
+      <PullToRefreshPage />
+      <div className="space-y-10">
+        <section>
+          <div className="flex items-center justify-between gap-2.5">
+            <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
+              Watching
+            </h1>
+            <SearchIconButton />
           </div>
-        ) : (
-          <ShowGrid shows={watching} />
-        )}
-      </section>
 
-      <section>
-        <h2 className="text-lg font-semibold tracking-[-0.015em]">
-          Upcoming episodes
-        </h2>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-          Across everything you&rsquo;re watching and on your watchlist. Air
-          dates refresh once a day.
-        </p>
+          {watching.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title="Nothing in progress"
+                description="Shows land here on their own once you mark an episode watched. Finished ones move to the Archive."
+                icon="shows"
+                action={<FindShowButton />}
+              />
+            </div>
+          ) : (
+            <ShowGrid shows={watching} />
+          )}
+        </section>
 
-        {upcoming.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState
-              title="Nothing scheduled"
-              description="None of your tracked shows have an announced air date coming up."
-              variant="inline"
+        <section>
+          <h2 className="text-lg font-semibold tracking-[-0.015em]">
+            Upcoming episodes
+          </h2>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+            Across everything you&rsquo;re watching and on your watchlist. Air
+            dates refresh once a day.
+          </p>
+
+          {upcoming.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState
+                title="Nothing scheduled"
+                description="None of your tracked shows have an announced air date coming up."
+                variant="inline"
+              />
+            </div>
+          ) : (
+            <UpcomingList
+              episodes={upcoming}
+              searchParams={params}
+              limit={upcomingLimit}
             />
-          </div>
-        ) : (
-          <UpcomingList
-            episodes={upcoming}
-            searchParams={params}
-            limit={upcomingLimit}
-          />
-        )}
-      </section>
-    </div>
+          )}
+        </section>
+      </div>
+    </>
   );
 }

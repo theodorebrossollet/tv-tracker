@@ -3,6 +3,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { LIBRARY_PAGE_SIZE, LibraryList } from "@/components/library-list";
+import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { SearchIconButton } from "@/components/search-icon-button";
 import { limitFrom } from "@/components/show-more-link";
 import type { ShowBuckets } from "@/lib/queries";
@@ -39,6 +40,7 @@ export function LibraryScreen({
 
   return (
     <div>
+      <PullToRefreshPage />
       <div className="flex items-center justify-between gap-2.5">
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
           Library
