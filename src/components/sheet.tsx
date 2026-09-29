@@ -42,7 +42,15 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
     // (or the grab handle) looking pre-selected. Focusing the panel instead
     // starts focus inside the dialog, where the trap needs it, without landing
     // on anything that looks chosen. Tab still reaches the rows in order.
-    panelRef.current?.focus();
+    //
+    // `preventScroll`, because at this instant the panel is still at the start
+    // of its entrance animation, translated a full panel-height below the
+    // screen. A plain `focus()` scrolls the dialog to bring it into view; the
+    // panel then rises *from* that scrolled position, overshoots to well above
+    // where it belongs, and snaps down when the animation ends and the
+    // overflow it scrolled into disappears. On a phone that read as the sheet
+    // opening at the top of the screen and then dropping to the bottom.
+    panelRef.current?.focus({ preventScroll: true });
 
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -79,7 +87,13 @@ export function Sheet({ title, caption, onClose, children }: SheetProps) {
       // follow the scheme; naming the token as well means the sheet does not
       // depend on it. `SearchOverlay` has always done this — it is why the
       // overlay looked right while the sheet did not.
-      className="m-0 h-full max-h-full w-full max-w-full bg-scrim p-0 text-foreground backdrop-blur-[2px] animate-[scrim-in_.18s_ease-out] motion-reduce:animate-none"
+      //
+      // `overflow-clip` rather than the UA's `overflow: auto`: the entrance
+      // animation starts the panel below the dialog's bottom edge, and any
+      // scrollable overflow there is something focus can scroll to — including
+      // the focus `showModal` itself moves, which `preventScroll` above can't
+      // reach. `clip` is not a scroll container at all, so nothing can.
+      className="m-0 h-full max-h-full w-full max-w-full overflow-clip bg-scrim p-0 text-foreground backdrop-blur-[2px] animate-[scrim-in_.18s_ease-out] motion-reduce:animate-none"
     >
       <div className="flex h-full flex-col justify-end">
         <div
