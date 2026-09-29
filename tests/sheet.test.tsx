@@ -84,6 +84,26 @@ describe("where focus lands when it opens", () => {
     expect(document.activeElement?.tagName).not.toBe("BUTTON");
   });
 
+  it("does not scroll the dialog to reach the panel", () => {
+    // The panel is mid-animation when it is focused, translated below the
+    // screen. A scrolling focus moved the dialog to meet it, so on a phone the
+    // sheet opened near the top and then dropped to the bottom. jsdom has no
+    // layout to reproduce the jump, so this pins the two things that stop it.
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const { container } = open();
+
+    const panel = container.querySelector("dialog > div > div");
+    const call = focus.mock.contexts.indexOf(panel as HTMLElement);
+
+    expect(call).not.toBe(-1);
+    expect(focus.mock.calls[call][0]).toEqual({ preventScroll: true });
+    expect(container.querySelector("dialog")?.className).toContain(
+      "overflow-clip",
+    );
+
+    focus.mockRestore();
+  });
+
   it("keeps the panel out of the tab order", () => {
     // Focusable as a target, never a stop: tabbing should reach the rows.
     const { container } = open();
