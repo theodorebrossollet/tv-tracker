@@ -130,15 +130,20 @@ without losing the page you were on. It queries as you type, debounced 250ms.
 isn't cached locally, it's fetched from TMDB on first view. That's what lets a
 search result link straight through to a full show page.
 
-Viewing a show also re-syncs it if the cache is more than 24h old **and** the
-show isn't tracked. Tracked shows are left to the cron; untracked ones have no
+Viewing a show also re-syncs it if the cache is more than 6h old
+(`STALE_AFTER_MS`), whether or not anyone tracks it. Untracked shows have no
 other refresh path, so without this a show cached from a search result would
-keep its first-seen data forever.
+keep its first-seen data forever. Tracked shows were originally left to the
+cron, but the cron can only run once a day (see below), so an episode TMDB added
+after 06:00 UTC stayed invisible until the following morning. The threshold was
+24h and applied to untracked shows only; it is now 6h for every show, so opening
+a show picks up anything added in the last few hours at the cost of at most one
+background sync per show per six hours.
 
 The refresh happens **after the response**, via `after()` from `next/server`:
 the page renders from the cached copy and the re-sync runs once the HTML has
 gone. A full multi-season TMDB walk is seconds of work, and the data being
-served is at most a day old, so making the visitor wait for it buys nothing.
+served is at most a few hours old, so making the visitor wait for it buys nothing.
 Only a show with nothing cached at all still blocks, because there is nothing to
 serve. Two constraints follow from that shape: the `after()` callback must not
 touch request-time APIs (`cookies`, `headers` — they throw inside `after` in a
@@ -156,10 +161,10 @@ wrong version type checks, and the symptom is silence.
 
 **Gap worth knowing when adding a column to `Show` or `Episode`.** Both refresh
 paths key on *time*, not on completeness: the cron visits tracked shows on a
-schedule, and the on-view refresh only fires once a row is 24h stale. Neither
+schedule, and the on-view refresh only fires once a row is 6h stale. Neither
 notices that a newly added column is empty on an otherwise fresh row. So after a
 migration that adds fields, previously-cached rows keep rendering blanks until
-they happen to age out — for untracked shows, up to a day.
+they happen to age out.
 
 Fix by running a one-off backfill after the migration rather than waiting, as
 was done for `runtime`/`overview`, for the air-date rezoning
@@ -410,7 +415,9 @@ jobs".
 06:00 UTC is deliberate: air dates are anchored to midnight US Eastern
 (04:00–05:00 UTC), so an episode airing that day has already unlocked before
 the refresh runs. The cost is latency rather than correctness — an air date TMDB
-corrects during the day is picked up the next morning instead of that evening.
+corrects during the day is picked up the next morning instead of that evening —
+or sooner, if someone opens the show: the on-view refresh re-syncs any show
+more than 6h old, tracked or not.
 
 Twice daily without paying is still possible: point any external scheduler at
 the same endpoint with the `CRON_SECRET` bearer token. The route has no Vercel

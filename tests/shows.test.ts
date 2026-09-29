@@ -305,10 +305,29 @@ describe("keeping a cached show fresh", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("leaves a stale tracked show to the cron", async () => {
-    // The branch the bug made unconditional. It still has to hold for a show
-    // that really is tracked, or the fix just moves the duplicated work.
-    await seedCachedShow(25);
+  it("re-syncs a tracked show on view too, without waiting for the cron", async () => {
+    // The cron runs once a day, so an episode TMDB adds after it has run used
+    // to stay invisible until the next morning for anyone tracking the show.
+    // Seven hours is past the threshold but well inside a day: the old rule,
+    // which left every tracked show to the cron, would schedule nothing here.
+    await seedCachedShow(7);
+    await prisma.trackedShow.create({
+      data: { userId: TEST_USER_ID, showId: SHOW_ID, status: "watching" },
+    });
+    const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
+
+    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await runScheduledWork();
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(await prisma.episode.count({ where: { showId: SHOW_ID } })).toBe(1);
+  });
+
+  it("leaves a tracked show synced a few hours ago alone", async () => {
+    // Every view of a busy show must not become a full TMDB walk.
+    await seedCachedShow(5);
     await prisma.trackedShow.create({
       data: { userId: TEST_USER_ID, showId: SHOW_ID, status: "watching" },
     });
