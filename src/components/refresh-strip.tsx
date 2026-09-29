@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 
 import { refreshShow } from "@/app/actions";
+import { PullArrow, RefreshSpinner } from "@/components/pull-arrow";
 import { usePullToRefresh } from "@/components/use-pull-to-refresh";
-import { PULL_THRESHOLD, shouldRefresh } from "@/lib/pull-to-refresh";
+import { shouldRefresh } from "@/lib/pull-to-refresh";
 
 interface RefreshStripProps {
   showId: string;
@@ -74,35 +75,9 @@ export function RefreshStrip({ showId, refreshedLabel }: RefreshStripProps) {
         willRefresh ? "text-accent-deep" : "text-faint"
       } ${pulling ? "" : "transition-[height]"}`}
     >
-      {pending ? (
-        <span
-          aria-hidden="true"
-          className="size-[11px] animate-spin rounded-full border-[1.5px] border-border border-t-accent motion-reduce:animate-none"
-        />
-      ) : null}
+      {pending ? <RefreshSpinner /> : null}
 
-      {pulling && !pending ? (
-        <span
-          aria-hidden="true"
-          className="transition-transform"
-          style={{
-            transform: `rotate(${Math.min(180, (pull / PULL_THRESHOLD) * 180)}deg)`,
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-[11px]"
-          >
-            <path d="M12 19V5" />
-            <path d="m5 12 7-7 7 7" />
-          </svg>
-        </span>
-      ) : null}
+      {pulling && !pending ? <PullArrow pull={pull} /> : null}
       <span role={outcome === "failed" ? "alert" : undefined}>{label}</span>
     </button>
   );
