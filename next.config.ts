@@ -15,23 +15,19 @@ const nextConfig: NextConfig = {
           //
           // X-Frame-Options is the same rule for browsers that predate CSP.
           //
-          // Still no `script-src`: that one genuinely needs a nonce for Next's
-          // inline bootstrap and is a separate job. The other three below do
-          // not, which is why they are here and it isn't —
+          // `script-src` is not here: it needs a per-request nonce, so it is set
+          // in src/proxy.ts alongside the rest of the policy for pages. These
+          // directives are the baseline for everything the proxy skips (static
+          // assets, images). The rest of this note explains why each is here:
           //
           //   base-uri     without a script-src, an injected <base> silently
           //                retargets every relative script URL on the page.
-          //                Nothing else in this policy would stop it.
           //   object-src   kills <object>/<embed>, a script-execution vector
           //                this app has no use for.
           //   form-action  bounds where the login and onboarding forms can
           //                post, so an injected form can't exfiltrate a
           //                password to another origin.
           //
-          // None of them can break a build and all survive the script-src work
-          // unchanged. When that lands, note the trailer needs
-          // `frame-src https://www.youtube-nocookie.com` the moment a
-          // `default-src` appears.
           {
             key: "Content-Security-Policy",
             value:
