@@ -1,13 +1,11 @@
 // Backoff policy for repeated failed password sign-ins.
 //
-// Only relevant once `APP_PASSWORD` is gone: until then the shared gate stands
-// in front of the login form. After that, `/login/password` is reachable by
-// anyone who finds the URL, and scrypt alone caps guessing at roughly ten a
-// second — around 860k attempts a day, which is thin against an 8-character
-// minimum.
+// `/login/password` is reachable by anyone who finds the URL, and scrypt alone
+// caps guessing at roughly ten a second — around 860k attempts a day, which is
+// thin against an 8-character minimum.
 //
 // Counted per account, not per IP. An in-process counter is worthless here for
-// the reason proxy.ts already documents: the app runs across many short-lived
+// the app runs across many short-lived
 // serverless instances, so the count resets constantly and would read as
 // protection while providing none. The database is the only shared state, and
 // the account is the thing actually under attack.

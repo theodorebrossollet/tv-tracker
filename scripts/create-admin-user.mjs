@@ -56,9 +56,8 @@ if (existing.rows.length > 0) {
   process.exit(1);
 }
 
-// 16 bytes / 128 bits. Shorter than APP_PASSWORD's 32 on purpose: 128 bits is
-// already far past brute-force feasibility at any request rate, and every extra
-// character is one more to copy across to a phone.
+// 16 bytes / 128 bits: already far past brute-force feasibility at any request
+// rate, and every extra character is one more to copy across to a phone.
 const code = randomBytes(16).toString("hex");
 const codeHash = createHash("sha256").update(code).digest("hex");
 

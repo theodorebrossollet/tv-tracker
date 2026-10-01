@@ -53,7 +53,7 @@ model User {
 
   /// Consecutive failed password attempts, reset on any successful sign-in.
   /// Counted per account rather than per IP: an in-process counter is useless
-  /// across short-lived serverless instances (see the note in proxy.ts), and
+  /// across short-lived serverless instances (there is no shared state between them), and
   /// the account is the thing actually being attacked.
   failedLogins Int @default(0)
 

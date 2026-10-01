@@ -129,10 +129,12 @@ describe("authentication", () => {
 });
 
 describe("error handling", () => {
-  it("explains a rejected key rather than surfacing a bare 401", async () => {
+  it("reports a rejected key as an ordinary failure, without config hints", async () => {
     mockFetch({}, { ok: false, status: 401 });
 
-    await expect(searchTvShows("x")).rejects.toThrow(/rejected the API key/);
+    await expect(searchTvShows("x")).rejects.toThrow(
+      /^TMDB request failed \(401\)\.$/,
+    );
   });
 
   it("preserves a 404 status so callers can render not-found", async () => {

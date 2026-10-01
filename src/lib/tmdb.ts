@@ -182,11 +182,13 @@ async function tmdbFetch<T>(
   }
 
   if (!response.ok) {
-    const detail =
-      response.status === 401
-        ? "TMDB rejected the API key — check TMDB_API_KEY."
-        : `TMDB request failed (${response.status}).`;
-    throw new TmdbError(detail, response.status);
+    // `TmdbError.message` reaches the browser via `toResult`, so a bad key is
+    // reported like any other failure there; the operator's hint goes to the log.
+    if (response.status === 401) {
+      logger.error("tmdb.key_rejected", { hint: "check TMDB_API_KEY" });
+    }
+
+    throw new TmdbError(`TMDB request failed (${response.status}).`, response.status);
   }
 
   return (await response.json()) as T;
