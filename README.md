@@ -223,9 +223,10 @@ scripts/                    migrate, backup, account creation/reset, backfills
 tests/                      vitest suite (npm test)
 ```
 
-There is no `proxy.ts` (Next's Middleware) anymore — the shared password gate
-it implemented was removed once every page and action carried its own session
-check. See "Accounts are invite-only" above.
+`src/proxy.ts` (Next's Middleware) only sets the per-request Content Security
+Policy and its script nonce. It is not an auth gate — the shared password gate
+it used to implement was removed once every page and action carried its own
+session check. See "Accounts are invite-only" above.
 
 Anything under `src/lib` that imports `server-only` must never be imported by a
 client component — that's why poster URLs, shared types, and date formatting
