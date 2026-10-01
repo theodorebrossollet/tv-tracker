@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { deleteExpiredSessions } from "@/lib/auth";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -33,11 +35,12 @@ function isAuthorized(request: Request): boolean {
   // so a misconfigured deployment fails closed rather than open.
   if (!secret) return process.env.NODE_ENV !== "production";
 
-  // Plain === rather than a constant-time compare — the same trade the proxy's
-  // `matches` documents: CRON_SECRET is a generated 32-byte value, and a
-  // timing oracle against a JS string compare buys nothing usable against
-  // that. Written down so it reads as a decision, not an oversight.
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  // Digests compared in constant time: hashing first gives both sides the same
+  // length, which `timingSafeEqual` requires, and costs nothing at this scale.
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  const given = request.headers.get("authorization") ?? "";
+
+  return timingSafeEqual(digest(given), digest(`Bearer ${secret}`));
 }
 
 export async function GET(request: Request) {
