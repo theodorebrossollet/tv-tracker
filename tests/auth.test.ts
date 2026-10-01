@@ -568,6 +568,23 @@ describe("login throttling", () => {
     ).resolves.toMatchObject({ failedLogins: attempts });
   });
 
+  it("lets only one attempt through per lock window when they arrive at once", async () => {
+    // Past the threshold with the lock just expired, a batch of simultaneous
+    // attempts must not all be verified: one claims the probe, the rest are
+    // refused. Counting sessions is the observable — each success mints one.
+    const user = await makeOnboardedUser();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: FAILURE_THRESHOLD, lockedUntil: new Date(Date.now() - 1000) },
+    });
+
+    await Promise.allSettled(
+      Array.from({ length: 10 }, () => loginWithPassword("theo", "hunter2hunter2")),
+    );
+
+    await expect(prisma.session.count()).resolves.toBe(1);
+  });
+
   it("locks the account once the threshold is crossed", async () => {
     const user = await makeOnboardedUser();
 

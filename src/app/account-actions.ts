@@ -17,7 +17,12 @@ import {
   toResult,
   type ActionResult,
 } from "@/lib/action-result";
-import { describeWait, isLockedOut, lockoutMs } from "@/lib/login-throttle";
+import {
+  describeWait,
+  FAILURE_THRESHOLD,
+  isLockedOut,
+  lockoutMs,
+} from "@/lib/login-throttle";
 import { logger } from "@/lib/logger";
 import { NICKNAME_MAX, validateNickname } from "@/lib/nickname";
 import { fakeVerify, hashPassword, verifyPassword } from "@/lib/password";
@@ -204,45 +209,61 @@ export async function loginWithPassword(
       };
     }
 
-    if (!(await verifyPassword(password, user.passwordHash))) {
-      // The database does the arithmetic, not Node. `user.failedLogins + 1`
-      // reads a value fetched by the lookup above, and the two statements are
-      // separate round trips with nothing holding a lock between them — so N
-      // attempts fired at once all read the same count and all write the same
-      // successor, advancing it by one for the whole batch. Vercel scales out
-      // per request, so that concurrency is free to an attacker, and it is the
-      // reason this counter lives in the database rather than in-process at
-      // all. `increment` makes it monotonic: N attempts cost N.
-      const { failedLogins } = await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLogins: { increment: 1 } },
-        select: { failedLogins: true },
+    // The attempt is counted *before* it is checked, and the database does the
+    // arithmetic. Reading the count, verifying, then writing would let a batch
+    // of concurrent requests all pass the lockout check above before any of
+    // them recorded a failure, so the lock bounded nothing against parallel
+    // guesses. Reserving first means at most FAILURE_THRESHOLD attempts per run
+    // ever reach the hash, however many arrive at once.
+    const { failedLogins: attempt, lockedUntil } = await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: { increment: 1 } },
+      select: { failedLogins: true, lockedUntil: true },
+    });
+
+    const lockFor = lockoutMs(attempt);
+
+    if (attempt > FAILURE_THRESHOLD) {
+      // Past the tolerated run: one probe is allowed per lock window, and the
+      // conditional write is what picks which request gets it. Anything that
+      // loses the claim is refused without touching the hash.
+      const { count } = await prisma.user.updateMany({
+        where: {
+          id: user.id,
+          OR: [{ lockedUntil: null }, { lockedUntil: { lte: new Date() } }],
+        },
+        data: { lockedUntil: new Date(Date.now() + lockFor) },
       });
 
-      const lockFor = lockoutMs(failedLogins);
+      if (count === 0) {
+        logger.warn("auth.login_locked_out", { userId: user.id });
+        return {
+          ok: false,
+          error: `Too many attempts. Try again ${describeWait(lockedUntil ?? new Date(Date.now() + lockFor))}, or sign in with your code.`,
+        };
+      }
+    }
 
-      // Only written once there is a lock to record. Clearing it on every
-      // failure below the threshold would be the one write that *undoes* a
-      // lock a concurrent request just set.
-      if (lockFor > 0) {
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      // The lock that follows the final tolerated failure. Later ones were
+      // already written by the claim above.
+      if (attempt === FAILURE_THRESHOLD) {
         await prisma.user.update({
           where: { id: user.id },
           data: { lockedUntil: new Date(Date.now() + lockFor) },
         });
       }
 
-      logger.warn("auth.login_failed", { userId: user.id, failedLogins });
+      logger.warn("auth.login_failed", { userId: user.id, failedLogins: attempt });
       return { ok: false, error: "Wrong nickname or password." };
     }
 
     // Cleared on success, so the counter measures a *run* of failures rather
     // than accumulating over months of ordinary typos.
-    if (user.failedLogins > 0 || user.lockedUntil !== null) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLogins: 0, lockedUntil: null },
-      });
-    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLogins: 0, lockedUntil: null },
+    });
 
     await createSession(user.id);
     logger.info("auth.login", { userId: user.id, via: "password" });
