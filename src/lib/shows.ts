@@ -13,7 +13,7 @@ import { getAllEpisodes, getShowDetails, TmdbError } from "@/lib/tmdb";
  * Shared by `addToWatchlist` (first fetch) and the refresh cron (later syncs), so
  * air-date corrections and newly announced episodes both land the same way.
  */
-export async function syncShowFromTmdb(tmdbShowId: string) {
+export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
   const details = await getShowDetails(tmdbShowId);
   const episodes = await getAllEpisodes(tmdbShowId, details.seasonNumbers);
 
@@ -21,6 +21,9 @@ export async function syncShowFromTmdb(tmdbShowId: string) {
     where: { id: tmdbShowId },
     create: {
       id: tmdbShowId,
+      // Recorded once, on creation, and never touched by a later sync.
+      addedById: addedById ?? null,
+      createdAt: new Date(),
       name: details.name,
       posterPath: details.posterPath,
       overview: details.overview,
@@ -212,6 +215,48 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
 export const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 
 /**
+ * How many shows one account may add to the cache per hour.
+ *
+ * Opening `/show/<id>` or adding a show that nothing holds yet costs a full
+ * sync — a request per batch of seasons, then hundreds of writes — and TMDB's
+ * rate limit is shared by every account. Ordinary use (search, open a few
+ * shows) stays far below this; only something walking id after id reaches it.
+ * Shows that are already cached cost nothing and never count.
+ */
+export const NEW_SHOWS_PER_HOUR = 20;
+
+/** Thrown when an account has used up its allowance of new shows. */
+export class NewShowLimitError extends TmdbError {
+  constructor() {
+    super("You've opened a lot of new shows. Please try again in a bit.", 429);
+    this.name = "NewShowLimitError";
+  }
+}
+
+async function assertCanCacheNewShow(userId: string): Promise<void> {
+  const recent = await prisma.show.count({
+    where: {
+      addedById: userId,
+      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) },
+    },
+  });
+
+  if (recent >= NEW_SHOWS_PER_HOUR) {
+    logger.warn("show.new_show_limit", { userId });
+    throw new NewShowLimitError();
+  }
+}
+
+/**
+ * Caches a show that nothing holds yet, within the caller's hourly allowance.
+ * For callers that already know the show is absent.
+ */
+export async function cacheNewShow(tmdbShowId: string, userId: string) {
+  await assertCanCacheNewShow(userId);
+  return syncShowFromTmdb(tmdbShowId, userId);
+}
+
+/**
  * Refreshes currently running, keyed by show id.
  *
  * `lastSynced` only moves once a sync *finishes*, so every view between
@@ -285,7 +330,10 @@ export function refreshShowDeduped(tmdbShowId: string): Promise<unknown> {
  *
  * Returns false when TMDB doesn't recognise the id.
  */
-export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
+export async function ensureShowCached(
+  tmdbShowId: string,
+  userId: string,
+): Promise<boolean> {
   const existing = await prisma.show.findUnique({
     where: { id: tmdbShowId },
     select: { lastSynced: true },
@@ -305,7 +353,7 @@ export async function ensureShowCached(tmdbShowId: string): Promise<boolean> {
   }
 
   try {
-    await syncShowFromTmdb(tmdbShowId);
+    await cacheNewShow(tmdbShowId, userId);
     return true;
   } catch (error) {
     // A 404 means the id isn't a real show — the caller renders not-found.

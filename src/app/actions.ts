@@ -12,7 +12,7 @@ import { requireOnboardedSession } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { isTmdbShowId } from "@/lib/show-id";
-import { refreshShowDeduped, syncShowFromTmdb } from "@/lib/shows";
+import { cacheNewShow, refreshShowDeduped, syncShowFromTmdb } from "@/lib/shows";
 import { searchTvShows, type TmdbSearchResult } from "@/lib/tmdb";
 import type { TrackStatus } from "@/lib/types";
 
@@ -158,7 +158,16 @@ export async function addToWatchlist(tmdbShowId: string): Promise<ActionResult> 
     // watchlist just because the button was pressed again.
     if (existing) return { ok: true };
 
-    await syncShowFromTmdb(tmdbShowId);
+    // A show another account already cached is only re-synced; one nothing
+    // holds yet counts against this account's hourly allowance.
+    const cached = await prisma.show.findUnique({
+      where: { id: tmdbShowId },
+      select: { id: true },
+    });
+
+    if (cached) await syncShowFromTmdb(tmdbShowId);
+    else await cacheNewShow(tmdbShowId, user.id);
+
     await prisma.trackedShow.create({
       data: { userId: user.id, showId: tmdbShowId, status: "watchlist" },
     });

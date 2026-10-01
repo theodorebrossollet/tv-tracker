@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { AlternateAvailability } from "@/components/alternate-availability";
 import { Availability } from "@/components/availability";
+import { EmptyState } from "@/components/empty-state";
 import { EpisodeRow } from "@/components/episode-row";
 import {
   CaughtUpCard,
@@ -41,7 +42,7 @@ import { describeError, logger } from "@/lib/logger";
 // `ensureShowCached` schedules the background re-sync on, and the "Checking for
 // new episodes…" line below is a claim about that. Two copies would drift and
 // the page would start announcing a refresh nothing had queued.
-import { getSettings, STALE_AFTER_MS } from "@/lib/shows";
+import { getSettings, NewShowLimitError, STALE_AFTER_MS } from "@/lib/shows";
 import {
   getSeasonTrailers,
   getShowTrailer,
@@ -59,9 +60,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * A manual refresh is a full multi-season TMDB walk, and `getAllEpisodes`
- * fetches seasons sequentially — eleven round trips for a ten-season show.
- * Vercel's default function timeout is 10s, which a long-running show will
- * exceed; the Hobby ceiling is 60.
+ * fetches seasons in batches of up to twenty per request. Vercel's default
+ * function timeout is 10s, which a long-running show's writes can still exceed;
+ * the Hobby ceiling is 60.
  */
 export const maxDuration = 60;
 
@@ -76,7 +77,13 @@ export async function generateMetadata({ params }: ShowPageProps) {
   // show's tracked state without a session. `getShowDetail` is memoized per
   // request, so this costs nothing the component doesn't already pay.
   const { user } = await requireOnboardedSession();
-  const show = isTmdbShowId(id) ? await getShowDetail(user.id, id) : null;
+  const show = isTmdbShowId(id)
+    ? await getShowDetail(user.id, id).catch((error) => {
+        // The page itself says why; the title just falls back.
+        if (error instanceof NewShowLimitError) return null;
+        throw error;
+      })
+    : null;
 
   return { title: show ? `${show.name} · TV Tracker` : "Show · TV Tracker" };
 }
@@ -94,10 +101,26 @@ export default async function ShowPage({
   // request worth making.
   if (!isTmdbShowId(id)) notFound();
 
-  const [show, settings] = await Promise.all([
-    getShowDetail(user.id, id),
-    getSettings(user.id),
-  ]);
+  let show: Awaited<ReturnType<typeof getShowDetail>>;
+  let settings: Awaited<ReturnType<typeof getSettings>>;
+
+  try {
+    [show, settings] = await Promise.all([
+      getShowDetail(user.id, id),
+      getSettings(user.id),
+    ]);
+  } catch (error) {
+    if (error instanceof NewShowLimitError) {
+      return (
+        <EmptyState
+          title="That's a lot of new shows"
+          description="Give it a little while before opening more shows you haven't added yet."
+        />
+      );
+    }
+
+    throw error;
+  }
 
   // getShowDetail falls back to TMDB for shows that aren't tracked, so a null
   // here means TMDB doesn't know this id either.

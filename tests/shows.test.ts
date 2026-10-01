@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { prisma } from "@/lib/prisma";
-import { ensureShowCached, syncShowFromTmdb } from "@/lib/shows";
+import {
+  cacheNewShow,
+  ensureShowCached,
+  NEW_SHOWS_PER_HOUR,
+  NewShowLimitError,
+  syncShowFromTmdb,
+} from "@/lib/shows";
 
 // `after` throws outside a request scope, and these call `ensureShowCached`
 // directly. Collecting the callbacks rather than running them is also what lets
@@ -255,7 +261,7 @@ describe("keeping a cached show fresh", () => {
     await seedCachedShow(25);
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
 
     // Nothing has been fetched yet: the stale copy is what the response
     // carries, and the re-sync is what happens once it has gone.
@@ -274,8 +280,8 @@ describe("keeping a cached show fresh", () => {
     await seedCachedShow(25);
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    await ensureShowCached(SHOW_ID);
-    await ensureShowCached(SHOW_ID);
+    await ensureShowCached(SHOW_ID, TEST_USER_ID);
+    await ensureShowCached(SHOW_ID, TEST_USER_ID);
 
     expect(scheduled).toHaveLength(2);
     await runScheduledWork();
@@ -296,7 +302,7 @@ describe("keeping a cached show fresh", () => {
 
     // The response already went out, so a failed refresh must not surface as a
     // rejection — it's logged and the next view tries again.
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
     await expect(runScheduledWork()).resolves.toBeUndefined();
   });
 
@@ -304,7 +310,7 @@ describe("keeping a cached show fresh", () => {
     await seedCachedShow(1);
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
 
     expect(scheduled).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -321,7 +327,7 @@ describe("keeping a cached show fresh", () => {
     });
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
 
     await runScheduledWork();
@@ -338,7 +344,7 @@ describe("keeping a cached show fresh", () => {
     });
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
 
     expect(scheduled).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -348,7 +354,7 @@ describe("keeping a cached show fresh", () => {
     // The one case with nothing to serve, so it stays blocking.
     const fetchMock = mockTmdb([{ id: 63056, episode_number: 1 }]);
 
-    expect(await ensureShowCached(SHOW_ID)).toBe(true);
+    expect(await ensureShowCached(SHOW_ID, TEST_USER_ID)).toBe(true);
 
     expect(fetchMock).toHaveBeenCalled();
     expect(scheduled).toHaveLength(0);
@@ -446,5 +452,59 @@ describe("episodes removed upstream", () => {
     await syncShowFromTmdb(SHOW_ID);
 
     expect(await prisma.episode.count({ where: { showId: "1400" } })).toBe(1);
+  });
+});
+
+describe("the hourly allowance of new shows", () => {
+  const seedOwned = (count: number, minutesAgo = 5) =>
+    prisma.show.createMany({
+      data: Array.from({ length: count }, (_, i) => ({
+        id: `owned-${i}`,
+        name: "Owned",
+        addedById: TEST_USER_ID,
+        createdAt: new Date(Date.now() - minutesAgo * 60 * 1000),
+      })),
+    });
+
+  it("records who cached a new show", async () => {
+    mockTmdb([{ id: 1, episode_number: 1 }]);
+
+    await cacheNewShow(SHOW_ID, TEST_USER_ID);
+
+    await expect(
+      prisma.show.findUniqueOrThrow({ where: { id: SHOW_ID } }),
+    ).resolves.toMatchObject({ addedById: TEST_USER_ID });
+  });
+
+  it("refuses a new show once the allowance is spent, without calling TMDB", async () => {
+    await seedOwned(NEW_SHOWS_PER_HOUR);
+    const fetchMock = mockTmdb([{ id: 1, episode_number: 1 }]);
+
+    await expect(ensureShowCached(SHOW_ID, TEST_USER_ID)).rejects.toBeInstanceOf(
+      NewShowLimitError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not count shows cached more than an hour ago", async () => {
+    await seedOwned(NEW_SHOWS_PER_HOUR, 61);
+    mockTmdb([{ id: 1, episode_number: 1 }]);
+
+    await expect(ensureShowCached(SHOW_ID, TEST_USER_ID)).resolves.toBe(true);
+  });
+
+  it("never blocks a show that is already cached", async () => {
+    await seedOwned(NEW_SHOWS_PER_HOUR);
+    await seedCachedShow(1);
+
+    await expect(ensureShowCached(SHOW_ID, TEST_USER_ID)).resolves.toBe(true);
+  });
+
+  it("counts per account", async () => {
+    await seedOwned(NEW_SHOWS_PER_HOUR);
+    await seedUser("someone-else");
+    mockTmdb([{ id: 1, episode_number: 1 }]);
+
+    await expect(ensureShowCached(SHOW_ID, "someone-else")).resolves.toBe(true);
   });
 });
