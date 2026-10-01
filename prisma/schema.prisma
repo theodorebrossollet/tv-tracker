@@ -99,6 +99,13 @@ model Show {
   overview   String?
   lastSynced DateTime @default(now()) // last refresh of episode data from TMDB
 
+  /// Who first caused this show to be cached, and when. Only there to bound how
+  /// many *new* shows one account can pull from TMDB per hour — see
+  /// `assertCanCacheNewShow`. Null on rows that predate it, and on rows created
+  /// by the cron, which never creates one.
+  addedById String?
+  createdAt DateTime?
+
   /// Metadata for the line under the synopsis. All of it arrives in the same
   /// `/tv/{id}` response the sync already makes, so none of it costs a request.
   firstAirDate DateTime?
@@ -115,6 +122,8 @@ model Show {
 
   episodes Episode[]
   tracked  TrackedShow[]
+
+  @@index([addedById, createdAt])
 }
 
 /// A single episode of a cached show, including its air date.

@@ -499,7 +499,7 @@ export const getShowDetail = cache(async function getShowDetail(
 ) {
   // Runs first so it can also refresh a cached-but-stale show, not just fetch
   // a missing one.
-  const cached = await ensureShowCached(showId);
+  const cached = await ensureShowCached(showId, userId);
   if (!cached) return null;
 
   const show = await loadShow(userId, showId);
