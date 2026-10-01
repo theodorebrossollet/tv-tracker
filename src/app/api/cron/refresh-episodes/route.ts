@@ -1,4 +1,5 @@
 import { deleteExpiredSessions } from "@/lib/auth";
+import { hasSeriesEnded } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { syncShowFromTmdb } from "@/lib/shows";
@@ -20,6 +21,15 @@ export const maxDuration = 60;
  * whole record of the run.
  */
 const DEADLINE_MS = 50_000;
+
+/**
+ * How long a finished series can go without a nightly visit. TMDB very rarely
+ * adds episodes to a show it lists as ended, and when it does the on-view
+ * refresh in `ensureShowCached` still picks it up within hours of anyone
+ * opening the show. Skipping them frees the run's budget for shows that are
+ * actually changing.
+ */
+const ENDED_REFRESH_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when the env var is
@@ -56,9 +66,12 @@ export async function GET(request: Request) {
   // would otherwise cost its own identical TMDB sync inside the 60s budget.
   // The cache being refreshed is global, so this route stays user-agnostic:
   // there is no session here, and it must not acquire one.
-  const tracked = await prisma.trackedShow.findMany({
+  const candidates = await prisma.trackedShow.findMany({
     distinct: ["showId"],
-    select: { showId: true },
+    select: {
+      showId: true,
+      show: { select: { status: true, lastSynced: true } },
+    },
     // Least recently synced first. Without an order this is whatever the
     // database hands back — stable enough that a run which doesn't finish
     // would refresh the same prefix every night and never reach the tail.
@@ -66,6 +79,13 @@ export async function GET(request: Request) {
     // their own, and a truncated run still advances the shows furthest behind.
     orderBy: { show: { lastSynced: "asc" } },
   });
+
+  const dormantBefore = Date.now() - ENDED_REFRESH_AFTER_MS;
+  const tracked = candidates.filter(
+    ({ show }) =>
+      !hasSeriesEnded(show.status) || show.lastSynced.getTime() < dormantBefore,
+  );
+  const dormant = candidates.length - tracked.length;
 
   const refreshed: string[] = [];
   const failed: Array<{ showId: string; error: string }> = [];
@@ -131,6 +151,7 @@ export async function GET(request: Request) {
     // it's worth knowing before the backlog does something visible.
     skipped: tracked.length - visited,
     deadlineHit,
+    dormant,
     expiredSessions,
     durationMs,
     // Pre-divided: this is the figure the timeout headroom is read off, and

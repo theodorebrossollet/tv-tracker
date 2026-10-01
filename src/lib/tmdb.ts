@@ -397,14 +397,7 @@ interface RawSeasonResponse {
   }>;
 }
 
-export async function getSeasonEpisodes(
-  tmdbShowId: string | number,
-  seasonNumber: number,
-): Promise<TmdbEpisode[]> {
-  const data = await tmdbFetch<RawSeasonResponse>(
-    `/tv/${tmdbShowId}/season/${seasonNumber}`,
-  );
-
+function mapSeasonEpisodes(data: RawSeasonResponse): TmdbEpisode[] {
   return data.episodes.map((episode) => ({
     id: episode.id,
     seasonNumber: episode.season_number,
@@ -417,10 +410,28 @@ export async function getSeasonEpisodes(
   }));
 }
 
+export async function getSeasonEpisodes(
+  tmdbShowId: string | number,
+  seasonNumber: number,
+): Promise<TmdbEpisode[]> {
+  const data = await tmdbFetch<RawSeasonResponse>(
+    `/tv/${tmdbShowId}/season/${seasonNumber}`,
+  );
+
+  return mapSeasonEpisodes(data);
+}
+
+/** TMDB allows at most 20 `append_to_response` entries per request. */
+const SEASONS_PER_REQUEST = 20;
+
 /**
- * Fetches every episode of a show. Seasons are requested sequentially rather
- * than in parallel to stay well inside TMDB's rate limits — tracking a show is
- * a one-off action, so the extra second doesn't matter.
+ * Fetches every episode of a show, up to 20 seasons per request.
+ *
+ * TMDB's `append_to_response` lets one `/tv/{id}` call carry whole seasons as
+ * `season/{n}` keys, so a ten-season show costs one request instead of ten.
+ * That is the bulk of what a sync spends — and the cron's 60s budget is spent
+ * a show at a time. Batches stay sequential, and a season missing from a
+ * batch's response falls back to its own request rather than being dropped.
  */
 export async function getAllEpisodes(
   tmdbShowId: string | number,
@@ -428,8 +439,23 @@ export async function getAllEpisodes(
 ): Promise<TmdbEpisode[]> {
   const episodes: TmdbEpisode[] = [];
 
-  for (const seasonNumber of seasonNumbers) {
-    episodes.push(...(await getSeasonEpisodes(tmdbShowId, seasonNumber)));
+  for (let i = 0; i < seasonNumbers.length; i += SEASONS_PER_REQUEST) {
+    const batch = seasonNumbers.slice(i, i + SEASONS_PER_REQUEST);
+
+    const data = await tmdbFetch<Record<string, RawSeasonResponse | undefined>>(
+      `/tv/${tmdbShowId}`,
+      { append_to_response: batch.map((n) => `season/${n}`).join(",") },
+    );
+
+    for (const seasonNumber of batch) {
+      const season = data[`season/${seasonNumber}`];
+
+      episodes.push(
+        ...(Array.isArray(season?.episodes)
+          ? mapSeasonEpisodes(season)
+          : await getSeasonEpisodes(tmdbShowId, seasonNumber)),
+      );
+    }
   }
 
   return episodes;

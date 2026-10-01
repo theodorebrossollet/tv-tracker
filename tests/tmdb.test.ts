@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getAllEpisodes,
   getSeasonEpisodes,
   getShowTrailer,
   getWatchProviderList,
@@ -510,5 +511,58 @@ describe("provider list for the settings picker", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getAllEpisodes", () => {
+  const season = (n: number) => ({
+    episodes: [
+      {
+        id: n,
+        season_number: n,
+        episode_number: 1,
+        name: "Ep",
+        air_date: "2020-01-01",
+        runtime: 30,
+        overview: null,
+      },
+    ],
+  });
+
+  it("fetches many seasons in one request", async () => {
+    const fetchMock = mockFetch({ "season/1": season(1), "season/2": season(2) });
+
+    const episodes = await getAllEpisodes("10", [1, 2]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(episodes.map((e) => e.seasonNumber)).toEqual([1, 2]);
+  });
+
+  it("splits more than 20 seasons across requests", async () => {
+    const numbers = Array.from({ length: 25 }, (_, i) => i + 1);
+    const body = Object.fromEntries(numbers.map((n) => [`season/${n}`, season(n)]));
+    const fetchMock = mockFetch(body);
+
+    const episodes = await getAllEpisodes("10", numbers);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(episodes).toHaveLength(25);
+  });
+
+  it("falls back to a single-season request when one is missing", async () => {
+    const fetchMock = vi.fn(async (url: URL | string) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        url.toString().includes("append_to_response")
+          ? { "season/1": season(1) }
+          : season(2),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const episodes = await getAllEpisodes("10", [1, 2]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(episodes.map((e) => e.seasonNumber)).toEqual([1, 2]);
   });
 });
