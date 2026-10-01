@@ -41,30 +41,35 @@ interface EpisodePayload {
  * — from one flat list of episodes, all in season 1.
  */
 function mockTmdb(episodes: EpisodePayload[]) {
+  const season = {
+    episodes: episodes.map((episode) => ({
+      season_number: 1,
+      name: "Episode",
+      air_date: "2011-04-17",
+      runtime: 60,
+      overview: "An episode.",
+      ...episode,
+    })),
+  };
+
   const fetchMock = vi.fn(async (url: URL | string) => {
     const path = url.toString();
 
-    const body = path.includes("/season/")
-      ? {
-          episodes: episodes.map((episode) => ({
-            season_number: 1,
-            name: "Episode",
-            air_date: "2011-04-17",
-            runtime: 60,
-            overview: "An episode.",
-            ...episode,
-          })),
-        }
-      : {
-          id: Number(SHOW_ID),
-          name: "Game of Thrones",
-          poster_path: null,
-          overview: null,
-          seasons: [{ season_number: 1, episode_count: episodes.length }],
-          first_air_date: "2011-04-17",
-          last_air_date: "2019-05-19",
-          status: "Ended",
-        };
+    const show = {
+      id: Number(SHOW_ID),
+      name: "Game of Thrones",
+      poster_path: null,
+      overview: null,
+      seasons: [{ season_number: 1, episode_count: episodes.length }],
+      first_air_date: "2011-04-17",
+      last_air_date: "2019-05-19",
+      status: "Ended",
+    };
+
+    // Seasons arrive appended to the show response, as TMDB does it.
+    const body = path.includes("append_to_response")
+      ? { ...show, "season/1": season }
+      : show;
 
     return { ok: true, status: 200, json: async () => body };
   });

@@ -11,6 +11,7 @@ const { GET } = await import("@/app/api/cron/refresh-episodes/route");
 const { syncShowFromTmdb } = await import("@/lib/shows");
 const { TmdbError } = await import("@/lib/tmdb");
 const { resetDatabase, seedShow, seedUser } = await import("./helpers");
+const { prisma } = await import("@/lib/prisma");
 
 function request(headers: Record<string, string> = {}) {
   return new Request("https://example.test/api/cron/refresh-episodes", {
@@ -207,6 +208,37 @@ describe("what the refresh covers", () => {
   });
 });
 
+describe("finished series", () => {
+  const authorized = async () => {
+    vi.stubEnv("CRON_SECRET", "s3cret");
+    return GET(request({ authorization: "Bearer s3cret" }));
+  };
+
+  const age = (showId: string, days: number) =>
+    prisma.show.update({
+      where: { id: showId },
+      data: { lastSynced: new Date(Date.now() - days * 24 * 60 * 60 * 1000) },
+    });
+
+  it("skips an ended show synced recently, but not a running one", async () => {
+    await seedShow({ showId: "1", offsets: [-1], status: "watching", showStatus: "Ended" });
+    await seedShow({ showId: "2", offsets: [-1], status: "watching", showStatus: "Returning Series" });
+
+    await authorized();
+
+    expect(vi.mocked(syncShowFromTmdb).mock.calls.map(([id]) => id)).toEqual(["2"]);
+  });
+
+  it("refreshes an ended show again once a week has passed", async () => {
+    await seedShow({ showId: "1", offsets: [-1], status: "watching", showStatus: "Ended" });
+    await age("1", 8);
+
+    await authorized();
+
+    expect(syncShowFromTmdb).toHaveBeenCalledWith("1");
+  });
+});
+
 describe("finishing inside the deadline", () => {
   const authorized = async () => {
     vi.stubEnv("CRON_SECRET", "s3cret");
@@ -217,7 +249,6 @@ describe("finishing inside the deadline", () => {
     // Without an order this is whatever the database returns — stable enough
     // that a run which can't finish would refresh the same prefix every night
     // and never reach the tail. Oldest-first makes successive runs rotate.
-    const { prisma } = await import("@/lib/prisma");
 
     for (const [showId, hoursAgo] of [
       ["1", 1],
