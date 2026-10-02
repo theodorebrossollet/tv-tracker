@@ -310,7 +310,9 @@ model ShowRun {
   show            Show                   @relation(fields: [showId], references: [id], onDelete: Cascade)
   archivedWatches ArchivedEpisodeWatch[]
 
-  /// Numbers are never reused within one account's history of one show.
+  /// Numbers are not reused while the history exists: each is one more than the
+  /// highest present. "Clear all my data" deletes every run, so numbering then
+  /// starts again at 1.
   @@unique([userId, showId, runNumber])
 }
 

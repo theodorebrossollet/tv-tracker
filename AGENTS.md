@@ -85,10 +85,12 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   20261002152206_add_rewatch adds ShowRun,
                   ArchivedEpisodeWatch and PastMovieWatch — additive (three
                   new tables, no change to existing ones), so apply it BEFORE
-                  merging; unapplied, the two rewatch actions AND
-                  Settings' "Clear all my data" (its transaction also
-                  deletes runs and past watches) fail, the title-page
-                  history reads degrade softly, everything else works
+                  merging; unapplied, these fail: the two rewatch
+                  actions, Settings' "Clear all my data" (its transaction
+                  also deletes runs and past watches), and the TMDB show
+                  resync (daily cron, stale-show refresh, adding a new
+                  show), which now reads ArchivedEpisodeWatch. The
+                  title-page history reads still degrade softly
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -164,6 +166,13 @@ and `show-header`'s `runNumber`/`startOver` props. Rules:
   `getMovieDetail`; types `PastRun`, `PastWatch`) fail softly: `null` means
   unavailable (e.g. migration unapplied), so the UI must not trust `runNumber`
   then.
+- A just-restarted show is `watching` with zero watched, which
+  `demoteIfNothingWatched` treats as wrong: marking then unmarking its only
+  episode drops it to the Library watchlist (harmless; the next mark
+  re-promotes it).
+- The TMDB resync keeps any episode that has a watch, current or archived
+  (`archivedWatches: { none: {} }` beside `watched`), so deleting a dropped
+  episode never cascades past-run history away.
 
 ## Rules that will bite you
 

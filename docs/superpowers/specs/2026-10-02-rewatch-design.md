@@ -157,7 +157,14 @@ Real database, session gate and TMDB stubbed, as before.
   nothing may read the archive tables for progress or ratings of the current
   run.
 - If the migration is unapplied when this deploys, the title pages' history
-  reads fail softly, but the two actions and "Clear all my data" (which now
-  deletes the new tables inside its transaction) fail until it is applied.
+  reads fail softly, but the two actions, "Clear all my data" (which now
+  deletes the new tables inside its transaction) and the TMDB show resync
+  (daily cron, stale-show refresh, adding a show), which reads
+  `ArchivedEpisodeWatch` so it never deletes an episode with an archived
+  watch, fail until it is applied.
+- A just-restarted show is `watching` with zero watched, which
+  `demoteIfNothingWatched` treats as wrong: marking then unmarking its only
+  episode drops it to the Library watchlist (harmless; the next mark
+  re-promotes it).
 - Not checked on a real phone before release; the confirmation sheets and the
   new sections need a look on the preview deploy.

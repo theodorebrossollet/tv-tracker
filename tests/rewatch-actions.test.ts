@@ -267,10 +267,55 @@ describe("startShowOver", () => {
       });
     }
 
-    const results = await Promise.all([startShowOver("101"), startShowOver("101")]);
+    // Hold both calls after their pre-check count until each has passed it, so
+    // both really reach the conditional insert believing there is room.
+    let entered = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const original = prisma.showRun.count.bind(prisma.showRun);
+    const spy = vi
+      .spyOn(prisma.showRun, "count")
+      .mockImplementation((async (args: never) => {
+        const n = await original(args);
+        if (++entered === 2) release();
+        await gate;
+        return n;
+      }) as never);
 
+    const results = await Promise.all([startShowOver("101"), startShowOver("101")]);
+    spy.mockRestore();
+
+    expect(entered).toBe(2);
     expect(results.filter((r) => r.ok)).toHaveLength(1);
+    // The winner's transaction clears the watches, so the loser finds nothing
+    // left to archive (the other refusal, the limit, is the next test).
+    expect(results.filter((r) => !r.ok)).toEqual([NOTHING]);
     expect(await runsOf()).toHaveLength(MAX_PAST_RUNS);
+    expect(await prisma.archivedEpisodeWatch.count()).toBe(1);
+  });
+
+  it("refuses at 20 runs in SQL even when the pre-check read a stale count", async () => {
+    // Unlike the race above, the watch is still there, so only the
+    // `c < MAX_PAST_RUNS` clause stands between this call and a 21st run.
+    await seedShow({ offsets: [-1], status: "watching", watched: [0] });
+    for (let n = 1; n <= MAX_PAST_RUNS; n++) {
+      await prisma.showRun.create({
+        data: { userId: TEST_USER_ID, showId: "101", runNumber: n },
+      });
+    }
+    const spy = vi
+      .spyOn(prisma.showRun, "count")
+      .mockImplementationOnce((async () => MAX_PAST_RUNS - 1) as never);
+
+    const result = await startShowOver("101");
+    spy.mockRestore();
+
+    expect(result).toEqual({
+      ok: false,
+      error: "This show has reached the limit of 20 past runs.",
+    });
+    expect(await runsOf()).toHaveLength(MAX_PAST_RUNS);
+    expect(await watchedCount("101")).toBe(1);
   });
 
   it("creates no empty run when the last mark vanishes after the pre-check", async () => {

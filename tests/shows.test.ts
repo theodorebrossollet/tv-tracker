@@ -430,6 +430,51 @@ describe("episodes removed upstream", () => {
     expect(await prisma.watchedEpisode.count()).toBe(1);
   });
 
+  it("keeps one that only a past run watched, and its archived watch", async () => {
+    // Start over moves every current watch into the archive, so such an episode
+    // has no WatchedEpisode row. Deleting it would cascade the archive away.
+    mockTmdb([
+      { id: 63056, episode_number: 1 },
+      { id: 63057, episode_number: 2 },
+      { id: 63058, episode_number: 3 },
+    ]);
+    await syncShowFromTmdb(SHOW_ID);
+    const run = await prisma.showRun.create({
+      data: { userId: TEST_USER_ID, showId: SHOW_ID, runNumber: 1 },
+    });
+    await prisma.archivedEpisodeWatch.create({
+      data: { runId: run.id, episodeId: "63057", watchedAt: new Date("2026-01-02T00:00:00Z"), rating: 7 },
+    });
+    // 63058 is watched in the current run; 63056 stays listed.
+    await prisma.watchedEpisode.create({
+      data: { userId: TEST_USER_ID, episodeId: "63058" },
+    });
+    // 63059 has no watch of either kind.
+    await prisma.episode.create({
+      data: {
+        id: "63059",
+        showId: SHOW_ID,
+        seasonNumber: 1,
+        episodeNumber: 4,
+        name: "Unwatched",
+        airDate: new Date(),
+      },
+    });
+
+    mockTmdb([{ id: 63056, episode_number: 1 }]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    expect(
+      (await prisma.episode.findMany({ where: { showId: SHOW_ID }, orderBy: { id: "asc" } })).map(
+        (episode) => episode.id,
+      ),
+    ).toEqual(["63056", "63057", "63058"]);
+    const archived = await prisma.archivedEpisodeWatch.findMany();
+    expect(archived).toHaveLength(1);
+    expect(archived[0]).toMatchObject({ episodeId: "63057", rating: 7 });
+    expect(await prisma.watchedEpisode.count()).toBe(1);
+  });
+
   it("leaves other shows' episodes alone", async () => {
     // The delete is keyed by id, but the ids it considers come from this
     // show's rows only — a neighbouring show must not be caught by it.
