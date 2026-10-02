@@ -13,6 +13,7 @@ import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
 import { getListsForTitle, getMovieDetail } from "@/lib/queries";
+import { movieResetHistory } from "@/lib/rewatch";
 import { isTmdbMovieId } from "@/lib/show-id";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,10 @@ export default async function MoviePage({ params }: MoviePageProps) {
     logger.warn("lists.for_title_failed", describeError(error));
     return null;
   });
+
+  // Built from what the page already read. Offered whenever there is something
+  // to delete, which includes an untracked movie that only has past watches.
+  const resetHistory = movieResetHistory(movie.status, movie.pastWatches);
 
   const year =
     movie.releaseDate && !Number.isNaN(movie.releaseDate.getTime())
@@ -91,12 +96,16 @@ export default async function MoviePage({ params }: MoviePageProps) {
             <AddToListButton kind="movie" titleId={movie.id} lists={lists} />
           ) : null}
 
-          {movie.status ? (
+          {/* An untracked movie normally has no pill — the buttons below add
+              it. With past watches it gets one, so "Reset history" is
+              reachable; it reads "Not tracked" and offers the usual rows. */}
+          {movie.status || resetHistory ? (
             <MovieStatusMenu
               movieId={movie.id}
               title={movie.title}
               status={movie.status}
               variant="pill"
+              resetHistory={resetHistory}
             />
           ) : null}
         </div>

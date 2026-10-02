@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/actions", () => ({
@@ -33,6 +33,8 @@ vi.mock("@/app/list-actions", () => ({
 vi.mock("@/app/rewatch-actions", () => ({
   watchMovieAgain: vi.fn(async () => ({ ok: true })),
   startShowOver: vi.fn(async () => ({ ok: true })),
+  resetMovieHistory: vi.fn(async () => ({ ok: true })),
+  resetShowHistory: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("@/app/rating-actions", () => ({
   rateMovie: vi.fn(async () => ({ ok: true })),
@@ -354,5 +356,83 @@ describe("movie page metadata", () => {
     expect(
       await generateMetadata({ params: Promise.resolve({ id: "999" }) }),
     ).toEqual({ title: "Movie · TV Tracker" });
+  });
+});
+
+describe("movie page reset history", () => {
+  const past = { watchedAt: new Date("2025-01-02T17:00:00Z"), rating: 7 };
+  const pill = () =>
+    screen.queryByRole("button", { name: "Change status for The Matrix" });
+  const openPill = () => fireEvent.click(pill()!);
+
+  it("renders the status pill for an untracked movie with past watches, with the Reset row", async () => {
+    detailMock.mockResolvedValue(movie({ status: null, pastWatches: [past] }));
+    await renderPage();
+
+    expect(pill()).toBeTruthy();
+    expect(pill()!.textContent).toContain("Not tracked");
+    // The page's own buttons are still there.
+    expect(screen.getByRole("button", { name: /add to watchlist/i })).toBeTruthy();
+
+    openPill();
+    fireEvent.click(screen.getByRole("button", { name: /Reset history/ }));
+    expect(
+      screen.getByText(
+        "This permanently deletes your watch history and ratings for this movie.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders no pill for an untracked movie without past watches", async () => {
+    detailMock.mockResolvedValue(movie({ status: null, pastWatches: [] }));
+    await renderPage();
+    expect(pill()).toBeNull();
+
+    cleanup();
+    detailMock.mockResolvedValue(movie({ status: null, pastWatches: null }));
+    await renderPage();
+    expect(pill()).toBeNull();
+  });
+
+  it("offers the Reset row for a watched movie, with the watchlist sentence", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watched", watchedAt: new Date(), pastWatches: [] }),
+    );
+    await renderPage();
+
+    openPill();
+    fireEvent.click(screen.getByRole("button", { name: /Reset history/ }));
+    expect(
+      screen.getByText(/It goes back to your watchlist\./),
+    ).toBeTruthy();
+  });
+
+  it("offers the Reset row for a watched movie whose past watches are unreadable", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watched", watchedAt: new Date(), pastWatches: null }),
+    );
+    await renderPage();
+
+    openPill();
+    expect(screen.getByRole("button", { name: /Reset history/ })).toBeTruthy();
+  });
+
+  it("offers the Reset row for a watchlist movie with past watches, without the watchlist sentence", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watchlist", pastWatches: [past] }),
+    );
+    await renderPage();
+
+    openPill();
+    fireEvent.click(screen.getByRole("button", { name: /Reset history/ }));
+    expect(screen.queryByText(/goes back to your watchlist/)).toBeNull();
+  });
+
+  it("offers no Reset row when there is nothing to reset", async () => {
+    detailMock.mockResolvedValue(movie({ status: "watchlist", pastWatches: [] }));
+    await renderPage();
+
+    openPill();
+    expect(screen.queryByText(/Reset history/)).toBeNull();
   });
 });
