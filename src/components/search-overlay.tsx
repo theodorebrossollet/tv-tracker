@@ -11,6 +11,14 @@ import { MovieAddButton } from "@/components/movie-add-button";
 import { Poster } from "@/components/poster";
 import { StatusBadge } from "@/components/status-badge";
 
+type Filter = "all" | "tv" | "movie";
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "tv", label: "Shows" },
+  { id: "movie", label: "Movies" },
+];
+
 /** How long to wait after the last keystroke before asking TMDB. */
 const DEBOUNCE_MS = 250;
 
@@ -52,18 +60,22 @@ export function SearchOverlay({
 
   const targetId = target?.id;
   const [query, setQuery] = useState("");
+  // Not remembered between openings: the overlay unmounts on close, so every
+  // search starts from All.
+  const [filter, setFilter] = useState<Filter>("all");
 
   // Results are stored together with the query they belong to. Deriving
   // "is this stale?" during render (rather than clearing state in an effect)
   // means the previous show's results never flash while you type the next one.
   const [data, setData] = useState<{
     query: string;
+    filter: Filter;
     results: SearchSuggestion[];
     error: string | null;
-  }>({ query: "", results: [], error: null });
+  }>({ query: "", filter: "all", results: [], error: null });
 
   const trimmedQuery = query.trim();
-  const isStale = data.query !== trimmedQuery;
+  const isStale = data.query !== trimmedQuery || data.filter !== filter;
   const loading = trimmedQuery !== "" && isStale;
   const results = isStale ? [] : data.results;
   const error = isStale ? null : data.error;
@@ -95,13 +107,17 @@ export function SearchOverlay({
     let cancelled = false;
 
     const timer = setTimeout(async () => {
-      const response = targetId
-        ? await searchSuggestions(trimmed, targetId)
-        : await searchSuggestions(trimmed);
+      const response =
+        filter !== "all"
+          ? await searchSuggestions(trimmed, targetId, filter)
+          : targetId
+            ? await searchSuggestions(trimmed, targetId)
+            : await searchSuggestions(trimmed);
       if (cancelled) return;
 
       setData({
         query: trimmed,
+        filter,
         results: response.results ?? [],
         error: response.error ?? null,
       });
@@ -111,7 +127,7 @@ export function SearchOverlay({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, targetId]);
+  }, [query, targetId, filter]);
 
   function open(kind: SearchSuggestion["kind"], id: string) {
     // Remembered on the way out rather than as you type, so the chips hold
@@ -186,6 +202,28 @@ export function SearchOverlay({
           >
             {target ? "Done" : "Cancel"}
           </button>
+        </div>
+
+        <div
+          role="group"
+          aria-label="Filter results"
+          className="flex gap-2 border-b border-border-faint px-4 py-2.5"
+        >
+          {FILTERS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={filter === option.id}
+              onClick={() => setFilter(option.id)}
+              className={`min-h-[34px] rounded-full border px-3.5 text-[13px] transition-colors ${
+                filter === option.id
+                  ? "border-accent-deep bg-accent-deep text-background"
+                  : "border-border bg-surface text-muted hover:text-foreground"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">

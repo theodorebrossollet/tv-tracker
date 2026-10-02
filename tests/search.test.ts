@@ -43,7 +43,19 @@ describe("search suggestions", () => {
   it("passes an ordinary query through untouched", async () => {
     await searchSuggestions("  game of thrones  ");
 
-    expect(searchMulti).toHaveBeenCalledWith("game of thrones");
+    expect(searchMulti).toHaveBeenCalledWith("game of thrones", "all");
+  });
+
+  it("passes a kind filter through, and treats anything else as All", async () => {
+    await searchSuggestions("matrix", undefined, "movie");
+    await searchSuggestions("matrix", undefined, "tv");
+    await searchSuggestions("matrix", undefined, "bogus" as never);
+
+    expect(vi.mocked(searchMulti).mock.calls.map((call) => call[1])).toEqual([
+      "movie",
+      "tv",
+      "all",
+    ]);
   });
 
   it("does not call TMDB for an empty query", async () => {

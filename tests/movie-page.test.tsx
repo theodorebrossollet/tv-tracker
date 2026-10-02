@@ -52,6 +52,15 @@ vi.mock("@/lib/logger", () => ({
 }));
 vi.mock("@/lib/tmdb", () => ({
   getMovieDetails: vi.fn(),
+  getMovieExtras: vi.fn(async () => ({
+    tagline: null,
+    score: null,
+    voteCount: 0,
+    collection: null,
+    directors: [],
+    cast: [],
+    trailer: null,
+  })),
   TmdbError: class TmdbError extends Error {},
 }));
 
@@ -59,7 +68,7 @@ const { default: MoviePage, generateMetadata } = await import(
   "@/app/movie/[id]/page"
 );
 const { getMovieDetail, getListsForTitle } = await import("@/lib/queries");
-const { getMovieDetails } = await import("@/lib/tmdb");
+const { getMovieDetails, getMovieExtras } = await import("@/lib/tmdb");
 const { requireOnboardedSession } = await import("@/lib/auth");
 const { logger } = await import("@/lib/logger");
 
@@ -434,5 +443,55 @@ describe("movie page reset history", () => {
 
     openPill();
     expect(screen.queryByText(/Reset history/)).toBeNull();
+  });
+});
+
+describe("movie page extras", () => {
+  const extras = {
+    tagline: "Welcome to the real world.",
+    score: 8.2,
+    voteCount: 25000,
+    collection: "The Matrix Collection",
+    directors: ["Lana Wachowski", "Lilly Wachowski"],
+    cast: [
+      { id: 1, name: "Keanu Reeves", character: "Neo", profilePath: "/k.jpg" },
+      { id: 2, name: "Carrie-Anne Moss", character: "Trinity", profilePath: null },
+    ],
+    trailer: { key: "abc123", name: "Official Trailer", type: "Trailer" },
+  };
+
+  it("shows tagline, directors, score, franchise, trailer and cast", async () => {
+    detailMock.mockResolvedValue(movie());
+    vi.mocked(getMovieExtras).mockResolvedValueOnce(extras);
+    await renderPage();
+
+    expect(screen.getByText("Welcome to the real world.")).toBeTruthy();
+    expect(screen.getByText("Directed by Lana Wachowski, Lilly Wachowski")).toBeTruthy();
+    expect(screen.getByText("TMDB 8.2/10")).toBeTruthy();
+    expect(screen.getByText("Part of The Matrix Collection")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /play trailer/i })).toBeTruthy();
+    expect(screen.getByText("Keanu Reeves")).toBeTruthy();
+    expect(screen.getByText("Neo")).toBeTruthy();
+  });
+
+  it("gives a cast member without a photo their initials", async () => {
+    detailMock.mockResolvedValue(movie());
+    vi.mocked(getMovieExtras).mockResolvedValueOnce(extras);
+    await renderPage();
+
+    expect(screen.getByText("CM")).toBeTruthy();
+  });
+
+  it("still renders the page when TMDB can't supply the extras", async () => {
+    detailMock.mockResolvedValue(movie());
+    vi.mocked(getMovieExtras).mockRejectedValueOnce(new Error("down"));
+    await renderPage();
+
+    expect(screen.getByRole("heading", { name: "The Matrix" })).toBeTruthy();
+    expect(screen.queryByText("Cast")).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "movie.extras_failed",
+      expect.anything(),
+    );
   });
 });
