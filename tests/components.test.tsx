@@ -45,6 +45,8 @@ describe("StatusBadge", () => {
       ["watchlist", "Watchlist"],
       ["paused", "Paused"],
       ["stopped", "Stopped"],
+      ["watched", "Watched"],
+      ["not_interested", "Not interested"],
     ] as const) {
       const { unmount } = render(<StatusBadge status={status} />);
       expect(screen.getByText(label)).toBeTruthy();

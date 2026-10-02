@@ -1,14 +1,16 @@
-import type { TrackStatus } from "@/lib/types";
+import type { MovieStatus, TrackStatus } from "@/lib/types";
 
-const LABELS: Record<TrackStatus, string> = {
+const LABELS: Record<TrackStatus | MovieStatus, string> = {
   watching: "Watching",
   watchlist: "Watchlist",
   paused: "Paused",
   stopped: "Stopped",
+  watched: "Watched",
+  not_interested: "Not interested",
 };
 
 /**
- * Says which list a show is already on.
+ * Says which list a show or movie is already on.
  *
  * Exists because a tick alone is ambiguous once there is more than one way to
  * be tracked: search results showed a filled check for a paused show with
@@ -18,7 +20,7 @@ const LABELS: Record<TrackStatus, string> = {
  * started, and colouring all four would turn a list of results into a
  * traffic-light display.
  */
-export function StatusBadge({ status }: { status: TrackStatus | null }) {
+export function StatusBadge({ status }: { status: TrackStatus | MovieStatus | null }) {
   if (!status) return null;
 
   return (
