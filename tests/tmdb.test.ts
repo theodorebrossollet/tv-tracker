@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getAllEpisodes,
+  getMovieDetails,
   getSeasonEpisodes,
   getShowTrailer,
   getWatchProviderList,
   getWatchProviders,
+  searchMulti,
   searchTvShows,
   TmdbError,
 } from "@/lib/tmdb";
@@ -566,5 +568,150 @@ describe("getAllEpisodes", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(episodes.map((e) => e.seasonNumber)).toEqual([1, 2]);
+  });
+});
+
+describe("multi search", () => {
+  it("keeps tv and movie results, drops people, and maps each kind", async () => {
+    mockFetch({
+      results: [
+        {
+          media_type: "tv",
+          id: 1,
+          name: "A Show",
+          poster_path: "/s.jpg",
+          overview: "tv text",
+          first_air_date: "2019-05-01",
+        },
+        {
+          media_type: "movie",
+          id: 2,
+          title: "A Movie",
+          poster_path: "/m.jpg",
+          overview: "movie text",
+          release_date: "2021-11-12",
+        },
+        { media_type: "person", id: 3, name: "Someone" },
+      ],
+    });
+
+    expect(await searchMulti("multi-kinds")).toEqual([
+      {
+        kind: "tv",
+        id: 1,
+        name: "A Show",
+        posterPath: "/s.jpg",
+        overview: "tv text",
+        year: "2019",
+      },
+      {
+        kind: "movie",
+        id: 2,
+        name: "A Movie",
+        posterPath: "/m.jpg",
+        overview: "movie text",
+        year: "2021",
+      },
+    ]);
+  });
+
+  it("gives a movie with an empty release date no year", async () => {
+    mockFetch({
+      results: [
+        {
+          media_type: "movie",
+          id: 2,
+          title: "Undated",
+          poster_path: null,
+          overview: "",
+          release_date: "",
+        },
+      ],
+    });
+
+    const [movie] = await searchMulti("multi-undated");
+
+    expect(movie.year).toBeNull();
+    expect(movie.overview).toBeNull();
+  });
+
+  it("asks /search/multi with adult results off, and caches by query", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    await searchMulti("  multi-cache ");
+    await searchMulti("multi-cache");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(url.pathname).toBe("/3/search/multi");
+    expect(url.searchParams.get("query")).toBe("multi-cache");
+    expect(url.searchParams.get("include_adult")).toBe("false");
+  });
+
+  it("returns nothing for a blank query without calling TMDB", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    expect(await searchMulti("   ")).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("movie details", () => {
+  const movie = (overrides: Record<string, unknown> = {}) => ({
+    id: 603,
+    title: "The Matrix",
+    poster_path: "/p.jpg",
+    overview: "text",
+    release_date: "1999-03-31",
+    runtime: 136,
+    status: "Released",
+    genres: [{ name: "Action" }, { name: "Science Fiction" }],
+    ...overrides,
+  });
+
+  it("maps the raw TMDB fields", async () => {
+    const fetchMock = mockFetch(movie());
+
+    expect(await getMovieDetails(603)).toEqual({
+      id: 603,
+      title: "The Matrix",
+      posterPath: "/p.jpg",
+      overview: "text",
+      releaseDate: new Date("1999-03-31T05:00:00.000Z"),
+      runtime: 136,
+      status: "Released",
+      genres: "Action, Science Fiction",
+    });
+    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(url.pathname).toBe("/3/movie/603");
+  });
+
+  it("anchors the release date like an air date", async () => {
+    mockFetch(movie({ release_date: "2026-07-30" }));
+
+    const details = await getMovieDetails("700");
+
+    expect(details.releaseDate?.toISOString()).toBe("2026-07-30T04:00:00.000Z");
+  });
+
+  it("maps a zero or missing runtime to null", async () => {
+    mockFetch(movie({ runtime: 0 }));
+    expect((await getMovieDetails("701")).runtime).toBeNull();
+
+    mockFetch(movie({ runtime: undefined }));
+    expect((await getMovieDetails("702")).runtime).toBeNull();
+  });
+
+  it("maps empty genres, overview, status and release date to null", async () => {
+    mockFetch(
+      movie({ genres: [], overview: "", status: "", release_date: "" }),
+    );
+
+    expect(await getMovieDetails("703")).toMatchObject({
+      genres: null,
+      overview: null,
+      status: null,
+      releaseDate: null,
+    });
   });
 });
