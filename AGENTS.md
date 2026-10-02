@@ -48,7 +48,8 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 src/app/          routes; actions.ts holds the Library writes, account-actions.ts
                   the account ones, list-actions.ts the list ones and
                   rating-actions.ts the rating ones and rewatch-actions.ts
-                  (startShowOver, watchMovieAgain) the rewatch ones (the fifth
+                  (startShowOver, watchMovieAgain, resetShowHistory,
+                  resetMovieHistory) the rewatch ones (the fifth
                   module) — the rules in actions.ts's header govern all five
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
@@ -85,7 +86,7 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   20261002152206_add_rewatch adds ShowRun,
                   ArchivedEpisodeWatch and PastMovieWatch — additive (three
                   new tables, no change to existing ones), so apply it BEFORE
-                  merging; unapplied, these fail: the two rewatch
+                  merging; unapplied, these fail: the rewatch
                   actions, Settings' "Clear all my data" (its transaction
                   also deletes runs and past watches), and the TMDB show
                   resync (daily cron, stale-show refresh, adding a new
@@ -161,6 +162,13 @@ and `show-header`'s `runNumber`/`startOver` props. Rules:
   array-form `$transaction` using `INSERT … SELECT` (not read-then-write). The
   `ShowRun`/`PastMovieWatch` insert is CONDITIONAL in SQL and guards the
   statements after it, so a concurrent double submit never creates an empty run.
+- `resetShowHistory`/`resetMovieHistory` permanently delete the current AND
+  archived history (ratings included) of one title, and work even when it is
+  untracked. Each is one idempotent array-form `$transaction` scoped by
+  `user.id` (a second call is refused "Nothing to reset."); `watching` →
+  `watchlist` for a show, `watched` → `watchlist` (no date, no rating) for a
+  movie, other statuses untouched. UI: the red "Reset history" row, last in
+  both status sheets.
 - Limits: 20 past runs per show, 20 past watches per movie (`lib/rewatch.ts`).
 - The title-page reads (`pastRuns` in `getShowDetail`, `pastWatches` in
   `getMovieDetail`; types `PastRun`, `PastWatch`) fail softly: `null` means
