@@ -692,6 +692,7 @@ export async function clearAllData(): Promise<ActionResult> {
     await prisma.$transaction([
       prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
       prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
+      prisma.trackedMovie.deleteMany({ where: { userId: user.id } }),
       prisma.settings.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {
