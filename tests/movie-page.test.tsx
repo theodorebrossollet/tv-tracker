@@ -73,6 +73,7 @@ function movie(over: Partial<MovieDetail> = {}): MovieDetail {
     status: null,
     watchedAt: null,
     rating: null,
+    pastWatches: [],
     ...over,
   };
 }

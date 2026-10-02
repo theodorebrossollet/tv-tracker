@@ -175,6 +175,7 @@ describe("getMovieDetail", () => {
       status: null,
       watchedAt: null,
       rating: null,
+      pastWatches: [],
     });
     expect(await prisma.movie.count()).toBe(0);
   });

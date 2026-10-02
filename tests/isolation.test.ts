@@ -420,3 +420,28 @@ describe("movie and list ratings never cross accounts", () => {
     expect(byId.get("8")).toBeNull();
   });
 });
+
+describe("rewatch history reads never cross accounts", () => {
+  it("keeps B's archived runs and past watches out of A's detail", async () => {
+    await seedSeasonedShow({ showId: "310", seasons: [2], userId: A });
+    await seedSeasonedShow({ showId: "310", seasons: [2], userId: B });
+    const run = await prisma.showRun.create({
+      data: { userId: B, showId: "310", runNumber: 1 },
+    });
+    await prisma.archivedEpisodeWatch.create({
+      data: { runId: run.id, episodeId: "310-s1e1", watchedAt: new Date(), rating: 9 },
+    });
+    await prisma.movie.create({ data: { id: "311", title: "Shared" } });
+    await prisma.pastMovieWatch.create({
+      data: { userId: B, movieId: "311", watchedAt: new Date(), rating: 2 },
+    });
+
+    const forA = (await getShowDetail(A, "310"))!;
+    expect(forA.pastRuns).toEqual([]);
+    expect(forA.runNumber).toBe(1);
+    expect((await getMovieDetail(A, "311"))!.pastWatches).toEqual([]);
+
+    expect((await getShowDetail(B, "310"))!.pastRuns).toHaveLength(1);
+    expect((await getMovieDetail(B, "311"))!.pastWatches).toHaveLength(1);
+  });
+});
