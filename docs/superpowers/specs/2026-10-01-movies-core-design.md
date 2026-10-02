@@ -49,7 +49,7 @@ applied before the deploy with the usual backup then `db:deploy` steps.
 - `releaseDate?`, `runtime?` (minutes), `genres?` (comma-separated, as on `Show`)
 - `status?` — TMDB release status
 - `lastSynced`
-- `addedById?`, `createdAt?` — feeds the existing new-title cache cap
+- `addedById?`, `createdAt?` — feeds the per-account hourly movie allowance
 
 `TrackedMovie`
 - `id` (cuid), `movieId`, `userId`
