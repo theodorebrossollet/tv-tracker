@@ -45,14 +45,13 @@ export function LibraryScreen({
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
           Library
         </h1>
-        <SearchIconButton />
+        <div className="flex items-center gap-2">
+          <TypeSwitch segment={segment} type={data.type} />
+          <SearchIconButton />
+        </div>
       </div>
 
       <div className="mt-3.5">
-        <TypeSwitch segment={segment} type={data.type} />
-      </div>
-
-      <div className="mt-2.5">
         <Segments segment={segment} type={data.type} />
       </div>
 
@@ -312,7 +311,12 @@ function Section({
 }
 
 /**
- * Shows / Movies, as links like the segments below.
+ * Shows / Movies, as links, compact and in the header beside search.
+ *
+ * It used to sit above the segments as a second full-width control that looked
+ * exactly like them, which read as one confusing stack. This is a filter on the
+ * whole screen, not a section of it, so it takes the corner and the one
+ * full-width control left is the Watchlist/Archive choice.
  *
  * Shows is the bare route and Movies adds `?type=movies`, so the default URL
  * is unchanged and a visitor who never touches the switch never sees a param.
@@ -332,17 +336,21 @@ function TypeSwitch({
   ] as const;
 
   return (
-    <div className="flex gap-[3px] rounded-[13px] border border-border bg-surface-sunken p-[3px]">
+    <nav
+      aria-label="Shows or movies"
+      className="flex gap-0.5 rounded-[11px] border border-border bg-surface-sunken p-0.5"
+    >
       {OPTIONS.map((option) => (
         <PillLink
           key={option.id}
           href={option.href}
           active={option.id === type}
+          size="compact"
         >
           {option.label}
         </PillLink>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -389,17 +397,24 @@ function Segments({
 function PillLink({
   href,
   active,
+  size = "full",
   children,
 }: {
   href: string;
   active: boolean;
+  /** `compact` hugs its label, for the header; `full` shares the row. */
+  size?: "full" | "compact";
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`flex min-h-10 flex-1 items-center justify-center rounded-[10px] text-[13px] font-medium transition-colors ${
+      className={`flex items-center justify-center text-[13px] font-medium transition-colors ${
+        size === "compact"
+          ? "min-h-9 rounded-[9px] px-3"
+          : "min-h-10 flex-1 rounded-[10px]"
+      } ${
         active
           ? "bg-surface-raised text-foreground shadow-[0_1px_2px_rgba(0,0,0,.12)]"
           : "text-muted"

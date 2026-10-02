@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { searchSuggestions, type SearchSuggestion } from "@/app/actions";
 import { AddButton } from "@/components/add-button";
+import { KindBadge } from "@/components/kind-badge";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { Poster } from "@/components/poster";
 import { StatusBadge } from "@/components/status-badge";
@@ -231,11 +232,14 @@ export function SearchOverlay({
                   onClick={() => open(result.kind, result.id)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
-                  <Poster
-                    path={result.posterPath}
-                    name={result.name}
-                    width={40}
-                  />
+                  <span className="relative shrink-0">
+                    <Poster
+                      path={result.posterPath}
+                      name={result.name}
+                      width={40}
+                    />
+                    <KindBadge kind={result.kind} />
+                  </span>
 
                   <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                     {/* Badge rather than trailing text in the subtitle: the
@@ -245,9 +249,6 @@ export function SearchOverlay({
                     <span className="flex items-center gap-[7px]">
                       <span className="min-w-0 truncate text-[15px] font-medium">
                         {result.name}
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-faint">
-                        {result.kind === "movie" ? "Movie" : "TV"}
                       </span>
                       <StatusBadge status={result.status} />
                     </span>

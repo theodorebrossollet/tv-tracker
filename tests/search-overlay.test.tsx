@@ -99,7 +99,7 @@ const MOVIE = {
 };
 
 describe("shows and movies together", () => {
-  it("tags each row and renders a tv and a movie sharing an id", async () => {
+  it("badges each row and renders a tv and a movie sharing an id", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     searchSuggestions.mockResolvedValue({ results: [RESULT, MOVIE] });
     open();
@@ -109,8 +109,11 @@ describe("shows and movies together", () => {
     expect(await screen.findByText("Severance: The Movie")).toBeTruthy();
     expect(screen.getByText("Severance")).toBeTruthy();
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByText("TV")).toBeTruthy();
-    expect(screen.getByText("Movie")).toBeTruthy();
+    // The kind is an icon badge on the poster, not text beside the title.
+    expect(screen.getByRole("img", { name: "TV show" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Movie" })).toBeTruthy();
+    expect(screen.queryByText("TV")).toBeNull();
+    expect(screen.queryByText("Movie")).toBeNull();
     expect(screen.getByText("Year unknown")).toBeTruthy();
     expect(
       error.mock.calls.some((call) => String(call[0]).includes("key")),
