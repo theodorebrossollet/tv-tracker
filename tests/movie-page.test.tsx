@@ -30,6 +30,10 @@ vi.mock("@/app/list-actions", () => ({
   createList: vi.fn(async () => ({ ok: true, id: "n" })),
   updateList: vi.fn(),
 }));
+vi.mock("@/app/rewatch-actions", () => ({
+  watchMovieAgain: vi.fn(async () => ({ ok: true })),
+  startShowOver: vi.fn(async () => ({ ok: true })),
+}));
 vi.mock("@/app/rating-actions", () => ({
   rateMovie: vi.fn(async () => ({ ok: true })),
   rateEpisode: vi.fn(async () => ({ ok: true })),
@@ -174,6 +178,60 @@ describe("movie page rating", () => {
 
     expect(screen.queryByText("Your rating")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Rate \d+ out of 10$/ })).toBeNull();
+  });
+});
+
+describe("movie page rewatch", () => {
+  it("offers Watch again only for a watched movie", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watched", watchedAt: new Date(), rating: 8 }),
+    );
+    await renderPage();
+    expect(screen.getByRole("button", { name: "Watch again" })).toBeTruthy();
+  });
+
+  it.each([
+    ["untracked", null],
+    ["watchlist", "watchlist"],
+    ["not_interested", "not_interested"],
+  ] as const)("does not offer Watch again when %s", async (_name, status) => {
+    detailMock.mockResolvedValue(movie({ status }));
+    await renderPage();
+    expect(screen.queryByRole("button", { name: "Watch again" })).toBeNull();
+  });
+
+  it("lists past watches below the rating section", async () => {
+    detailMock.mockResolvedValue(
+      movie({
+        status: "watched",
+        watchedAt: new Date(),
+        pastWatches: [
+          { watchedAt: new Date("2026-03-03T17:00:00Z"), rating: 8 },
+          { watchedAt: new Date("2025-01-02T17:00:00Z"), rating: null },
+        ],
+      }),
+    );
+    await renderPage();
+
+    const heading = screen.getByText("Past watches", { selector: "h2" });
+    const rating = screen.getByText("Your rating", { selector: "h2" });
+    expect(
+      rating.compareDocumentPosition(heading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("renders no Past watches when the history is unavailable or empty", async () => {
+    for (const pastWatches of [null, []]) {
+      detailMock.mockResolvedValue(
+        movie({ status: "watched", watchedAt: new Date(), pastWatches }),
+      );
+      await renderPage();
+      expect(screen.queryByText("Past watches")).toBeNull();
+      expect(screen.getByRole("heading", { name: "The Matrix" })).toBeTruthy();
+      cleanup();
+    }
   });
 });
 
