@@ -30,6 +30,10 @@ vi.mock("@/app/list-actions", () => ({
   createList: vi.fn(async () => ({ ok: true, id: "n" })),
   updateList: vi.fn(),
 }));
+vi.mock("@/app/rating-actions", () => ({
+  rateMovie: vi.fn(async () => ({ ok: true })),
+  rateEpisode: vi.fn(async () => ({ ok: true })),
+}));
 vi.mock("@/lib/queries", () => ({
   getMovieDetail: vi.fn(),
   getListsForTitle: vi.fn(async () => []),
@@ -123,6 +127,52 @@ describe("movie page actions", () => {
 
     expect(screen.queryByRole("button", { name: /mark watched/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /add to watchlist/i })).toBeNull();
+  });
+});
+
+describe("movie page rating", () => {
+  it("shows the stored rating pressed once watched", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watched", watchedAt: new Date(), rating: 8 }),
+    );
+    await renderPage();
+
+    expect(screen.getByText("Your rating", { selector: "h2" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Rate 8 out of 10" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: "Rate 7 out of 10" })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  it("shows the strip with nothing pressed when watched but unrated", async () => {
+    detailMock.mockResolvedValue(
+      movie({ status: "watched", watchedAt: new Date(), rating: null }),
+    );
+    await renderPage();
+
+    const steps = screen.getAllByRole("button", { name: /^Rate \d+ out of 10$/ });
+    expect(steps).toHaveLength(10);
+    expect(steps.every((b) => b.getAttribute("aria-pressed") === "false")).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ["untracked", null],
+    ["watchlist", "watchlist"],
+    ["not_interested", "not_interested"],
+  ] as const)("renders no strip when %s", async (_name, status) => {
+    detailMock.mockResolvedValue(movie({ status }));
+    await renderPage();
+
+    expect(screen.queryByText("Your rating")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Rate \d+ out of 10$/ })).toBeNull();
   });
 });
 
