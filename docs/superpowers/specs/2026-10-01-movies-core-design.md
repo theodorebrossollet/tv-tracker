@@ -60,15 +60,16 @@ applied before the deploy with the usual backup then `db:deploy` steps.
 
 The cron is unchanged: movies have no episodes to sync.
 
-New-title cap: caching a new movie counts against the same 20 per hour per
-account as new shows.
+New-title cap: caching a new movie counts against its own allowance of 60 per
+hour per account, separate from the 20 per hour for new shows. A movie is one
+cheap request, and entering a backlog by hand must not hit the show limit.
 
 ## Status rules
 
 Kept in a pure module beside `status-transitions.ts`, so they test without
 React.
 
-- From none: add as `watchlist`.
+- From none: add as `watchlist`, or log straight as `watched` (a film already seen).
 - From `watchlist`: `watched` or `not_interested`.
 - From `watched`: `watchlist` or `not_interested`.
 - From `not_interested`: `watchlist` or `watched`.
@@ -93,15 +94,15 @@ means shows, so existing links are unchanged, and the choice is not remembered.
 - Shows view unchanged. Watching and Up Next stay shows-only.
 
 **Movie page `/movie/[id]`.** Poster, title, year, runtime, genres, synopsis.
-One primary action by state: "Add to watchlist", then "Mark watched". A status
+Actions by state: untracked offers "Add to watchlist" and "Mark watched"; on the watchlist, "Mark watched". A status
 sheet offers the remaining transitions and "Remove".
 
 ## Server side
 
 - `tmdb.ts`: movie multi-search and `getMovieDetails`, mapped the way show
   details are.
-- Server actions beside the show actions: add to watchlist, mark watched, set
-  status, remove. Same session gate and the same new-title cap.
+- Server actions beside the show actions: add to watchlist, set status (which
+  also covers mark watched, including from an unadded movie), remove. Same session gate; adding an uncached movie counts against the movie allowance.
 - `queries.ts`: movie buckets for a user (watchlist, watched, not interested).
 
 ## Testing

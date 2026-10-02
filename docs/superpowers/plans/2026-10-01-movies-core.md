@@ -15,8 +15,8 @@
 ## Global Constraints
 
 - Statuses are exactly `watchlist` | `watched` | `not_interested`. `watchedAt` is set when moving to `watched` and cleared when moving away.
-- Transitions: none → `watchlist` only; `watchlist` → `watched`, `not_interested`; `watched` → `watchlist`, `not_interested`; `not_interested` → `watchlist`, `watched`; any tracked state → remove.
-- Caching a new movie counts against the same 20 per hour per account as new shows (one combined count).
+- Transitions: none → `watchlist` or `watched` (logging a film you've already seen); `watchlist` → `watched`, `not_interested`; `watched` → `watchlist`, `not_interested`; `not_interested` → `watchlist`, `watched`; any tracked state → remove.
+- Caching a new movie counts against its own allowance of 60 new movies per hour per account (`NEW_MOVIES_PER_HOUR = 60`, counting only `Movie` rows the account added). The show allowance (20 per hour, shows only) is unchanged. Movies already cached by anyone never count.
 - The Shows/Movies choice is the `type` search param (`?type=movies`); no param means shows; it is never remembered.
 - No existing table changes. Migration is additive, so it is applied by hand *before* merge (AGENTS.md); this plan never touches production.
 - No rating, list, availability, trailer or recommendation code.
@@ -65,9 +65,9 @@
 
 **Interfaces:**
 - Produces in `types.ts`: `type MovieStatus = "watchlist" | "watched" | "not_interested"`; `isMovieStatus(value: unknown): value is MovieStatus`.
-- Produces in `movie-status.ts` (pure, no `server-only`): `type MovieStatusTarget = MovieStatus | "remove"`; `movieStatusTargets(status: MovieStatus | null): MovieStatus[]` returning the Global Constraints transitions in the order listed, never including the current status; `watchedAtFor(next: MovieStatus, now: Date): Date | null`.
+- Produces in `movie-status.ts` (pure, no `server-only`): `type MovieStatusTarget = MovieStatus | "remove"`; `movieStatusTargets(status: MovieStatus | null): MovieStatus[]` (`null` → `["watchlist", "watched"]`) returning the Global Constraints transitions in the order listed, never including the current status; `watchedAtFor(next: MovieStatus, now: Date): Date | null`.
 
-- [ ] **Step 1: Write failing tests:** a table over all four inputs (`null` → `["watchlist"]`, etc.) for `movieStatusTargets`; "never contains its own input" over every status; `watchedAtFor("watched", now)` returns `now`, the other two return `null`; `isMovieStatus` accepts the three values and rejects `"watching"`, `""`, `undefined`.
+- [ ] **Step 1: Write failing tests:** a table over all four inputs (`null` → `["watchlist", "watched"]`, etc.) for `movieStatusTargets`; "never contains its own input" over every status; `watchedAtFor("watched", now)` returns `now`, the other two return `null`; `isMovieStatus` accepts the three values and rejects `"watching"`, `""`, `undefined`.
 - [ ] **Step 2:** Run `npx vitest run tests/movie-status.test.ts`; expect FAIL (module missing).
 - [ ] **Step 3:** Implement the two modules.
 - [ ] **Step 4:** Re-run; expect PASS.
@@ -94,23 +94,21 @@
 
 ---
 
-### Task 4: Caching movies and the shared allowance
+### Task 4: Caching movies and their hourly allowance
 
 **Files:**
-- Modify: `src/lib/shows.ts`
 - Create: `src/lib/movies.ts`
-- Test: `tests/movies.test.ts`, `tests/shows.test.ts`
+- Test: `tests/movies.test.ts`
 
 **Interfaces:**
 - Consumes: `getMovieDetails`, `TmdbMovieDetails` (Task 3); `Movie` model (Task 1).
-- Produces in `shows.ts`: `assertCanCacheNewShow(userId: string): Promise<void>` now exported and counting `show` rows plus `movie` rows with `addedById = userId` created in the last hour against `NEW_SHOWS_PER_HOUR`; still throws `NewShowLimitError`.
-- Produces in `movies.ts` (`server-only`): `syncMovieFromTmdb(tmdbMovieId: string, addedById?: string): Promise<{ title: string }>` upserting the `Movie` row (sets `addedById`/`createdAt` only on create, bumps `lastSynced` on update); `cacheNewMovie(tmdbMovieId: string, userId: string): Promise<{ title: string }>` asserting the allowance then syncing.
+- Produces in `movies.ts` (`server-only`): `NEW_MOVIES_PER_HOUR = 60`; `class NewMovieLimitError extends TmdbError` (status 429, message "You've added a lot of new movies. Please try again in a bit."), modelled on `NewShowLimitError`; `syncMovieFromTmdb(tmdbMovieId: string, addedById?: string): Promise<{ title: string }>` upserting the `Movie` row (sets `addedById`/`createdAt` only on create, bumps `lastSynced` on update); `cacheNewMovie(tmdbMovieId: string, userId: string): Promise<{ title: string }>` throwing `NewMovieLimitError` when the account has added `NEW_MOVIES_PER_HOUR` movies in the last hour, else syncing. `src/lib/shows.ts` is not modified.
 
-- [ ] **Step 1: Write failing tests:** `tests/movies.test.ts` (mock `@/lib/tmdb`'s `getMovieDetails`): sync creates a row with mapped fields and `addedById`; syncing again keeps the original `addedById`/`createdAt`; `cacheNewMovie` rejects with `NewShowLimitError` once the account has 20 recent rows across a mix (e.g. 12 shows + 8 movies); a movie cached by another account does not count. Extend the existing allowance block in `tests/shows.test.ts` with the mixed-count case.
-- [ ] **Step 2:** Run both files; expect FAIL.
-- [ ] **Step 3:** Implement. Keep the error class and message as they are.
-- [ ] **Step 4:** Re-run both files plus `tests/tracking.test.ts`; expect PASS.
-- [ ] **Step 5: Commit** `feat: cache movies under the shared new-title allowance`
+- [ ] **Step 1: Write failing tests:** `tests/movies.test.ts` (mock `@/lib/tmdb`'s `getMovieDetails`): sync creates a row with mapped fields and `addedById`; syncing again keeps the original `addedById`/`createdAt`; `cacheNewMovie` rejects with `NewMovieLimitError` once the account has 60 recent movie rows and succeeds at 59; recent *show* rows by the same account do not count toward it; a movie cached by another account does not count; rows older than an hour do not count.
+- [ ] **Step 2:** Run the file; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Re-run `npx vitest run tests/movies.test.ts tests/shows.test.ts`; expect PASS.
+- [ ] **Step 5: Commit** `feat: cache movies under their own hourly allowance`
 
 ---
 
@@ -122,10 +120,10 @@
 
 **Interfaces:**
 - Consumes: `isTmdbMovieId`, `cacheNewMovie`, `syncMovieFromTmdb`, `movieStatusTargets`, `watchedAtFor`, `isMovieStatus`, `searchMulti`.
-- Produces: `addMovieToWatchlist(tmdbMovieId: string): Promise<ActionResult>` (mirrors `addToWatchlist`: validate id, no-op if already tracked, sync a cached movie / `cacheNewMovie` an absent one, create `status: "watchlist"`, treat a unique-constraint loss as `{ ok: true }`); `setMovieStatus(movieId: string, status: MovieStatus): Promise<ActionResult>` (validates both args; refuses a movie the user doesn't track with `{ ok: false, error: "Movie isn't on your lists." }` and a status not in `movieStatusTargets(current)` with `{ ok: false, error: "That change isn't available." }`; sets `watchedAt` via `watchedAtFor`); `removeMovie(movieId: string): Promise<ActionResult>` (`deleteMany` scoped by user). All call `revalidateShowViews()` on success. The spec's separate "mark watched" action is `setMovieStatus(id, "watched")`; amend the spec's Server side bullet accordingly in this commit.
+- Produces: `addMovieToWatchlist(tmdbMovieId: string): Promise<ActionResult>` (mirrors `addToWatchlist`: validate id, no-op if already tracked, sync a cached movie / `cacheNewMovie` an absent one, create `status: "watchlist"`, treat a unique-constraint loss as `{ ok: true }`); `setMovieStatus(movieId: string, status: MovieStatus): Promise<ActionResult>` (validates both args; refuses a status not in `movieStatusTargets(current)` with `{ ok: false, error: "That change isn't available." }`; sets `watchedAt` via `watchedAtFor`; for a movie the user doesn't track yet it caches the movie exactly as `addMovieToWatchlist` does and creates the row with the requested status, so "Mark watched" works straight from an unadded movie, with the same double-click handling); `removeMovie(movieId: string): Promise<ActionResult>` (`deleteMany` scoped by user). All call `revalidateShowViews()` on success. The spec's separate "mark watched" action is `setMovieStatus(id, "watched")`; amend the spec's Server side bullet accordingly in this commit.
 - Produces: `type SearchSuggestion = { kind: "tv"; id: string; name: string; posterPath: string | null; year: string | null; status: TrackStatus | null } | { kind: "movie"; …same; status: MovieStatus | null }`. `searchSuggestions` calls `searchMulti`, looks up `trackedShow` for the tv ids and `trackedMovie` for the movie ids (two scoped queries), caps at 12, and keeps the 200-character query cap and empty-query short circuit.
 
-- [ ] **Step 1: Write failing tests** in `tests/movie-actions.test.ts` (same three doubles as `tests/status-transitions.test.ts`): add creates a `watchlist` row and caches the movie; adding twice leaves one row; adding a movie when a show with the same id is tracked still works (ids overlap); `"12/x"` is refused without calling TMDB; `setMovieStatus` walks every allowed transition and asserts `watchedAt` set/cleared; refuses an untracked movie, a same-status call, and `"watching"`; `removeMovie` deletes only the caller's row; two users track one movie and one removing leaves the other's. In `tests/search.test.ts` update to `searchMulti` and add: a tv and a movie sharing an id both come back with their own `kind` and the right tracked status.
+- [ ] **Step 1: Write failing tests** in `tests/movie-actions.test.ts` (same three doubles as `tests/status-transitions.test.ts`): add creates a `watchlist` row and caches the movie; adding twice leaves one row; `setMovieStatus(id, "watched")` on an untracked, uncached movie caches it and creates a `watched` row with `watchedAt` set, and `setMovieStatus(id, "not_interested")` on an untracked movie is refused; adding a movie when a show with the same id is tracked still works (ids overlap); `"12/x"` is refused without calling TMDB; `setMovieStatus` walks every allowed transition and asserts `watchedAt` set/cleared; refuses a same-status call and `"watching"`; `removeMovie` deletes only the caller's row; two users track one movie and one removing leaves the other's. In `tests/search.test.ts` update to `searchMulti` and add: a tv and a movie sharing an id both come back with their own `kind` and the right tracked status.
 - [ ] **Step 2:** Run both files; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run `npx vitest run tests/movie-actions.test.ts tests/search.test.ts tests/tracking.test.ts`; expect PASS.
@@ -184,9 +182,9 @@
 - Consumes: `MovieStatusMenu`, `MovieAddButton`, `getMovieDetails`, `isTmdbMovieId`.
 - Produces in `queries.ts`: `interface MovieDetail { id: string; title: string; posterPath: string | null; overview: string | null; releaseDate: Date | null; runtime: number | null; genres: string | null; status: MovieStatus | null; watchedAt: Date | null }`; `getMovieDetail(userId: string, movieId: string): Promise<MovieDetail | null>` wrapped in React `cache` like `getShowDetail`: reads the cached `Movie` row with the user's tracked row, else fetches `getMovieDetails` without writing anything; a `TmdbError` with status 404 returns `null`, other errors propagate.
 - Produces: `MarkMovieWatchedButton({ movieId }: { movieId: string })`, client, calls `setMovieStatus(movieId, "watched")` in a transition and shows an error line on failure.
-- The page: `requireOnboardedSession()` first; non-digit id → `notFound()`; `null` detail → `notFound()`; poster, title, meta line (year · runtime · genres, skipping absent parts), synopsis; status `null` → `MovieAddButton` full; `watchlist` → `MarkMovieWatchedButton`; tracked → `MovieStatusMenu` pill. `generateMetadata` mirrors the show page (also gated). `loading.tsx` uses the existing skeleton components.
+- The page: `requireOnboardedSession()` first; non-digit id → `notFound()`; `null` detail → `notFound()`; poster, title, meta line (year · runtime · genres, skipping absent parts), synopsis; status `null` → `MovieAddButton` full plus `MarkMovieWatchedButton`; `watchlist` → `MarkMovieWatchedButton`; tracked → `MovieStatusMenu` pill. `generateMetadata` mirrors the show page (also gated). `loading.tsx` uses the existing skeleton components.
 
-- [ ] **Step 1: Write failing tests:** `getMovieDetail` returns the cached row with this user's status, ignores another user's tracked row, falls back to TMDB for an uncached id without creating a `Movie` row, and returns `null` on a TMDB 404; a render test that the primary action follows status (`null`, `watchlist`, `watched`) and that missing poster/date/runtime renders cleanly.
+- [ ] **Step 1: Write failing tests:** `getMovieDetail` returns the cached row with this user's status, ignores another user's tracked row, falls back to TMDB for an uncached id without creating a `Movie` row, and returns `null` on a TMDB 404; a render test that the actions follow status (`null` shows both Add to watchlist and Mark watched; `watchlist` shows Mark watched; `watched` shows neither) and that missing poster/date/runtime renders cleanly.
 - [ ] **Step 2:** Run those files; expect FAIL.
 - [ ] **Step 3:** Implement. Reuse `Poster`, `formatRuntime`, `formatAirDate`.
 - [ ] **Step 4:** Run `npx vitest run tests/movie-queries.test.ts tests/movie-page.test.tsx tests/route-gates.test.ts tests/loading-states.test.ts`; expect PASS.
@@ -197,7 +195,7 @@
 ### Task 9: Docs and full verification
 
 **Files:**
-- Modify: `AGENTS.md` (where-things-are: `movies.ts`, `movie-status.ts`, `library-type.ts`; add a short note that Library's `type` param selects Shows/Movies, and that the new-title allowance counts both tables), `docs/roadmap.md` if it lists movies
+- Modify: `AGENTS.md` (where-things-are: `movies.ts`, `movie-status.ts`, `library-type.ts`; add a short note that Library's `type` param selects Shows/Movies, and that movies have their own hourly allowance, separate from shows), `docs/roadmap.md` if it lists movies
 - Modify: spec (the Server side bullet from Task 5, if not already done)
 
 - [ ] **Step 1:** Make the doc edits.
