@@ -788,8 +788,12 @@ export interface ListDetail {
  * watched ones in the same order. "Watched" is `isListItemWatched`; a show's
  * "finished" is taken from `getTrackedShows` (the Library's own derivation)
  * rather than worked out here.
+ *
+ * Memoized per request with React's `cache`, like `getShowDetail`: the list
+ * page calls this from both `generateMetadata` and the component, and each
+ * call loads every tracked show when the list holds one.
  */
-export async function getListDetail(
+export const getListDetail = cache(async function getListDetail(
   userId: string,
   listId: string,
 ): Promise<ListDetail | null> {
@@ -797,6 +801,8 @@ export async function getListDetail(
     where: { id: listId, userId },
     include: {
       items: {
+        // `id` breaks ties between items added in the same instant.
+        orderBy: [{ addedAt: "desc" }, { id: "desc" }],
         include: {
           movie: { include: { tracked: { where: { userId } } } },
           show: { include: { tracked: { where: { userId } } } },
@@ -871,7 +877,8 @@ export async function getListDetail(
   items.sort(
     (a, b) =>
       Number(a.watched) - Number(b.watched) ||
-      b.addedAt.getTime() - a.addedAt.getTime(),
+      b.addedAt.getTime() - a.addedAt.getTime() ||
+      (a.itemId < b.itemId ? 1 : a.itemId > b.itemId ? -1 : 0),
   );
 
   return {
@@ -880,7 +887,7 @@ export async function getListDetail(
     trackSeparately: list.trackSeparately,
     items,
   };
-}
+});
 
 function utcYear(date: Date | null): string | null {
   return date ? String(date.getUTCFullYear()) : null;

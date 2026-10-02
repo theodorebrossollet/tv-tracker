@@ -223,6 +223,48 @@ describe("getListDetail", () => {
     }
   });
 
+  it("treats a stopped, fully watched, ended show as finished and watched", async () => {
+    const list = await seedList("L");
+    await seedShow({
+      showId: "20",
+      offsets: [-2, -1],
+      status: "stopped",
+      watched: [0, 1],
+      showStatus: "Ended",
+    });
+    await addShow(list.id, "20");
+
+    // Deliberate divergence from the Library: getShowBuckets files a stopped
+    // show under `stopped` ahead of `finished`, but on a list a stopped, fully
+    // watched, ended show is watched either way, so it counts as finished.
+    const buckets = await getShowBuckets(TEST_USER_ID);
+    expect(buckets.stopped.map((s) => s.showId)).toContain("20");
+    expect(buckets.finished.map((s) => s.showId)).not.toContain("20");
+
+    const detail = await getListDetail(TEST_USER_ID, list.id);
+    expect(detail!.items[0]).toMatchObject({
+      status: "stopped",
+      finished: true,
+      watched: true,
+    });
+  });
+
+  it("orders items with the same addedAt deterministically, newest id first", async () => {
+    const list = await seedList("L");
+    for (const id of ["1", "2", "3"]) await seedMovie(id);
+    const same = "2026-01-01T00:00:00Z";
+    const created = [];
+    for (const id of ["1", "2", "3"]) {
+      created.push(await addMovie(list.id, id, { addedAt: same }));
+    }
+
+    const expected = created.map((c) => c.id).sort().reverse();
+    for (let run = 0; run < 3; run++) {
+      const detail = await getListDetail(TEST_USER_ID, list.id);
+      expect(detail!.items.map((i) => i.itemId)).toEqual(expected);
+    }
+  });
+
   it("uses only the tick on a together list, whatever the Library says", async () => {
     const list = await seedList("L", { trackSeparately: true });
     for (const id of ["1", "2", "3"]) await seedMovie(id);

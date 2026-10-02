@@ -332,6 +332,67 @@ describe("a personal list", () => {
   });
 });
 
+describe("show status labels on a personal list", () => {
+  it("labels a finished show Finished, in Watched, with no Watching badge", async () => {
+    await renderPage(
+      list({
+        items: [
+          item({
+            itemId: "f",
+            kind: "show",
+            titleId: "9",
+            title: "Done Series",
+            status: "watching",
+            finished: true,
+            watched: true,
+          }),
+        ],
+      }),
+    );
+
+    expect(screen.getByText("Finished")).toBeTruthy();
+    expect(screen.queryByText("Watching")).toBeNull();
+    expect(screen.getByRole("heading", { name: /watched/i })).toBeTruthy();
+  });
+
+  it("keeps the status badge for an unfinished tracked show, and nothing for an untracked one", async () => {
+    await renderPage(
+      list({
+        items: [
+          item({ itemId: "a", kind: "show", titleId: "9", title: "Series", status: "watching" }),
+          item({ itemId: "b", kind: "show", titleId: "8", title: "Fresh", status: null }),
+        ],
+      }),
+    );
+
+    expect(screen.getAllByText("Watching")).toHaveLength(1);
+    expect(screen.queryByText("Finished")).toBeNull();
+  });
+
+  it("keeps the tick and the seen note, and no Finished label, on a together list", async () => {
+    await renderPage(
+      list({
+        trackSeparately: true,
+        items: [
+          item({
+            itemId: "f",
+            kind: "show",
+            titleId: "9",
+            title: "Done Series",
+            status: "watching",
+            finished: true,
+          }),
+        ],
+      }),
+    );
+
+    expect(screen.getByText("You've seen this")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Watched together" })).toBeTruthy();
+    expect(screen.queryByText("Finished")).toBeNull();
+    expect(screen.queryByText("Watching")).toBeNull();
+  });
+});
+
 describe("a together list", () => {
   const together = (items: ListItemView[]) =>
     list({ trackSeparately: true, items });
@@ -352,7 +413,7 @@ describe("a together list", () => {
 
     expect(screen.queryByRole("button", { name: "Mark watched" })).toBeNull();
     const ticks = screen.getAllByRole("button", {
-      name: /mark watched together/i,
+      name: /^watched together$/i,
     });
     expect(ticks).toHaveLength(2);
 
@@ -376,7 +437,7 @@ describe("a together list", () => {
       ]),
     );
 
-    const tick = screen.getByRole("button", { name: /^watched together/i });
+    const tick = screen.getByRole("button", { name: /^watched together$/i });
     expect(tick.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/you've seen this/i)).toBeNull();
     expect(screen.queryByText("Watchlist")).toBeNull();
@@ -426,7 +487,7 @@ describe("a together list", () => {
     await renderPage(together([item({ itemId: "m" })]));
 
     fireEvent.click(
-      screen.getByRole("button", { name: /mark watched together/i }),
+      screen.getByRole("button", { name: /^watched together$/i }),
     );
     await screen.findByText("Could not tick that.");
     await new Promise((r) => setTimeout(r, 20));

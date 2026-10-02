@@ -103,14 +103,20 @@ export default async function ShowPage({
 
   let show: Awaited<ReturnType<typeof getShowDetail>>;
   let settings: Awaited<ReturnType<typeof getSettings>>;
-  let lists: Awaited<ReturnType<typeof getListsForTitle>>;
+  let lists: Awaited<ReturnType<typeof getListsForTitle>> | null;
 
   try {
     // The lists are a read like the rest: an empty array is the normal case.
+    // Secondary to the page, so the catch is on this promise alone: a failure
+    // here (say, code deployed before the `add_lists` migration) drops the
+    // button, while the other loads keep their own error handling below.
     [show, settings, lists] = await Promise.all([
       getShowDetail(user.id, id),
       getSettings(user.id),
-      getListsForTitle(user.id, "show", id),
+      getListsForTitle(user.id, "show", id).catch((error) => {
+        logger.warn("lists.for_title_failed", describeError(error));
+        return null;
+      }),
     ]);
   } catch (error) {
     if (error instanceof NewShowLimitError) {

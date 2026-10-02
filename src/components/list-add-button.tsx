@@ -96,7 +96,11 @@ export function ListAddButton({
         </span>
       </button>
 
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -93,7 +93,17 @@ export function ListItemRow({
 
           <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
             {item.year ? <span>{item.year}</span> : null}
-            {!trackSeparately ? <StatusBadge status={item.status} /> : null}
+            {!trackSeparately ? (
+              item.kind === "show" && item.finished ? (
+                // A finished show sits under "Watched"; its status is still
+                // "watching", which would read as a contradiction.
+                <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted">
+                  Finished
+                </span>
+              ) : (
+                <StatusBadge status={item.status} />
+              )
+            ) : null}
             {trackSeparately && seen ? (
               <span>You&apos;ve seen this</span>
             ) : null}
@@ -106,7 +116,7 @@ export function ListItemRow({
             onClick={toggleTick}
             disabled={pending}
             aria-pressed={ticked}
-            aria-label={ticked ? "Watched together" : "Mark watched together"}
+            aria-label="Watched together"
             className="relative flex size-11 shrink-0 items-center justify-center disabled:opacity-60"
           >
             <span

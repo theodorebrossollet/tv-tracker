@@ -20,8 +20,11 @@ interface ShowHeaderProps {
   finished: boolean;
   /** e.g. "S3E01 airs 21 Sep 2026". Omitted when nothing is scheduled. */
   nextAiring: string | null;
-  /** The caller's lists, for the "Add to list" control beside the status pill. */
-  lists: TitleListMembership[];
+  /**
+   * The caller's lists, for the "Add to list" control beside the status pill.
+   * Null or absent when the read failed: the button is then left out.
+   */
+  lists?: TitleListMembership[] | null;
 }
 
 /**
@@ -94,7 +97,9 @@ export function ShowHeader({
           </Link>
 
           <div className="flex items-center gap-2">
-            <AddToListButton kind="show" titleId={showId} lists={lists} />
+            {lists ? (
+              <AddToListButton kind="show" titleId={showId} lists={lists} />
+            ) : null}
 
             <StatusMenu
               showId={showId}

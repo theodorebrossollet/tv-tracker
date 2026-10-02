@@ -356,7 +356,9 @@ describe("adding to a list", () => {
     await screen.findByText("Severance");
     fireEvent.click(screen.getByRole("button", { name: "Add Severance to Family" }));
 
-    expect(await screen.findByText("List is full.")).toBeTruthy();
+    expect((await screen.findByText("List is full.")).getAttribute("role")).toBe(
+      "alert",
+    );
     await waitFor(() => {
       expect(
         (screen.getByRole("button", { name: "Add Severance to Family" }) as HTMLButtonElement)

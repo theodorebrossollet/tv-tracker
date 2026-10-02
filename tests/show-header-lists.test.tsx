@@ -40,4 +40,29 @@ describe("ShowHeader", () => {
       screen.getByRole("button", { name: "Change status for Severance" }),
     ).toBeTruthy();
   });
+
+  it.each([["null", null], ["absent", undefined]])(
+    "renders no Add to list button when lists are %s",
+    (_name, lists) => {
+      render(
+        <ShowHeader
+          showId="1399"
+          name="Severance"
+          posterPath={null}
+          metaLine={null}
+          watchedCount={0}
+          airedCount={0}
+          status={null}
+          finished={false}
+          nextAiring={null}
+          lists={lists}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: "Add to list" })).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Change status for Severance" }),
+      ).toBeTruthy();
+    },
+  );
 });

@@ -8,6 +8,7 @@ import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
+import { describeError, logger } from "@/lib/logger";
 import { getListsForTitle, getMovieDetail } from "@/lib/queries";
 import { isTmdbMovieId } from "@/lib/show-id";
 
@@ -40,8 +41,13 @@ export default async function MoviePage({ params }: MoviePageProps) {
   // doesn't know the id either.
   if (!movie) notFound();
 
-  // A read, never a write: viewing a page must not change anything.
-  const lists = await getListsForTitle(user.id, "movie", id);
+  // A read, never a write: viewing a page must not change anything. Secondary
+  // to the page, so a failure (say, code deployed before the `add_lists`
+  // migration) drops the button rather than taking the page down.
+  const lists = await getListsForTitle(user.id, "movie", id).catch((error) => {
+    logger.warn("lists.for_title_failed", describeError(error));
+    return null;
+  });
 
   const year =
     movie.releaseDate && !Number.isNaN(movie.releaseDate.getTime())
@@ -78,7 +84,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
         </Link>
 
         <div className="flex items-center gap-2">
-          <AddToListButton kind="movie" titleId={movie.id} lists={lists} />
+          {lists ? (
+            <AddToListButton kind="movie" titleId={movie.id} lists={lists} />
+          ) : null}
 
           {movie.status ? (
             <MovieStatusMenu
