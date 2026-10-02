@@ -2,10 +2,23 @@
 
 import { revalidatePath } from "next/cache";
 
-import { toResult, type ActionResult } from "@/lib/action-result";
+import {
+  isUniqueConstraintError,
+  toResult,
+  type ActionResult,
+} from "@/lib/action-result";
 import { requireOnboardedSession } from "@/lib/auth";
-import { MAX_LISTS, validateListName } from "@/lib/lists";
+import {
+  isListKind,
+  MAX_ITEMS_PER_LIST,
+  MAX_LISTS,
+  validateListName,
+  type ListKind,
+} from "@/lib/lists";
+import { ensureMovieCached } from "@/lib/movies";
 import { prisma } from "@/lib/prisma";
+import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
+import { ensureShowCached } from "@/lib/shows";
 
 // Personal lists: creating, renaming and deleting them, and (further down)
 // what goes on them.
@@ -56,6 +69,9 @@ export async function createList(
 
   let id: string;
   try {
+    // Count-then-create can overshoot MAX_LISTS under a race; accepted for the
+    // same reason as the show/movie hourly allowances (a soft cap, not a
+    // security boundary).
     const owned = await prisma.list.count({ where: { userId: user.id } });
     if (owned >= MAX_LISTS) {
       return {
@@ -129,6 +145,138 @@ export async function deleteList(listId: string): Promise<ActionResult> {
   try {
     const { count } = await prisma.list.deleteMany({
       where: { id: listId, userId: user.id },
+    });
+    if (count === 0) return { ok: false, error: NOT_FOUND };
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateListViews();
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Items
+// ---------------------------------------------------------------------------
+
+/**
+ * Puts a movie or show on a list, caching it first if nothing holds it yet.
+ *
+ * Never creates or changes Library tracking: a list is a separate thing from
+ * the watchlist. The id reaches a TMDB request path, so it is validated for the
+ * given kind before anything else runs.
+ */
+export async function addToList(
+  listId: string,
+  kind: ListKind,
+  titleId: string,
+): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (!isListId(listId)) return { ok: false, error: NOT_FOUND };
+  if (!isListKind(kind)) return { ok: false, error: "That change isn't available." };
+  // The regexes coerce, so a number would pass them; insist on a string first.
+  if (
+    typeof titleId !== "string" ||
+    (kind === "movie" ? !isTmdbMovieId(titleId) : !isTmdbShowId(titleId))
+  ) {
+    return { ok: false, error: "Missing title id." };
+  }
+
+  try {
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: user.id },
+      select: { id: true },
+    });
+    if (!list) return { ok: false, error: NOT_FOUND };
+
+    const size = await prisma.listItem.count({ where: { listId: list.id } });
+    if (size >= MAX_ITEMS_PER_LIST) {
+      return {
+        ok: false,
+        error: `A list can hold up to ${MAX_ITEMS_PER_LIST} titles.`,
+      };
+    }
+
+    const known =
+      kind === "movie"
+        ? await ensureMovieCached(titleId, user.id)
+        : await ensureShowCached(titleId, user.id);
+    if (!known) return { ok: false, error: "Couldn't find that title." };
+
+    await prisma.listItem.create({
+      data: {
+        listId: list.id,
+        ...(kind === "movie" ? { movieId: titleId } : { showId: titleId }),
+      },
+    });
+  } catch (error) {
+    // A double-click can lose the race to the unique constraint; the title is
+    // on the list either way. (The size check above is likewise racy and
+    // accepted: it is a soft cap.)
+    if (isUniqueConstraintError(error)) return { ok: true };
+
+    return toResult(error);
+  }
+
+  revalidateListViews();
+  return { ok: true };
+}
+
+/** Takes one item off a list. The title itself and the Library are untouched. */
+export async function removeFromList(
+  listId: string,
+  itemId: string,
+): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (!isListId(listId) || !isListId(itemId)) {
+    return { ok: false, error: NOT_FOUND };
+  }
+
+  try {
+    // The owner is checked through the list, so another account's ids match
+    // nothing.
+    const { count } = await prisma.listItem.deleteMany({
+      where: { id: itemId, listId, list: { userId: user.id } },
+    });
+    if (count === 0) return { ok: false, error: NOT_FOUND };
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateListViews();
+  return { ok: true };
+}
+
+/** Ticks or unticks an item on a list that tracks watched separately. */
+export async function setListItemWatched(
+  listId: string,
+  itemId: string,
+  watched: boolean,
+): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (!isListId(listId) || !isListId(itemId)) {
+    return { ok: false, error: NOT_FOUND };
+  }
+  if (typeof watched !== "boolean") {
+    return { ok: false, error: "That change isn't available." };
+  }
+
+  try {
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: user.id },
+      select: { trackSeparately: true },
+    });
+    if (!list) return { ok: false, error: NOT_FOUND };
+    if (!list.trackSeparately) {
+      return { ok: false, error: "That list doesn't track watched separately." };
+    }
+
+    const { count } = await prisma.listItem.updateMany({
+      where: { id: itemId, listId },
+      data: { watchedAt: watched ? new Date() : null },
     });
     if (count === 0) return { ok: false, error: NOT_FOUND };
   } catch (error) {
