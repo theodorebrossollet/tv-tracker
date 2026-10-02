@@ -3,6 +3,8 @@
 import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched, unmarkEpisodeWatched } from "@/app/actions";
+import { RatingStrip } from "@/components/rating-strip";
+import { RatingValue } from "@/components/rating-value";
 import { episodeCode } from "@/lib/episode-code";
 import { formatAirDate, formatRuntime } from "@/lib/format";
 
@@ -17,6 +19,8 @@ interface EpisodeRowProps {
   aired: boolean;
   runtime: number | null;
   overview: string | null;
+  /** The caller's own 1-10 rating; only ever shown for a watched episode. */
+  rating: number | null;
 }
 
 export function EpisodeRow({
@@ -29,6 +33,7 @@ export function EpisodeRow({
   aired,
   runtime,
   overview,
+  rating,
 }: EpisodeRowProps) {
   // useOptimistic, not useState: the displayed value is derived from the
   // `watched` prop, so it follows the server after a revalidation. The previous
@@ -37,6 +42,10 @@ export function EpisodeRow({
   // rows themselves stayed visibly unwatched.
   const [optimisticWatched, setOptimisticWatched] = useOptimistic(watched);
   const [expanded, setExpanded] = useState(false);
+  // Client-only UI state, separate from the synopsis. Whether the strip is
+  // *shown* also requires the optimistic `watched`, so un-watching hides it
+  // immediately and re-watching doesn't need a second tap on a stale open flag.
+  const [ratingOpen, setRatingOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function toggle() {
@@ -125,6 +134,23 @@ export function EpisodeRow({
           </span>
         </button>
 
+        {/* Rating is its own control, never part of the watched checkbox:
+            it can't block, delay or trigger marking watched. */}
+        {optimisticWatched ? (
+          <button
+            type="button"
+            onClick={() => setRatingOpen((value) => !value)}
+            aria-expanded={ratingOpen}
+            className="shrink-0 rounded-full px-2 py-1 text-xs transition-colors hover:bg-surface"
+          >
+            {rating !== null ? (
+              <RatingValue value={rating} />
+            ) : (
+              <span className="text-faint">Rate</span>
+            )}
+          </button>
+        ) : null}
+
         {/* Synopses are hidden by default: a 92-episode show would otherwise
             be an unusable wall of text. */}
         {overview ? (
@@ -156,6 +182,12 @@ export function EpisodeRow({
           </button>
         ) : null}
       </div>
+
+      {optimisticWatched && ratingOpen ? (
+        <div className="px-2 pb-3 pl-11">
+          <RatingStrip kind="episode" id={episodeId} rating={rating} />
+        </div>
+      ) : null}
 
       {expanded && overview ? (
         <p className="px-2 pb-3 pl-11 text-xs leading-relaxed text-muted">
