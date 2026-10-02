@@ -432,10 +432,10 @@ describe("reset history", () => {
     openConfirm({ watched: 0, pastRuns: 2 });
     expect(
       screen.getByText(
-        "This permanently deletes your 2 past runs for this show. This can't be undone.",
+        "This permanently deletes your 2 past runs (with their ratings) for this show. This can't be undone.",
       ),
     ).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/\b0 watched|ratings/);
+    expect(document.body.textContent).not.toMatch(/\b0 watched/);
   });
 
   it("returns to the menu on Cancel and calls nothing", () => {
@@ -564,7 +564,7 @@ describe("reset history", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("disables the menu rows while a reset is pending", async () => {
+  it("disables the confirm button during the request and leaves the rows live after Cancel", async () => {
     let finish!: (value: { ok: false; error: string }) => void;
     vi.mocked(resetShowHistory).mockReturnValueOnce(
       new Promise((resolve) => {

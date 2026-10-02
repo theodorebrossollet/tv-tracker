@@ -112,7 +112,11 @@ function resetConfirmation({
   }
   // null means the history couldn't be read, so no number is promised.
   if (pastRuns === null) items.push("any past runs");
-  else if (pastRuns > 0) items.push(plural(pastRuns, "past run", "past runs"));
+  else if (pastRuns > 0) {
+    // Runs' ratings go too; say so when "their ratings" isn't already listed.
+    const runs = plural(pastRuns, "past run", "past runs");
+    items.push(watched > 0 ? runs : `${runs} (with their ratings)`);
+  }
 
   const list =
     items.length > 1

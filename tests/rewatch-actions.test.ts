@@ -15,7 +15,9 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
 const { resetMovieHistory, resetShowHistory, startShowOver, watchMovieAgain } =
   await import("@/app/rewatch-actions");
 const { rateMovie } = await import("@/app/rating-actions");
-const { MAX_PAST_RUNS, MAX_PAST_WATCHES } = await import("@/lib/rewatch");
+const { MAX_PAST_RUNS, MAX_PAST_WATCHES, showResetHistoryOf } = await import(
+  "@/lib/rewatch"
+);
 const {
   getListDetail,
   getMovieDetail,
@@ -804,6 +806,33 @@ describe("resetShowHistory", () => {
     const detail = await getShowDetail(TEST_USER_ID, "101");
     expect(detail!.pastRuns).toEqual([]);
     expect(detail!.watchedCount).toBe(0);
+  });
+});
+
+describe("show reset warning counts", () => {
+  it("offers the row and counts watched episodes that have not aired", async () => {
+    // Only the unaired episode is watched: `watchedCount` is 0, the reset
+    // would still delete one row.
+    await seedShow({ offsets: [-1, 5], status: "watching", watched: [1] });
+    const detail = (await getShowDetail(TEST_USER_ID, "101"))!;
+    expect(detail.watchedCount).toBe(0);
+
+    expect(showResetHistoryOf(detail)).toEqual({ watched: 1, pastRuns: 0 });
+  });
+
+  it("counts aired and unaired watched episodes together", async () => {
+    await seedShow({
+      offsets: [-2, -1, 5],
+      status: "watching",
+      watched: [0, 1, 2],
+    });
+    const detail = (await getShowDetail(TEST_USER_ID, "101"))!;
+
+    expect(showResetHistoryOf(detail)?.watched).toBe(3);
+    const before = await watchedCount("101");
+    await resetShowHistory("101");
+    expect(before).toBe(3);
+    expect(await watchedCount("101")).toBe(0);
   });
 });
 

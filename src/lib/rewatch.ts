@@ -37,3 +37,15 @@ export function movieResetHistory(
     watched,
   };
 }
+
+/**
+ * `showResetHistory` fed from a `getShowDetail` result. It must use
+ * `watchedEpisodeCount` (every watched episode), never `watchedCount`, which
+ * counts only AIRED ones while the reset deletes them all.
+ */
+export function showResetHistoryOf(show: {
+  watchedEpisodeCount: number;
+  pastRuns: readonly unknown[] | null;
+}) {
+  return showResetHistory(show.watchedEpisodeCount, show.pastRuns);
+}
