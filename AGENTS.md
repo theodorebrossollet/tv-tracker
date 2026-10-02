@@ -47,12 +47,13 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 ```
 src/app/          routes; actions.ts holds the Library writes, account-actions.ts
                   the account ones, list-actions.ts the list ones and
-                  rating-actions.ts the rating ones (the fourth module) — the
-                  rules in actions.ts's header govern all four
+                  rating-actions.ts the rating ones and rewatch-actions.ts
+                  (startShowOver, watchMovieAgain) the rewatch ones (the fifth
+                  module) — the rules in actions.ts's header govern all five
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
-                  action-result (ActionResult + toResult, shared by all four
+                  action-result (ActionResult + toResult, shared by all five
                   action modules; deliberately not "use server"),
                   up-next (what the show page says when nothing aired is left
                   to watch, and NEXT_UP_QUEUE — which lives here rather than
@@ -63,7 +64,8 @@ src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logg
                   list reads — getLists, getListDetail, getListsForTitle — are
                   in queries.ts),
                   ratings (rating rules: isRating, seasonAverage, showAverage,
-                  formatRating, formatAverage, coverageText; pure, client-safe)
+                  formatRating, formatAverage, coverageText; pure, client-safe),
+                  rewatch (MAX_PAST_RUNS, MAX_PAST_WATCHES; pure)
 src/app/movie/    movie page, /movie/[id]
 src/app/lists/    Lists index, /lists, and /lists/[id] (each with a loading.tsx)
 prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
@@ -80,6 +82,10 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   ratings; after `npm run db:deploy`, check on Turso that
                   `SELECT rating FROM TrackedMovie LIMIT 1; SELECT rating FROM
                   WatchedEpisode LIMIT 1;` succeed BEFORE merging
+                  20261002152206_add_rewatch adds ShowRun,
+                  ArchivedEpisodeWatch and PastMovieWatch — additive (three
+                  new tables, no change to existing ones), so apply it BEFORE
+                  merging; unapplied, only the two rewatch actions fail
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -136,6 +142,26 @@ the rating UI in `episode-row`, and `show-header`'s `rating` prop. Rules:
 - Un-watching clears the rating: a movie leaving `watched` writes
   `rating: null` in the same update; un-marking an episode deletes the
   `WatchedEpisode` row.
+
+Rewatch, in short: "Start over" on a show and "Watch again" on a movie keep the
+old run/watch as read-only history. Components: `past-runs`, `past-watches`,
+`watch-again-button`, the "Start over" row and confirmation in `status-sheet`,
+and `show-header`'s `runNumber`/`startOver` props. Rules:
+
+- `WatchedEpisode` and `TrackedMovie` still mean the CURRENT run/watch. Nothing
+  may read the archive tables (`ShowRun`, `ArchivedEpisodeWatch`,
+  `PastMovieWatch`) for current progress, finished/caught-up, Up Next or
+  ratings. Ratings follow the current run (a restart or watch-again clears them).
+- Writes live in `src/app/rewatch-actions.ts`. Archive-and-clear is ONE
+  array-form `$transaction` using `INSERT … SELECT` (not read-then-write). The
+  `ShowRun`/`PastMovieWatch` insert is CONDITIONAL in SQL and guards the
+  statements after it, so a concurrent double submit never creates an empty run
+  (a real review finding).
+- Limits: 20 past runs per show, 20 past watches per movie (`lib/rewatch.ts`).
+- The title-page reads (`pastRuns` in `getShowDetail`, `pastWatches` in
+  `getMovieDetail`; types `PastRun`, `PastWatch`) fail softly: `null` means
+  unavailable (e.g. migration unapplied), so the UI must not trust `runNumber`
+  then.
 
 ## Rules that will bite you
 

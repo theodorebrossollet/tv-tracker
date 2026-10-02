@@ -75,14 +75,17 @@ their database work in one transaction and are atomic.
 - `startShowOver(showId)`:
   - validates the id; refuses an untracked show, a show with no watched
     episodes ("Nothing to start over."), and one already at 20 past runs;
-  - creates the `ShowRun` (number = highest existing + 1), copies the caller's
+  - creates the `ShowRun` (number = highest existing + 1; the insert is
+    conditional in SQL and guards the statements after it, so a concurrent
+    double submit cannot create an empty run), copies the caller's
     `WatchedEpisode` rows for that show into `ArchivedEpisodeWatch` (episode,
     date, rating), deletes those `WatchedEpisode` rows, and sets the show's
     tracked status to `watching`.
 - `watchMovieAgain(movieId)`:
   - validates the id; refuses a movie that is not `watched` or not the caller's,
     and one already at 20 past watches;
-  - creates a `PastMovieWatch` from the current date and rating, then sets
+  - creates a `PastMovieWatch` from the current date and rating (a conditional
+    insert in SQL that guards the update, for the same reason), then sets
     `watchedAt` to now and `rating` to null; status stays `watched`.
 
 Reads in `queries.ts`, all filtered by `userId`:
@@ -100,19 +103,21 @@ Reads in `queries.ts`, all filtered by `userId`:
 
 **Start over (show page).** The status menu (the pill in the header) gets a
 "Start over" row, shown only when the show has watched episodes. It opens a
-confirmation step inside the sheet: current progress is kept as Run N, the show
-goes back to the start, and it cannot be undone in this version. Cancel and
-"Start over". After success the page re-renders at zero progress with S1E1 next
+confirmation step inside the sheet: current progress is kept as Run N (as "a
+past run" when the history is unavailable), the show goes back to the start, and
+it cannot be undone in this version. Cancel and "Start over". `startOver` is
+passed to both status pills (header and the one below it). After success the page re-renders at zero progress with S1E1 next
 up. Once a show has past runs the header shows a quiet "Run N" by the progress.
 
 **Past runs (show page).** A "Past runs" section under the episode list, only
 when there are past runs. One read-only line per run, for example "Run 1 · 3 Mar
-– 19 Apr 2026 · 20 episodes · ★ 8.1"; dates are the first and last watch in that
+2026 – 19 Apr 2026 · 20 episodes · ★ 8.1"; dates are the first and last watch in that
 run, formatted in US Eastern like other watch dates; the "★" is left out when
 the run had no ratings.
 
 **Watch again (movie page).** A watched movie gets a "Watch again" button by the
-rating section, with a confirmation: the previous watch and its rating are kept
+rating section, with a confirmation (sheet title "Log a new watch?", the rest in the
+paragraph): the previous watch and its rating are kept
 in Past watches, and the movie shows as watched today with no rating. A "Past
 watches" section lists archived watches newest first ("3 Mar 2026 · ★ 8"), only
 when there are any.
