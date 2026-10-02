@@ -8,7 +8,6 @@ import {
   getWatchProviderList,
   getWatchProviders,
   searchMulti,
-  searchTvShows,
   TmdbError,
 } from "@/lib/tmdb";
 
@@ -101,7 +100,7 @@ describe("authentication", () => {
     vi.stubEnv("TMDB_API_KEY", "aaa.bbb.ccc");
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("auth-v4-token");
+    await searchMulti("auth-v4-token");
 
     const [url, options] = fetchMock.mock.calls[0] as unknown as [
       URL,
@@ -117,7 +116,7 @@ describe("authentication", () => {
     vi.stubEnv("TMDB_API_KEY", "0123456789abcdef");
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("auth-v3-key");
+    await searchMulti("auth-v3-key");
 
     const [url, options] = fetchMock.mock.calls[0] as unknown as [
       URL,
@@ -134,7 +133,7 @@ describe("error handling", () => {
   it("reports a rejected key as an ordinary failure, without config hints", async () => {
     mockFetch({}, { ok: false, status: 401 });
 
-    await expect(searchTvShows("x")).rejects.toThrow(
+    await expect(searchMulti("x")).rejects.toThrow(
       /^TMDB request failed \(401\)\.$/,
     );
   });
@@ -142,7 +141,7 @@ describe("error handling", () => {
   it("preserves a 404 status so callers can render not-found", async () => {
     mockFetch({}, { ok: false, status: 404 });
 
-    await expect(searchTvShows("x")).rejects.toMatchObject({
+    await expect(searchMulti("x")).rejects.toMatchObject({
       name: "TmdbError",
       status: 404,
     });
@@ -156,7 +155,7 @@ describe("error handling", () => {
       }),
     );
 
-    await expect(searchTvShows("x")).rejects.toBeInstanceOf(TmdbError);
+    await expect(searchMulti("x")).rejects.toBeInstanceOf(TmdbError);
   });
 
   it("doesn't repeat a transport error's own text back to the browser", async () => {
@@ -173,7 +172,7 @@ describe("error handling", () => {
       }),
     );
 
-    const error = await searchTvShows("x").catch((caught: Error) => caught);
+    const error = await searchMulti("x").catch((caught: Error) => caught);
 
     expect(error).toBeInstanceOf(TmdbError);
     expect((error as Error).message).toBe("Could not reach TMDB. Please try again.");
@@ -183,7 +182,7 @@ describe("error handling", () => {
   it("returns nothing for a blank query without calling TMDB", async () => {
     const fetchMock = mockFetch({ results: [] });
 
-    expect(await searchTvShows("   ")).toEqual([]);
+    expect(await searchMulti("   ")).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -325,9 +324,9 @@ describe("response cache", () => {
     // `ensureShowCached` has staleness). This is that bound.
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("the wire");
-    await searchTvShows("the wire");
-    await searchTvShows("the wire");
+    await searchMulti("the wire");
+    await searchMulti("the wire");
+    await searchMulti("the wire");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -335,8 +334,8 @@ describe("response cache", () => {
   it("keys searches by query, so a different title still asks", async () => {
     const fetchMock = mockFetch({ results: [] });
 
-    await searchTvShows("severance");
-    await searchTvShows("succession");
+    await searchMulti("severance");
+    await searchMulti("succession");
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

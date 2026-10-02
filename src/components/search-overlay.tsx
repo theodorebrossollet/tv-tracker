@@ -58,7 +58,13 @@ export function SearchOverlay({
   const trimmedQuery = query.trim();
   const isStale = data.query !== trimmedQuery;
   const loading = trimmedQuery !== "" && isStale;
-  const results = isStale ? [] : data.results;
+  // Task 6 renders movie results; until then only shows are listed.
+  const results = isStale
+    ? []
+    : data.results.filter(
+        (result): result is Extract<SearchSuggestion, { kind: "tv" }> =>
+          result.kind === "tv",
+      );
   const error = isStale ? null : data.error;
 
   useEffect(() => {
@@ -248,7 +254,7 @@ export function SearchOverlay({
                       <StatusBadge status={result.status} />
                     </span>
                     <span className="text-xs text-faint">
-                      {result.firstAirYear ?? "Year unknown"}
+                      {result.year ?? "Year unknown"}
                     </span>
                   </span>
                 </button>

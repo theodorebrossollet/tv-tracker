@@ -22,10 +22,11 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 const { SearchOverlay } = await import("@/components/search-overlay");
 
 const RESULT = {
+  kind: "tv" as const,
   id: "95396",
   name: "Severance",
   posterPath: null,
-  firstAirYear: "2022",
+  year: "2022",
   status: null,
 };
 

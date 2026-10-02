@@ -19,14 +19,6 @@ export class TmdbError extends Error {
   }
 }
 
-export interface TmdbSearchResult {
-  id: number;
-  name: string;
-  posterPath: string | null;
-  overview: string | null;
-  firstAirYear: string | null;
-}
-
 export interface TmdbMultiSearchResult {
   kind: "tv" | "movie";
   id: number;
@@ -309,16 +301,6 @@ function parseAirDate(value: string | null | undefined): Date | null {
   return settled;
 }
 
-interface RawSearchResponse {
-  results: Array<{
-    id: number;
-    name: string;
-    poster_path: string | null;
-    overview: string | null;
-    first_air_date?: string | null;
-  }>;
-}
-
 /**
  * Short, because a search result is the one thing here that genuinely changes:
  * a new show appears the day TMDB adds it. A minute is long enough to cover
@@ -332,34 +314,6 @@ interface RawSearchResponse {
  * limit is shared by everyone using the app.
  */
 const SEARCH_CACHE_SECONDS = 60;
-
-export async function searchTvShows(
-  query: string,
-): Promise<TmdbSearchResult[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-
-  // Keyed on the exact query string, so two people searching the same title
-  // within the window share one request. Case included: TMDB treats "The Wire"
-  // and "the wire" as the same search, but folding them here would be this
-  // module deciding that on its behalf.
-  const data = await cached(`search:${trimmed}`, SEARCH_CACHE_SECONDS, () =>
-    tmdbFetch<RawSearchResponse>("/search/tv", {
-      query: trimmed,
-      include_adult: "false",
-    }),
-  );
-
-  return data.results.map((result) => ({
-    id: result.id,
-    name: result.name,
-    posterPath: result.poster_path,
-    overview: result.overview || null,
-    firstAirYear: result.first_air_date
-      ? result.first_air_date.slice(0, 4)
-      : null,
-  }));
-}
 
 interface RawMultiSearchResponse {
   results: Array<{

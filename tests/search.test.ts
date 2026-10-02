@@ -16,35 +16,61 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
 // stubbed. importOriginal keeps TmdbError, which actions.ts checks against.
 vi.mock("@/lib/tmdb", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/tmdb")>()),
-  searchTvShows: vi.fn(async () => []),
+  searchMulti: vi.fn(async () => []),
 }));
 
 const { searchSuggestions } = await import("@/app/actions");
-const { searchTvShows } = await import("@/lib/tmdb");
-const { resetDatabase, seedUser } = await import("./helpers");
+const { searchMulti } = await import("@/lib/tmdb");
+const { prisma } = await import("@/lib/prisma");
+const { resetDatabase, seedShow, seedUser, TEST_USER_ID } = await import(
+  "./helpers"
+);
 
 beforeEach(async () => {
   await resetDatabase();
   await seedUser();
-  vi.mocked(searchTvShows).mockClear();
+  vi.mocked(searchMulti).mockClear();
 });
 
 describe("search suggestions", () => {
   it("caps a pasted wall of text before it reaches TMDB", async () => {
     await searchSuggestions("a".repeat(5000));
 
-    const [query] = vi.mocked(searchTvShows).mock.calls[0];
+    const [query] = vi.mocked(searchMulti).mock.calls[0];
     expect(query.length).toBe(200);
   });
 
   it("passes an ordinary query through untouched", async () => {
     await searchSuggestions("  game of thrones  ");
 
-    expect(searchTvShows).toHaveBeenCalledWith("game of thrones");
+    expect(searchMulti).toHaveBeenCalledWith("game of thrones");
   });
 
   it("does not call TMDB for an empty query", async () => {
     expect(await searchSuggestions("   ")).toEqual({ results: [] });
-    expect(searchTvShows).not.toHaveBeenCalled();
+    expect(searchMulti).not.toHaveBeenCalled();
+  });
+
+  it("returns a show and a movie sharing an id, each with its own kind and status", async () => {
+    // TMDB numbers shows and movies separately, so one id can be both. Each is
+    // badged from its own table.
+    await seedShow({ showId: "603", offsets: [-1], status: "watching" });
+    await prisma.movie.create({ data: { id: "603", title: "The Matrix" } });
+    await prisma.trackedMovie.create({
+      data: { userId: TEST_USER_ID, movieId: "603", status: "watched" },
+    });
+    vi.mocked(searchMulti).mockResolvedValueOnce([
+      { kind: "tv", id: 603, name: "Show", posterPath: null, overview: null, year: "2001" },
+      { kind: "movie", id: 603, name: "Movie", posterPath: null, overview: null, year: "1999" },
+      { kind: "movie", id: 7, name: "Other", posterPath: null, overview: null, year: null },
+    ]);
+
+    const { results } = await searchSuggestions("matrix");
+
+    expect(results).toEqual([
+      { kind: "tv", id: "603", name: "Show", posterPath: null, year: "2001", status: "watching" },
+      { kind: "movie", id: "603", name: "Movie", posterPath: null, year: "1999", status: "watched" },
+      { kind: "movie", id: "7", name: "Other", posterPath: null, year: null, status: null },
+    ]);
   });
 });

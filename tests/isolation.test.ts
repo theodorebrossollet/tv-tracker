@@ -18,13 +18,14 @@ vi.mock("@/lib/shows", async (importOriginal) => ({
 // under test is which account's rows get attached to the results.
 vi.mock("@/lib/tmdb", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/tmdb")>()),
-  searchTvShows: vi.fn(async () => [
+  searchMulti: vi.fn(async () => [
     {
+      kind: "tv",
       id: 500,
       name: "Test Show",
       posterPath: null,
       overview: null,
-      firstAirYear: "2020",
+      year: "2020",
     },
   ]),
 }));
