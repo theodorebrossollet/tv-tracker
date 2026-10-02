@@ -55,7 +55,17 @@ async function trackedCount(movieId: string) {
 beforeEach(async () => {
   await resetDatabase();
   await seedUser();
-  vi.mocked(getMovieDetails).mockClear();
+  vi.mocked(getMovieDetails).mockReset();
+  vi.mocked(getMovieDetails).mockImplementation(async (id: string | number) => ({
+    id: Number(id),
+    title: `Movie ${id}`,
+    posterPath: null,
+    overview: null,
+    releaseDate: null,
+    runtime: 100,
+    status: "Released",
+    genres: null,
+  }));
 });
 
 describe("addMovieToWatchlist", () => {
@@ -118,6 +128,89 @@ describe("addMovieToWatchlist", () => {
     vi.mocked(getMovieDetails).mockRejectedValueOnce(new TmdbError("nope", 500));
 
     expect(await addMovieToWatchlist("603")).toEqual({ ok: false, error: "nope" });
+  });
+});
+
+// A TMDB double that yields to the event loop, so concurrent calls are all past
+// their "already tracked?" check before any of them writes. Without the await
+// the calls run back to back and these tests prove nothing.
+function slowTmdb() {
+  vi.mocked(getMovieDetails).mockImplementation(async (id: string | number) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return {
+      id: Number(id),
+      title: `Movie ${id}`,
+      posterPath: null,
+      overview: null,
+      releaseDate: null,
+      runtime: 100,
+      status: "Released",
+      genres: null,
+    };
+  });
+}
+
+describe("concurrent adds", () => {
+  it("treats a double-clicked add as one success", async () => {
+    slowTmdb();
+
+    const results = await Promise.all([
+      addMovieToWatchlist("603"),
+      addMovieToWatchlist("603"),
+    ]);
+
+    expect(results).toEqual([{ ok: true }, { ok: true }]);
+    expect(await trackedCount("603")).toBe(1);
+    // Both calls reached TMDB: they really did interleave past the check.
+    expect(getMovieDetails).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a double-clicked mark-watched on an untracked movie as one success", async () => {
+    slowTmdb();
+
+    const results = await Promise.all([
+      setMovieStatus("603", "watched"),
+      setMovieStatus("603", "watched"),
+    ]);
+
+    expect(results).toEqual([{ ok: true }, { ok: true }]);
+    expect(await trackedCount("603")).toBe(1);
+    expect((await tracked("603"))?.status).toBe("watched");
+    expect(getMovieDetails).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives two accounts adding the same uncached movie one row each", async () => {
+    await seedUser(OTHER);
+    slowTmdb();
+    const { requireOnboardedSession } = await import("@/lib/auth");
+    // Calls are made in a fixed order, so alternate the identity per call.
+    const users = [TEST_USER_ID, OTHER];
+    let call = 0;
+    vi.mocked(requireOnboardedSession).mockImplementation(async () => {
+      const id = users[call++ % 2];
+      return {
+        sessionId: "s",
+        user: { id, nickname: id, hasPassword: true },
+      } as never;
+    });
+
+    try {
+      const results = await Promise.all([
+        addMovieToWatchlist("603"),
+        addMovieToWatchlist("603"),
+      ]);
+
+      expect(results).toEqual([{ ok: true }, { ok: true }]);
+      expect((await tracked("603"))?.status).toBe("watchlist");
+      expect((await tracked("603", OTHER))?.status).toBe("watchlist");
+      expect(await prisma.movie.count({ where: { id: "603" } })).toBe(1);
+      expect(getMovieDetails).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.mocked(requireOnboardedSession).mockImplementation(async () => ({
+        sessionId: "test-session",
+        user: { id: "test-user", nickname: "test-user", hasPassword: true },
+      }));
+    }
   });
 });
 
