@@ -65,12 +65,14 @@ model User {
 
   createdAt DateTime @default(now())
 
-  trackedShows    TrackedShow[]
-  trackedMovies   TrackedMovie[]
-  lists           List[]
-  watchedEpisodes WatchedEpisode[]
-  settings        Settings?
-  sessions        Session[]
+  trackedShows     TrackedShow[]
+  trackedMovies    TrackedMovie[]
+  lists            List[]
+  watchedEpisodes  WatchedEpisode[]
+  showRuns         ShowRun[]
+  pastMovieWatches PastMovieWatch[]
+  settings         Settings?
+  sessions         Session[]
 }
 
 /// A logged-in session. Stored rather than signed into a stateless cookie so a
@@ -125,6 +127,7 @@ model Show {
   episodes Episode[]
   tracked  TrackedShow[]
   items    ListItem[]
+  runs     ShowRun[]
 
   @@index([addedById, createdAt])
 }
@@ -142,8 +145,9 @@ model Episode {
   runtime       Int?
   overview      String?
 
-  show    Show             @relation(fields: [showId], references: [id], onDelete: Cascade)
-  watched WatchedEpisode[]
+  show            Show                   @relation(fields: [showId], references: [id], onDelete: Cascade)
+  watched         WatchedEpisode[]
+  archivedWatches ArchivedEpisodeWatch[]
 
   /// Composite rather than `showId` alone: both episode-list reads filter by
   /// show and order by season then episode, so with only the show column SQLite
@@ -199,8 +203,9 @@ model Movie {
   /// Comma-separated, as on `Show`.
   genres      String?
 
-  tracked TrackedMovie[]
-  items   ListItem[]
+  tracked     TrackedMovie[]
+  items       ListItem[]
+  pastWatches PastMovieWatch[]
 
   @@index([addedById, createdAt])
 }
@@ -285,6 +290,66 @@ model WatchedEpisode {
 
   @@unique([userId, episodeId])
   @@index([episodeId])
+}
+
+/// One finished-with run of a show that the user started over. "Past" means the
+/// run was archived when they pressed Start over; the run being watched now is
+/// not a row here, it is simply the user's `WatchedEpisode` rows. Run numbers
+/// count up from 1 per account and show, so the current run is the number of
+/// these rows plus one. NOTHING reads this table for current progress,
+/// Library buckets, "finished" or "caught up": `WatchedEpisode` still means the
+/// current run, and only the show page's history section reads these.
+model ShowRun {
+  id         String   @id @default(cuid())
+  userId     String
+  showId     String
+  runNumber  Int
+  archivedAt DateTime @default(now())
+
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  show            Show                   @relation(fields: [showId], references: [id], onDelete: Cascade)
+  archivedWatches ArchivedEpisodeWatch[]
+
+  /// Numbers are never reused within one account's history of one show.
+  @@unique([userId, showId, runNumber])
+}
+
+/// An episode watch as it stood when its run was archived: the `WatchedEpisode`
+/// row's date and rating, copied. "Past" means it belongs to an archived
+/// `ShowRun`, so it is history only. NOTHING reads it for current progress;
+/// `WatchedEpisode` is what says an episode is watched now.
+model ArchivedEpisodeWatch {
+  id        String   @id @default(cuid())
+  runId     String
+  episodeId String
+  watchedAt DateTime
+  /// 1–10 as it was when archived; null means it was unrated.
+  rating    Int?
+
+  run     ShowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+}
+
+/// An earlier watch of a movie the user has watched again. "Past" means it was
+/// archived when they pressed Watch again; the watch that counts now is still
+/// the `TrackedMovie` row's `watchedAt` and `rating`. NOTHING reads this table
+/// for the movie's status, the Library or the lists: it only feeds the history
+/// section of the movie page.
+model PastMovieWatch {
+  id         String   @id @default(cuid())
+  userId     String
+  movieId    String
+  watchedAt  DateTime
+  /// 1–10 as it was when archived; null means it was unrated.
+  rating     Int?
+  archivedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@index([userId, movieId])
 }
 
 /// One row of preferences per account, keyed by the user it belongs to. Kept
