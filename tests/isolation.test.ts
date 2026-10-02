@@ -50,7 +50,7 @@ const {
   setSeasonWatched,
   unmarkEpisodeWatched,
 } = await import("@/app/actions");
-const { getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
+const { getMovieBuckets, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase, seedShow, seedUser, statusOf } = await import("./helpers");
@@ -151,6 +151,37 @@ describe("reads never cross accounts", () => {
     expect(forA.finished.map((s) => s.showId)).toEqual(["500"]);
     expect(forB.watchlist.map((s) => s.showId)).toEqual(["500"]);
     expect(forB.finished).toEqual([]);
+  });
+});
+
+describe("movie reads never cross accounts", () => {
+  it("keeps each account's movie lists separate", async () => {
+    // One shared Movie row, two accounts, different statuses; plus a movie only
+    // B tracks. Without `where: { userId }` A sees B's rows.
+    await prisma.movie.createMany({
+      data: [
+        { id: "10", title: "Shared" },
+        { id: "20", title: "Only B" },
+      ],
+    });
+    await prisma.trackedMovie.createMany({
+      data: [
+        { movieId: "10", userId: A, status: "watchlist" },
+        { movieId: "10", userId: B, status: "watched", watchedAt: new Date() },
+        { movieId: "20", userId: B, status: "not_interested" },
+      ],
+    });
+
+    const forA = await getMovieBuckets(A);
+    const forB = await getMovieBuckets(B);
+
+    expect(forA.watchlist.map((m) => m.movieId)).toEqual(["10"]);
+    expect(forA.watched).toEqual([]);
+    expect(forA.notInterested).toEqual([]);
+
+    expect(forB.watchlist).toEqual([]);
+    expect(forB.watched.map((m) => m.movieId)).toEqual(["10"]);
+    expect(forB.notInterested.map((m) => m.movieId)).toEqual(["20"]);
   });
 });
 

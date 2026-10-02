@@ -6,7 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
-import type { TrackStatus } from "@/lib/types";
+import type { MovieStatus, TrackStatus } from "@/lib/types";
 
 // Every function here takes a userId, and every read through `Show.tracked` or
 // `Episode.watched` filters by it. Those two relations are lists now — one
@@ -591,3 +591,67 @@ function loadShow(userId: string, showId: string) {
   });
 }
 
+export interface MovieSummary {
+  movieId: string;
+  title: string;
+  posterPath: string | null;
+  releaseDate: Date | null;
+  /** Minutes. */
+  runtime: number | null;
+  status: MovieStatus;
+  watchedAt: Date | null;
+  addedAt: Date;
+}
+
+export interface MovieBuckets {
+  watchlist: MovieSummary[];
+  watched: MovieSummary[];
+  notInterested: MovieSummary[];
+}
+
+/**
+ * The account's movies, one list per status.
+ *
+ * Unlike shows there is nothing derived: the stored status *is* the bucket. The
+ * read is scoped to `userId` on the `TrackedMovie` side, which is the only
+ * place a movie belongs to anyone — `Movie` itself is shared.
+ *
+ * Watchlist and not-interested list newest-added first; watched lists newest
+ * *watched* first, since that is the date the row shows.
+ */
+export async function getMovieBuckets(userId: string): Promise<MovieBuckets> {
+  const rows = await prisma.trackedMovie.findMany({
+    where: { userId },
+    include: { movie: true },
+    orderBy: { addedAt: "desc" },
+  });
+
+  const buckets: MovieBuckets = {
+    watchlist: [],
+    watched: [],
+    notInterested: [],
+  };
+
+  for (const row of rows) {
+    const summary: MovieSummary = {
+      movieId: row.movieId,
+      title: row.movie.title,
+      posterPath: row.movie.posterPath,
+      releaseDate: row.movie.releaseDate,
+      runtime: row.movie.runtime,
+      status: row.status as MovieStatus,
+      watchedAt: row.watchedAt,
+      addedAt: row.addedAt,
+    };
+
+    if (row.status === "watched") buckets.watched.push(summary);
+    else if (row.status === "not_interested")
+      buckets.notInterested.push(summary);
+    else buckets.watchlist.push(summary);
+  }
+
+  const watchedOn = (m: MovieSummary) => (m.watchedAt ?? m.addedAt).getTime();
+  buckets.watched.sort((a, b) => watchedOn(b) - watchedOn(a));
+
+  return buckets;
+}

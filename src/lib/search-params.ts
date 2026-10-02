@@ -42,6 +42,11 @@ export const KNOWN_PARAMS = [
   "caughtUp",
   "finished",
   "stopped",
+  // Library — which half (shows or movies), then the movie lists.
+  "type",
+  "movieWatchlist",
+  "movieWatched",
+  "movieNotInterested",
   // Settings.
   "providers",
 ] as const;

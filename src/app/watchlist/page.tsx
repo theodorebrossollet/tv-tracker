@@ -1,6 +1,7 @@
 import { LibraryScreen } from "@/components/library-screen";
 import { requireOnboardedSession } from "@/lib/auth";
-import { getShowBuckets } from "@/lib/queries";
+import { typeFrom } from "@/lib/library-type";
+import { getMovieBuckets, getShowBuckets } from "@/lib/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -28,13 +29,14 @@ export default async function WatchlistPage({
 }: WatchlistPageProps) {
   const { user } = await requireOnboardedSession();
   const params = await searchParams;
-  const buckets = await getShowBuckets(user.id);
+
+  // Only the half being rendered is fetched.
+  const data =
+    typeFrom(params) === "movies"
+      ? { type: "movies" as const, buckets: await getMovieBuckets(user.id) }
+      : { type: "shows" as const, buckets: await getShowBuckets(user.id) };
 
   return (
-    <LibraryScreen
-      segment="watchlist"
-      buckets={buckets}
-      searchParams={params}
-    />
+    <LibraryScreen segment="watchlist" searchParams={params} data={data} />
   );
 }
