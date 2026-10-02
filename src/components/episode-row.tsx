@@ -42,16 +42,24 @@ export function EpisodeRow({
   // rows themselves stayed visibly unwatched.
   const [optimisticWatched, setOptimisticWatched] = useOptimistic(watched);
   const [expanded, setExpanded] = useState(false);
-  // Client-only UI state, separate from the synopsis. Whether the strip is
-  // *shown* also requires the optimistic `watched`, so un-watching hides it
-  // immediately and re-watching doesn't need a second tap on a stale open flag.
+  // Client-only UI state, separate from the synopsis. It must be closed
+  // whenever the episode is un-watched, or a later re-watch (the checkbox, or
+  // "Mark all watched") would pop the strip open unsolicited. `toggle` closes
+  // it for a user un-watch; the render-time reset below covers an un-watch
+  // that arrives from the server as a `watched` prop change.
   const [ratingOpen, setRatingOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // React's "adjusting state when a prop changes": setState during render,
+  // guarded so it settles after one extra pass, with no effect and no flash.
+  if (!watched && ratingOpen) setRatingOpen(false);
 
   function toggle() {
     // Episodes that haven't aired can't be marked, matching what
     // "Mark all watched" does for the season.
     if (!aired) return;
+
+    if (watched) setRatingOpen(false);
 
     startTransition(async () => {
       setOptimisticWatched(!watched);

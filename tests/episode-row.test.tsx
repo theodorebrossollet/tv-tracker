@@ -136,4 +136,33 @@ describe("EpisodeRow ratings", () => {
     );
     expect(rateEpisode).not.toHaveBeenCalled();
   });
+
+  it("does not reopen the strip after an un-watch settles back to watched", async () => {
+    render(row(true, null));
+    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect(unmarkEpisodeWatched).toHaveBeenCalled());
+
+    // The mocked action does not change the prop, so the optimistic value
+    // settles back to watched: the strip must not come back with it.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rate" })).toBeTruthy(),
+    );
+    expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
+  });
+
+  it("closes the strip when the watched prop goes false, and stays closed on re-watch", () => {
+    const { rerender } = render(row(true, null));
+    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
+
+    rerender(row(false, null));
+    expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
+
+    rerender(row(true, null));
+    expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Rate" })).toBeTruthy();
+  });
 });
