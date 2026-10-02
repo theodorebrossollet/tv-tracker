@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { Poster } from "@/components/poster";
+import { RatingValue } from "@/components/rating-value";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { CheckIcon, StatusMenu } from "@/components/status-sheet";
 import type { TrackedShowSummary } from "@/lib/queries";
@@ -78,6 +79,12 @@ export function LibraryList({
                   : `${show.airedCount} episode${
                       show.airedCount === 1 ? "" : "s"
                     } available`}
+                {show.ratingAverage !== null ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <RatingValue value={show.ratingAverage} average />
+                  </>
+                ) : null}
               </span>
             </div>
 

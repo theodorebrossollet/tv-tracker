@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
+import { RatingValue } from "@/components/rating-value";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { formatWatchedDate } from "@/lib/format";
 import type { MovieSummary } from "@/lib/queries";
@@ -86,8 +87,16 @@ export function MovieList({
                   {movie.title}
                 </Link>
 
-                {text ? (
-                  <span className="text-xs text-muted">{text}</span>
+                {text || movie.rating !== null ? (
+                  <span className="flex items-center gap-1.5 text-xs text-muted">
+                    {text ? <span>{text}</span> : null}
+                    {text && movie.rating !== null ? (
+                      <span aria-hidden="true">·</span>
+                    ) : null}
+                    {movie.rating !== null ? (
+                      <RatingValue value={movie.rating} />
+                    ) : null}
+                  </span>
                 ) : null}
               </div>
 

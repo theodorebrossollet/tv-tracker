@@ -7,6 +7,7 @@ import { removeFromList, setListItemWatched } from "@/app/list-actions";
 import { KindBadge } from "@/components/kind-badge";
 import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { Poster } from "@/components/poster";
+import { RatingValue } from "@/components/rating-value";
 import { Sheet } from "@/components/sheet";
 import { StatusBadge } from "@/components/status-badge";
 import { CheckIcon } from "@/components/status-sheet";
@@ -106,6 +107,12 @@ export function ListItemRow({
             ) : null}
             {trackSeparately && seen ? (
               <span>You&apos;ve seen this</span>
+            ) : null}
+            {item.rating !== null ? (
+              <RatingValue
+                value={item.rating}
+                average={item.kind === "show"}
+              />
             ) : null}
           </span>
         </div>
