@@ -11,18 +11,27 @@ interface ListAddButtonProps {
   titleId: string;
   /** Whether the title was already on the list when the row was rendered. */
   onList: boolean;
+  /** For the accessible name: what is being added, and to which list. */
+  title: string;
+  listName: string;
+  /** The row's content (poster, title, year); the whole of it is the tap target. */
+  children: React.ReactNode;
 }
 
 /**
- * The per-row control in the search overlay's "adding to a list" mode: "+"
- * adds the title, a tick says it is on the list and is inert. It only ever
- * adds; removing happens on the list page.
+ * The search overlay's "adding to a list" row. The whole row is the one
+ * control: tapping anywhere on it adds the title; the trailing "+" / tick is
+ * only a state glyph. A title on the list is inert. It only ever adds;
+ * removing happens on the list page.
  */
 export function ListAddButton({
   listId,
   kind,
   titleId,
   onList,
+  title,
+  listName,
+  children,
 }: ListAddButtonProps) {
   // Derived from the prop, not copied into useState: the server's answer is
   // the truth and must be able to correct the display.
@@ -58,26 +67,36 @@ export function ListAddButton({
     });
   }
 
-  const label = on ? "On the list" : "Add to list";
+  const label = on
+    ? `${title} is on ${listName}`
+    : `Add ${title} to ${listName}`;
 
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
       <button
         type="button"
         onClick={add}
         disabled={pending || on}
-        title={label}
         aria-label={label}
-        className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-lg leading-none transition-colors disabled:opacity-50 ${
-          on
-            ? "border-accent bg-accent text-on-accent"
-            : "border-border hover:bg-surface"
-        }`}
+        className="flex w-full min-w-0 items-center gap-3 text-left disabled:cursor-default"
       >
-        {on ? "✓" : "+"}
+        {children}
+
+        <span
+          aria-hidden="true"
+          className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-lg leading-none transition-colors ${
+            on
+              ? "border-accent bg-accent text-on-accent"
+              : pending
+                ? "border-border opacity-50"
+                : "border-border"
+          }`}
+        >
+          {on ? "✓" : pending ? "…" : "+"}
+        </span>
       </button>
 
-      {error ? <p className="max-w-40 text-xs text-danger">{error}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

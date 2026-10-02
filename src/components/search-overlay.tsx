@@ -95,9 +95,9 @@ export function SearchOverlay({
     let cancelled = false;
 
     const timer = setTimeout(async () => {
-      const response = (targetId
+      const response = targetId
         ? await searchSuggestions(trimmed, targetId)
-        : await searchSuggestions(trimmed));
+        : await searchSuggestions(trimmed);
       if (cancelled) return;
 
       setData({
@@ -114,8 +114,6 @@ export function SearchOverlay({
   }, [query, targetId]);
 
   function open(kind: SearchSuggestion["kind"], id: string) {
-    // In add mode a row is not a link: tapping stays here.
-    if (target) return;
     // Remembered on the way out rather than as you type, so the chips hold
     // searches that went somewhere instead of every prefix of them.
     onRemember(trimmedQuery);
@@ -243,56 +241,40 @@ export function SearchOverlay({
                 key={`${result.kind}-${result.id}`}
                 className="flex items-center gap-3 border-b border-border-faint py-2.5"
               >
-                <button
-                  type="button"
-                  onClick={() => open(result.kind, result.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                >
-                  <span className="relative shrink-0">
-                    <Poster
-                      path={result.posterPath}
-                      name={result.name}
-                      width={40}
-                    />
-                    <KindBadge kind={result.kind} />
-                  </span>
-
-                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    {/* Badge rather than trailing text in the subtitle: the
-                        point is to be readable at a glance while typing, and
-                        the old form silently said nothing for two of the four
-                        statuses. */}
-                    <span className="flex items-center gap-[7px]">
-                      <span className="min-w-0 truncate text-[15px] font-medium">
-                        {result.name}
-                      </span>
-                      <StatusBadge status={result.status} />
-                    </span>
-                    <span className="text-xs text-faint">
-                      {result.year ?? "Year unknown"}
-                    </span>
-                  </span>
-                </button>
-
                 {target ? (
                   <ListAddButton
                     listId={target.id}
                     kind={result.kind === "movie" ? "movie" : "show"}
                     titleId={result.id}
                     onList={result.onList ?? false}
-                  />
-                ) : result.kind === "movie" ? (
-                  <MovieAddButton
-                    movieId={result.id}
-                    status={result.status}
-                    variant="icon"
-                  />
+                    title={result.name}
+                    listName={target.name}
+                  >
+                    <ResultContent result={result} />
+                  </ListAddButton>
                 ) : (
-                  <AddButton
-                    showId={result.id}
-                    status={result.status}
-                    variant="icon"
-                  />
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => open(result.kind, result.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <ResultContent result={result} />
+                    </button>
+                    {result.kind === "movie" ? (
+                      <MovieAddButton
+                        movieId={result.id}
+                        status={result.status}
+                        variant="icon"
+                      />
+                    ) : (
+                      <AddButton
+                        showId={result.id}
+                        status={result.status}
+                        variant="icon"
+                      />
+                    )}
+                  </>
                 )}
               </li>
             ))}
@@ -300,6 +282,34 @@ export function SearchOverlay({
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** The poster, title and year of a result — the content of its tap target. */
+function ResultContent({ result }: { result: SearchSuggestion }) {
+  return (
+    <>
+      <span className="relative shrink-0">
+        <Poster path={result.posterPath} name={result.name} width={40} />
+        <KindBadge kind={result.kind} />
+      </span>
+
+      <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        {/* Badge rather than trailing text in the subtitle: the
+              point is to be readable at a glance while typing, and
+              the old form silently said nothing for two of the four
+              statuses. */}
+        <span className="flex items-center gap-[7px]">
+          <span className="min-w-0 truncate text-[15px] font-medium">
+            {result.name}
+          </span>
+          <StatusBadge status={result.status} />
+        </span>
+        <span className="text-xs text-faint">
+          {result.year ?? "Year unknown"}
+        </span>
+      </span>
+    </>
   );
 }
 

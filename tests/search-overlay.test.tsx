@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -263,7 +264,9 @@ describe("adding to a list", () => {
     type("sev");
 
     await screen.findByText("Severance");
-    expect(screen.getAllByRole("button", { name: "Add to list" })).toHaveLength(2);
+    expect(
+      screen.getAllByRole("button", { name: /^Add .* to Family$/ }),
+    ).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Add to watchlist" })).toBeNull();
   });
 
@@ -275,24 +278,39 @@ describe("adding to a list", () => {
     type("sev");
 
     await screen.findByText("Severance");
-    fireEvent.click(screen.getByRole("button", { name: "Add to list" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Severance to Family" }));
 
     await waitFor(() => {
       expect(addToList).toHaveBeenCalledWith("list-1", "show", "95396");
     });
-    expect(await screen.findByRole("button", { name: "On the list" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Severance is on Family" })).toBeTruthy();
     expect(push).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(onRemember).not.toHaveBeenCalled();
   });
 
-  it("tapping the row itself does not navigate", async () => {
+  it("adds when the title text is tapped, without navigating", async () => {
     searchSuggestions.mockResolvedValue({ results: [SHOW] });
     openForList();
     type("sev");
 
     fireEvent.click(await screen.findByText("Severance"));
+
+    await waitFor(() => {
+      expect(addToList).toHaveBeenCalledWith("list-1", "show", "95396");
+    });
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("has exactly one button per row", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW, FILM] });
+    openForList();
+    type("sev");
+
+    await screen.findByText("Severance: The Movie");
+    for (const row of screen.getAllByRole("listitem")) {
+      expect(within(row).getAllByRole("button")).toHaveLength(1);
+    }
   });
 
   it("sends each kind for a movie and a show sharing an id", async () => {
@@ -302,8 +320,11 @@ describe("adding to a list", () => {
 
     await screen.findByText("Severance: The Movie");
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    const [showButton, movieButton] = screen.getAllByRole("button", {
-      name: "Add to list",
+    const showButton = screen.getByRole("button", {
+      name: "Add Severance to Family",
+    });
+    const movieButton = screen.getByRole("button", {
+      name: "Add Severance: The Movie to Family",
     });
 
     fireEvent.click(movieButton);
@@ -321,7 +342,7 @@ describe("adding to a list", () => {
     openForList();
     type("sev");
 
-    const tick = await screen.findByRole("button", { name: "On the list" });
+    const tick = await screen.findByRole("button", { name: "Severance is on Family" });
     fireEvent.click(tick);
     expect(addToList).not.toHaveBeenCalled();
   });
@@ -333,12 +354,12 @@ describe("adding to a list", () => {
     type("sev");
 
     await screen.findByText("Severance");
-    fireEvent.click(screen.getByRole("button", { name: "Add to list" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Severance to Family" }));
 
     expect(await screen.findByText("List is full.")).toBeTruthy();
     await waitFor(() => {
       expect(
-        (screen.getByRole("button", { name: "Add to list" }) as HTMLButtonElement)
+        (screen.getByRole("button", { name: "Add Severance to Family" }) as HTMLButtonElement)
           .disabled,
       ).toBe(false);
     });
