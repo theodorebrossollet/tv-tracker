@@ -102,3 +102,92 @@ describe("getMovieBuckets", () => {
     expect(m.addedAt).toBeInstanceOf(Date);
   });
 });
+
+// ---------------------------------------------------------------------------
+// getMovieDetail
+// ---------------------------------------------------------------------------
+
+import { vi } from "vitest";
+
+vi.mock("@/lib/tmdb", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tmdb")>()),
+  getMovieDetails: vi.fn(),
+}));
+
+const { getMovieDetail } = await import("@/lib/queries");
+const tmdb = await import("@/lib/tmdb");
+const getMovieDetailsMock = vi.mocked(tmdb.getMovieDetails);
+
+describe("getMovieDetail", () => {
+  beforeEach(() => {
+    getMovieDetailsMock.mockReset();
+  });
+
+  it("returns the cached row with this user's status", async () => {
+    await seedMovie("10", "watched", {
+      watchedAt: "2026-02-02T00:00:00Z",
+      title: "Cached",
+    });
+
+    const detail = await getMovieDetail(TEST_USER_ID, "10");
+    expect(detail).toMatchObject({
+      id: "10",
+      title: "Cached",
+      status: "watched",
+      watchedAt: at("2026-02-02T00:00:00Z"),
+      runtime: 100,
+    });
+    expect(getMovieDetailsMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores another user's tracked row", async () => {
+    await seedUser("someone-else");
+    await prisma.movie.create({ data: { id: "11", title: "Shared" } });
+    await prisma.trackedMovie.create({
+      data: { movieId: "11", userId: "someone-else", status: "watched" },
+    });
+
+    const detail = await getMovieDetail(TEST_USER_ID, "11");
+    expect(detail).toMatchObject({ id: "11", status: null, watchedAt: null });
+  });
+
+  it("falls back to TMDB for an uncached id without writing a Movie row", async () => {
+    getMovieDetailsMock.mockResolvedValue({
+      id: 12,
+      title: "Fresh",
+      posterPath: "/p.jpg",
+      overview: "Plot",
+      releaseDate: at("2024-03-01T00:00:00Z"),
+      runtime: 90,
+      status: "Released",
+      genres: "Drama",
+    });
+
+    const detail = await getMovieDetail(TEST_USER_ID, "12");
+    expect(detail).toEqual({
+      id: "12",
+      title: "Fresh",
+      posterPath: "/p.jpg",
+      overview: "Plot",
+      releaseDate: at("2024-03-01T00:00:00Z"),
+      runtime: 90,
+      genres: "Drama",
+      status: null,
+      watchedAt: null,
+    });
+    expect(await prisma.movie.count()).toBe(0);
+  });
+
+  it("returns null when TMDB says 404", async () => {
+    getMovieDetailsMock.mockRejectedValue(new tmdb.TmdbError("nope", 404));
+    expect(await getMovieDetail(TEST_USER_ID, "13")).toBeNull();
+  });
+
+  it("rethrows any other TMDB failure", async () => {
+    getMovieDetailsMock.mockRejectedValue(new tmdb.TmdbError("down", 500));
+    await expect(getMovieDetail(TEST_USER_ID, "14")).rejects.toThrow("down");
+
+    getMovieDetailsMock.mockRejectedValue(new Error("network"));
+    await expect(getMovieDetail(TEST_USER_ID, "15")).rejects.toThrow("network");
+  });
+});
