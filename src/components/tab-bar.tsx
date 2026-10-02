@@ -9,7 +9,7 @@ import { useSearch } from "@/components/search-provider";
  * Routes that render without the tab bar.
  *
  * Signing in is the whole reason these exist, and every tab points somewhere
- * gated — a bar here would advertise four destinations that all bounce back to
+ * gated — a bar here would advertise five destinations that all bounce back to
  * `/login`. The old top nav did render on them, which mattered less when it was
  * a row of pills than it does as a full-width bar pinned above the thumb.
  */
@@ -21,6 +21,8 @@ interface Tab {
   href?: string;
   /** Extra routes that also count as this tab. */
   also?: string[];
+  /** Active on the route itself and anything beneath it, not on lookalikes. */
+  segment?: boolean;
   icon: React.ReactNode;
 }
 
@@ -38,6 +40,13 @@ const TABS: Tab[] = [
     // The same bookmark the empty Watchlist draws, so the tab and the screen
     // it leads to agree about what Library means.
     icon: <BookmarkIcon />,
+  },
+  {
+    label: "Lists",
+    href: "/lists",
+    // Matched as a segment, not a prefix: see `isActive`.
+    segment: true,
+    icon: <ListIcon />,
   },
   { label: "Search", icon: <SearchGlyph /> },
   { label: "Settings", href: "/settings", icon: <SlidersIcon /> },
@@ -59,6 +68,11 @@ export function TabBar() {
 
     // The dashboard is every path's prefix, so it has to match exactly.
     if (tab.href === "/") return pathname === "/";
+
+    // `/lists` and `/lists/abc`, but not a future `/listsomething`.
+    if (tab.segment) {
+      return pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+    }
 
     return [tab.href, ...(tab.also ?? [])].some((route) =>
       pathname.startsWith(route),
@@ -82,7 +96,7 @@ export function TabBar() {
         // strip". Reading the real value needs `viewportFit: "cover"` in the
         // viewport export, or it resolves to 0 on iOS and the bar sits under
         // the gesture bar.
-        className="mx-auto grid max-w-lg grid-cols-4 px-1.5 pb-[env(safe-area-inset-bottom)] pt-2"
+        className="mx-auto grid max-w-lg grid-cols-5 px-1.5 pb-[env(safe-area-inset-bottom)] pt-2"
       >
         {TABS.map((tab) => {
           const active = isActive(tab);
@@ -151,10 +165,10 @@ function Pressed({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Shared geometry for the four glyphs.
+ * Shared geometry for the glyphs.
  *
  * `currentColor` throughout, so the active state is one colour change on the
- * parent rather than four icons each knowing about it.
+ * parent rather than one per icon each knowing about it.
  */
 function Glyph({ children }: { children: React.ReactNode }) {
   return (
@@ -186,6 +200,19 @@ function BookmarkIcon() {
   return (
     <Glyph>
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </Glyph>
+  );
+}
+
+function ListIcon() {
+  return (
+    <Glyph>
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <circle cx="4.5" cy="6" r="1" />
+      <circle cx="4.5" cy="12" r="1" />
+      <circle cx="4.5" cy="18" r="1" />
     </Glyph>
   );
 }

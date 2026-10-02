@@ -36,7 +36,7 @@ function renderAt(route: string) {
 describe("which tab is active", () => {
   it("matches the dashboard exactly, not as a prefix", () => {
     // "/" is a prefix of every route, so `startsWith` would light Watching up
-    // on all four screens.
+    // on every screen.
     renderAt("/");
     expect(activeTab()).toBe("Watching");
 
@@ -55,9 +55,40 @@ describe("which tab is active", () => {
     }
   });
 
+  it("lights Library up on its two routes and nowhere else", () => {
+    renderAt("/lists");
+    expect(activeTab()).not.toBe("Library");
+  });
+
+  it("lights Lists up on /lists and every path under it", () => {
+    for (const route of ["/lists", "/lists/abc"]) {
+      renderAt(route);
+      expect(activeTab()).toBe("Lists");
+      cleanup();
+    }
+  });
+
+  it("does not light Lists up on Library routes or a lookalike prefix", () => {
+    for (const route of ["/watchlist", "/archive", "/listsomething"]) {
+      renderAt(route);
+      expect(activeTab()).not.toBe("Lists");
+      cleanup();
+    }
+  });
+
   it("leaves every tab inactive on a show page", () => {
     renderAt("/show/1396");
     expect(activeTab()).toBeNull();
+  });
+});
+
+describe("the tabs", () => {
+  it("renders five, in order", () => {
+    renderAt("/");
+    const labels = [
+      ...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("a, button"),
+    ].map((el) => el.textContent);
+    expect(labels).toEqual(["Watching", "Library", "Lists", "Search", "Settings"]);
   });
 });
 
@@ -81,7 +112,7 @@ describe("the Search tab", () => {
 
 describe("routes that render without the bar", () => {
   it("hides on the sign-in and onboarding screens", () => {
-    // Every tab points somewhere gated, so a bar here offers four destinations
+    // Every tab points somewhere gated, so a bar here offers five destinations
     // that all bounce straight back to /login.
     for (const route of ["/login", "/login/password", "/welcome"]) {
       const { container } = renderAt(route);
