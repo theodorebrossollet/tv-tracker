@@ -204,18 +204,23 @@ export async function addToList(
         : await ensureShowCached(titleId, user.id);
     if (!known) return { ok: false, error: "Couldn't find that title." };
 
-    await prisma.listItem.create({
-      data: {
-        listId: list.id,
-        ...(kind === "movie" ? { movieId: titleId } : { showId: titleId }),
-      },
-    });
+    // Only a collision on THIS insert means the title is already on the list.
+    // A P2002 from the caching above (two requests syncing the same new show)
+    // is a real failure: nothing was added, so it goes through `toResult`.
+    try {
+      await prisma.listItem.create({
+        data: {
+          listId: list.id,
+          ...(kind === "movie" ? { movieId: titleId } : { showId: titleId }),
+        },
+      });
+    } catch (error) {
+      // A double-click can lose the race to the unique constraint; the title
+      // is on the list either way. (The size check above is likewise racy and
+      // accepted: it is a soft cap.)
+      if (!isUniqueConstraintError(error)) throw error;
+    }
   } catch (error) {
-    // A double-click can lose the race to the unique constraint; the title is
-    // on the list either way. (The size check above is likewise racy and
-    // accepted: it is a soft cap.)
-    if (isUniqueConstraintError(error)) return { ok: true };
-
     return toResult(error);
   }
 

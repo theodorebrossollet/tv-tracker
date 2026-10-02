@@ -374,6 +374,21 @@ describe("addToList", () => {
     expect(getMovieDetails).toHaveBeenCalledTimes(2);
   });
 
+  it("does not report success when caching the title hits a unique collision", async () => {
+    const list = await makeList();
+    const collision = Object.assign(new Error("Unique constraint failed"), {
+      code: "P2002",
+    });
+
+    vi.mocked(ensureShowCached).mockRejectedValueOnce(collision);
+    expect((await addToList(list.id, "show", "1399")).ok).toBe(false);
+
+    vi.mocked(getMovieDetails).mockRejectedValueOnce(collision);
+    expect((await addToList(list.id, "movie", "603")).ok).toBe(false);
+
+    expect(await itemRows(list.id)).toHaveLength(0);
+  });
+
   it("allows the 500th item and refuses the 501st", async () => {
     const list = await makeList();
     await prisma.movie.createMany({
