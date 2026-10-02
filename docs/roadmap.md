@@ -166,7 +166,9 @@ These are noted in [scope.md](scope.md) under Phase 2 / "Ideas for the
 Future" — listed here too so this doc stays the single place to check:
 
 - Movies (search, tracking, watchlist) — core shipped; see the movies-core spec
+- Lists — shipped; private per-account lists of movies and shows, see the lists spec
 - Ratings — 1–5 rating per show/movie
+- Rewatch tracking (runs for shows and movies, history kept)
 - Notes/reviews per episode or show
 - Stats dashboard (hours watched, favorite genres, etc.)
 - Notifications for new episodes of shows you're watching

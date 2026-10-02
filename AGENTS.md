@@ -45,9 +45,9 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 ## Where things are
 
 ```
-src/app/          routes; actions.ts holds every write except the account ones,
-                  which are in account-actions.ts — the rules in actions.ts's
-                  header govern both
+src/app/          routes; actions.ts holds the Library writes, account-actions.ts
+                  the account ones and list-actions.ts the list ones (the third
+                  module) — the rules in actions.ts's header govern all three
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
@@ -57,10 +57,16 @@ src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logg
                   to watch, and NEXT_UP_QUEUE — which lives here rather than
                   beside its card for the reason below),
                   movies (movie cache + NEW_MOVIES_PER_HOUR), movie-status
-                  (movie status transitions), library-type (Library's `type`)
+                  (movie status transitions), library-type (Library's `type`),
+                  lists (list limits, name validation, isListItemWatched; the
+                  list reads — getLists, getListDetail, getListsForTitle — are
+                  in queries.ts)
 src/app/movie/    movie page, /movie/[id]
+src/app/lists/    Lists index, /lists, and /lists/[id] (each with a loading.tsx)
 prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
-                  TrackedMovie — additive, so apply it BEFORE merging
+                  TrackedMovie — additive, so apply it BEFORE merging;
+                  20261002042557_add_lists adds List and ListItem — also
+                  additive (two new tables), also apply BEFORE merging
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -75,6 +81,28 @@ selects Shows or Movies. Movies have their own hourly new-title allowance
 returns a union discriminated by `kind`; TMDB movie and TV ids overlap
 numerically, so never look one up as the other — separate tables and routes
 (`/movie/[id]` vs `/show/[id]`) keep them apart.
+
+Lists, in short: private per-account lists of movies and shows, mixed.
+Components: `list-form-sheet` (create/edit), `new-list-button`,
+`list-item-row`, `list-menu`, `add-titles-button` (opens the search overlay in
+"adding to a list" mode via `useSearch().openForList`), `list-add-button` (the
+overlay's per-result control), `add-to-list-button` (on movie and show pages).
+`searchSuggestions(query, listId?)` marks results `onList`. The fifth "Lists"
+tab stays active for `/lists/...`. Rules:
+
+- Writes live in `src/app/list-actions.ts`; its rules are the ones in
+  `actions.ts`'s header (gate above each `try`, every call scoped by user,
+  arguments validated).
+- Limits: 50 lists per account, 500 items per list.
+- Adding to a list never touches Library tracking (it does cache an uncached
+  title).
+- `trackSeparately` is per list. Off (personal): items show the title's real
+  Library status. On ("together"): each item has its own tick on
+  `ListItem.watchedAt`, which is ignored while the flag is off and kept if it is
+  flipped back.
+- A show counts as watched on a personal list only when finished by the
+  Library's derived rule (`fullyWatched && hasSeriesEnded`, from
+  `getTrackedShows`). `getListDetail` reuses it; never re-derive it.
 
 ## Rules that will bite you
 

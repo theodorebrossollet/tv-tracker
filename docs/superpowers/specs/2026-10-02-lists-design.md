@@ -77,8 +77,9 @@ account's lists.
 ## Rules
 
 - Personal list, movie: unwatched = Library status is not `watched`.
-- Personal list, show: watched = finished, using the Library's derived rule in
-  `lib/queries.ts`; it is not re-derived elsewhere.
+- Personal list, show: watched = finished, i.e. `fullyWatched && hasSeriesEnded`
+  from `getTrackedShows` (the Library's derived rule in `lib/queries.ts`); it is
+  not re-derived elsewhere.
 - Together list, any title: unwatched = no `watchedAt` on the item.
 - An untracked title on a list shows no status.
 - A title appears at most once per list and may be on several lists.
@@ -97,7 +98,7 @@ tab sits between Library and Search and is active for `/lists` and
 explanation). The same sheet renames and flips the switch.
 
 **List page (`/lists/[id]`).** Back link, name, "…" menu (Edit list, Delete list
-with confirmation), "Add titles" button. Unwatched titles first, watched below
+with confirmation; deleting redirects to `/lists`), "Add titles" button. Unwatched titles first, watched below
 in the quieter section style the Library uses. Rows: poster with the movie/TV
 badge, title, year, "…" menu with "Remove from list".
 - Personal list: a movie row shows its real status and a one-tap "mark watched"
@@ -110,7 +111,7 @@ badge, title, year, "…" menu with "Remove from list".
 opening a sheet of the account's lists as checkboxes plus a "New list" row.
 
 **Add titles (inside a list).** The search overlay opens in an "Adding to
-<list name>" mode: tapping a result adds it, results already on the list show a
+<list name>" mode: tapping a result (the whole row is the add control) adds it, results already on the list show a
 tick, the overlay stays open, "Done" closes it. In this mode the Library "+" is
 replaced by the list control, so nothing reaches the Library by accident.
 
