@@ -9,6 +9,7 @@ import {
   NextUpCard,
   type NextUpEpisode,
 } from "@/components/next-up-card";
+import { PastRuns } from "@/components/past-runs";
 import { RefreshStrip } from "@/components/refresh-strip";
 import { limitFrom } from "@/components/show-more-link";
 import { SeasonRatingLine } from "@/components/season-rating-line";
@@ -467,6 +468,8 @@ export default async function ShowPage({
               />
             ))}
           </ul>
+
+          <PastRuns runs={show.pastRuns} />
         </div>
       ) : null}
 
