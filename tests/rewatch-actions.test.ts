@@ -242,4 +242,49 @@ describe("startShowOver", () => {
     expect(await statusOf("101")).toBe("paused");
     expect(revalidatePath).not.toHaveBeenCalled();
   });
+
+  it("two concurrent calls make exactly one run", async () => {
+    await seedShow({ offsets: [-2, -1], status: "paused", watched: [0, 1] });
+
+    const results = await Promise.all([startShowOver("101"), startShowOver("101")]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toEqual([NOTHING]);
+    expect(await runsOf()).toHaveLength(1);
+    expect(await prisma.archivedEpisodeWatch.count()).toBe(2);
+    expect(await watchedCount("101")).toBe(0);
+    expect(await statusOf("101")).toBe("watching");
+  });
+
+  it("two concurrent calls at 19 runs reach 20, not 21", async () => {
+    await seedShow({ offsets: [-1], status: "watching", watched: [0] });
+    for (let n = 1; n < MAX_PAST_RUNS; n++) {
+      await prisma.showRun.create({
+        data: { userId: TEST_USER_ID, showId: "101", runNumber: n },
+      });
+    }
+
+    const results = await Promise.all([startShowOver("101"), startShowOver("101")]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(await runsOf()).toHaveLength(MAX_PAST_RUNS);
+  });
+
+  it("creates no empty run when the last mark vanishes after the pre-check", async () => {
+    await seedShow({ offsets: [-1], status: "paused", watched: [0] });
+    const spy = vi
+      .spyOn(prisma.watchedEpisode, "count")
+      .mockImplementationOnce((async () => {
+        await prisma.watchedEpisode.deleteMany();
+        return 1;
+      }) as never);
+
+    const result = await startShowOver("101");
+    spy.mockRestore();
+
+    expect(result).toEqual(NOTHING);
+    expect(await runsOf()).toHaveLength(0);
+    expect(await statusOf("101")).toBe("paused");
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
 });
