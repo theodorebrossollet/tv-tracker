@@ -9,12 +9,14 @@ import {
 } from "@/lib/action-result";
 import { MAX_PROVIDERS } from "@/lib/alternate-countries";
 import { requireOnboardedSession } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { describeError, logger } from "@/lib/logger";
+import { movieStatusTargets, watchedAtFor } from "@/lib/movie-status";
+import { cacheNewMovie, syncMovieFromTmdb } from "@/lib/movies";
 import { prisma } from "@/lib/prisma";
-import { isTmdbShowId } from "@/lib/show-id";
+import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 import { cacheNewShow, refreshShowDeduped, syncShowFromTmdb } from "@/lib/shows";
-import { searchTvShows, type TmdbSearchResult } from "@/lib/tmdb";
-import type { TrackStatus } from "@/lib/types";
+import { searchMulti, type TmdbMultiSearchResult } from "@/lib/tmdb";
+import { isMovieStatus, type MovieStatus, type TrackStatus } from "@/lib/types";
 
 // Every write in the app that isn't an account operation — those live in
 // `app/account-actions.ts`, and the rules below govern them too.
@@ -75,17 +77,22 @@ function revalidateShowViews() {
 // Search
 // ---------------------------------------------------------------------------
 
-export interface SearchSuggestion {
+interface SuggestionBase {
   id: string;
   name: string;
   posterPath: string | null;
-  firstAirYear: string | null;
-  status: TrackStatus | null;
+  /** First air year for a show, release year for a movie. */
+  year: string | null;
 }
+
+/** TMDB numbers shows and movies separately, so `kind` is part of the identity. */
+export type SearchSuggestion =
+  | (SuggestionBase & { kind: "tv"; status: TrackStatus | null })
+  | (SuggestionBase & { kind: "movie"; status: MovieStatus | null });
 
 /**
  * Backs the search overlay's as-you-type suggestions. Results aren't cached in
- * the database until a show is actually opened or added.
+ * the database until a show or movie is actually opened or added.
  */
 export async function searchSuggestions(
   query: string,
@@ -97,34 +104,64 @@ export async function searchSuggestions(
   const trimmed = query.trim().slice(0, 200);
   if (!trimmed) return { results: [] };
 
-  let results: TmdbSearchResult[];
+  let found: TmdbMultiSearchResult[];
   try {
-    results = await searchTvShows(trimmed);
+    found = await searchMulti(trimmed);
   } catch (error) {
     return { error: toResult(error).error };
   }
 
-  // One query for the whole page of results, rather than one per row.
-  const tracked = await prisma.trackedShow.findMany({
-    where: {
-      userId: user.id,
-      showId: { in: results.map((result) => String(result.id)) },
-    },
-    select: { showId: true, status: true },
-  });
-  const statusByShow = new Map(tracked.map((row) => [row.showId, row.status]));
+  // Capped before the lookups so they only cover rows that will be returned.
+  const results = found.slice(0, 12);
+  const idsOf = (kind: "tv" | "movie") =>
+    results.filter((r) => r.kind === kind).map((r) => String(r.id));
+
+  // One scoped query per kind for the whole page, rather than one per row.
+  // Shows and movies are separate tables with overlapping ids, so each kind
+  // reads its own.
+  const [trackedShows, trackedMovies] = await Promise.all([
+    prisma.trackedShow.findMany({
+      where: { userId: user.id, showId: { in: idsOf("tv") } },
+      select: { showId: true, status: true },
+    }),
+    // Search is app-wide, so a missing Movie table (migration not yet applied)
+    // must not take show search down with it: badges are cosmetic here.
+    prisma.trackedMovie
+      .findMany({
+        where: { userId: user.id, movieId: { in: idsOf("movie") } },
+        select: { movieId: true, status: true },
+      })
+      .catch((error: unknown) => {
+        logger.warn("search.movie_status_failed", describeError(error));
+        return [];
+      }),
+  ]);
+  const statusByShow = new Map(trackedShows.map((r) => [r.showId, r.status]));
+  const statusByMovie = new Map(
+    trackedMovies.map((r) => [r.movieId, r.status]),
+  );
 
   return {
-    results: results.slice(0, 12).map((result) => {
+    results: results.map((result): SearchSuggestion => {
       const id = String(result.id);
-
-      return {
+      const base = {
         id,
         name: result.name,
         posterPath: result.posterPath,
-        firstAirYear: result.firstAirYear,
-        status: (statusByShow.get(id) ?? null) as TrackStatus | null,
+        year: result.year,
       };
+
+      return result.kind === "tv"
+        ? {
+            kind: "tv",
+            ...base,
+            status: (statusByShow.get(id) ?? null) as TrackStatus | null,
+          }
+        : {
+            kind: "movie",
+            ...base,
+            status: (statusByMovie.get(id) ?? null) as MovieStatus | null,
+          };
     }),
   };
 }
@@ -201,6 +238,146 @@ export async function removeShow(showId: string): Promise<ActionResult> {
     // tracks it. In v1 the filter was incidentally unique; now it is the only
     // thing scoping the delete.
     await prisma.trackedShow.deleteMany({ where: { userId: user.id, showId } });
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateShowViews();
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Movies
+//
+// A movie has no progress to protect, so every status can reach every other and
+// "watched" is just a status — there is no separate mark-watched action.
+// ---------------------------------------------------------------------------
+
+/**
+ * Caches a movie from TMDB, then creates the caller's row with `status`.
+ *
+ * Shared by "+" and by setting a status on a movie that isn't tracked yet. A
+ * movie another account already cached is only re-synced; one nothing holds yet
+ * counts against this account's hourly movie allowance. Throws on failure, so
+ * the caller's `try` decides how that reads.
+ */
+async function cacheAndTrackMovie(
+  userId: string,
+  movieId: string,
+  status: MovieStatus,
+): Promise<void> {
+  const cached = await prisma.movie.findUnique({
+    where: { id: movieId },
+    select: { id: true },
+  });
+
+  if (cached) await syncMovieFromTmdb(movieId);
+  else await cacheNewMovie(movieId, userId);
+
+  await prisma.trackedMovie.create({
+    data: { userId, movieId, status, watchedAt: watchedAtFor(status, new Date()) },
+  });
+}
+
+/** Adds a movie to the watchlist, caching it from TMDB on the way in. */
+export async function addMovieToWatchlist(
+  tmdbMovieId: string,
+): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // POST-able directly, and the id reaches a TMDB request path from here.
+  if (!isTmdbMovieId(tmdbMovieId)) {
+    return { ok: false, error: "Missing movie id." };
+  }
+
+  try {
+    const existing = await prisma.trackedMovie.findUnique({
+      where: { userId_movieId: { userId: user.id, movieId: tmdbMovieId } },
+      select: { id: true },
+    });
+
+    // Already tracked — don't demote a watched movie back to the watchlist.
+    if (existing) return { ok: true };
+
+    await cacheAndTrackMovie(user.id, tmdbMovieId, "watchlist");
+  } catch (error) {
+    // A double-click can lose the race to the unique constraint; the movie is
+    // tracked either way, which is all the caller asked for.
+    if (isUniqueConstraintError(error)) return { ok: true };
+
+    return toResult(error);
+  }
+
+  revalidateShowViews();
+  return { ok: true };
+}
+
+/**
+ * Moves a movie to `status`, including "watched" from a movie that isn't
+ * tracked yet. The allowed moves are `movieStatusTargets`; anything else,
+ * including the status it is already in, is refused.
+ */
+export async function setMovieStatus(
+  movieId: string,
+  status: MovieStatus,
+): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // Both arguments are untrusted: the id reaches TMDB, and a status outside
+  // the three would be written to the row as-is.
+  if (!isTmdbMovieId(movieId)) {
+    return { ok: false, error: "Missing movie id." };
+  }
+  if (!isMovieStatus(status)) {
+    return { ok: false, error: "That change isn't available." };
+  }
+
+  try {
+    const existing = await prisma.trackedMovie.findUnique({
+      where: { userId_movieId: { userId: user.id, movieId } },
+      select: { status: true },
+    });
+
+    const current = (existing?.status ?? null) as MovieStatus | null;
+    if (!movieStatusTargets(current).includes(status)) {
+      return { ok: false, error: "That change isn't available." };
+    }
+
+    if (existing) {
+      // `updateMany` so a row removed in another tab is a no-op rather than a
+      // thrown P2025; userId scopes it to the caller.
+      await prisma.trackedMovie.updateMany({
+        where: { userId: user.id, movieId },
+        data: { status, watchedAt: watchedAtFor(status, new Date()) },
+      });
+    } else {
+      await cacheAndTrackMovie(user.id, movieId, status);
+    }
+  } catch (error) {
+    // Lost the double-click race: the row exists, so the movie is tracked.
+    if (isUniqueConstraintError(error)) return { ok: true };
+
+    return toResult(error);
+  }
+
+  revalidateShowViews();
+  return { ok: true };
+}
+
+/** Removes a movie from your lists. The cached movie row stays. */
+export async function removeMovie(movieId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  if (!isTmdbMovieId(movieId)) {
+    return { ok: false, error: "Missing movie id." };
+  }
+
+  try {
+    // `userId` is the only thing keeping this from removing the movie for
+    // everyone who tracks it.
+    await prisma.trackedMovie.deleteMany({
+      where: { userId: user.id, movieId },
+    });
   } catch (error) {
     return toResult(error);
   }
@@ -692,6 +869,7 @@ export async function clearAllData(): Promise<ActionResult> {
     await prisma.$transaction([
       prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
       prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
+      prisma.trackedMovie.deleteMany({ where: { userId: user.id } }),
       prisma.settings.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {

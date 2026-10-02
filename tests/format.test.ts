@@ -5,6 +5,7 @@ import {
   countdownTo,
   daysUntil,
   formatAirDate,
+  formatWatchedDate,
   formatAirDateShort,
   formatRuntime,
   progressPercent,
@@ -31,6 +32,24 @@ describe("formatAirDate", () => {
     expect(formatAirDate(null)).toBe("TBA");
     expect(formatAirDate("")).toBe("TBA");
     expect(formatAirDate("not a date")).toBe("TBA");
+  });
+});
+
+describe("formatWatchedDate", () => {
+  it("uses the app-time (US Eastern) day for an evening watch", () => {
+    // 21:30 EDT on 1 Oct is 01:30Z on 2 Oct.
+    expect(formatWatchedDate("2026-10-02T01:30:00Z")).toBe("1 Oct 2026");
+  });
+
+  it("keeps the day for a mid-day instant", () => {
+    expect(formatWatchedDate("2026-03-14T12:00:00Z")).toBe("14 Mar 2026");
+  });
+
+  it("falls back to TBA like formatAirDate", () => {
+    expect(formatWatchedDate(null)).toBe("TBA");
+    expect(formatWatchedDate(undefined)).toBe("TBA");
+    expect(formatWatchedDate("")).toBe("TBA");
+    expect(formatWatchedDate("not a date")).toBe("TBA");
   });
 });
 

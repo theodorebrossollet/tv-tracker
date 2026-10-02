@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isTmdbShowId } from "@/lib/show-id";
+import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 
 describe("show id validation", () => {
   it("accepts a plain TMDB id", () => {
@@ -30,5 +30,17 @@ describe("show id validation", () => {
     // `\d+` unanchored would let this through, and it is the shape a crafted
     // value actually takes.
     expect(isTmdbShowId("1399abc")).toBe(false);
+  });
+});
+
+describe("movie id validation", () => {
+  it("accepts a plain TMDB id", () => {
+    expect(isTmdbMovieId("12")).toBe(true);
+  });
+
+  it("rejects values that redirect the TMDB request path", () => {
+    expect(isTmdbMovieId("12/x")).toBe(false);
+    expect(isTmdbMovieId("1?x")).toBe(false);
+    expect(isTmdbMovieId("")).toBe(false);
   });
 });

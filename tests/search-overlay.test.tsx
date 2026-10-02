@@ -10,11 +10,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const searchSuggestions = vi.fn();
 const push = vi.fn();
+const addMovieToWatchlist = vi.fn(async (id: string) => ({ ok: Boolean(id) }));
 
 vi.mock("@/app/actions", () => ({
   searchSuggestions: (query: string) => searchSuggestions(query),
   addToWatchlist: vi.fn(async () => ({ ok: true })),
   removeShow: vi.fn(async () => ({ ok: true })),
+  addMovieToWatchlist: (id: string) => addMovieToWatchlist(id),
+  removeMovie: vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -22,10 +25,11 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 const { SearchOverlay } = await import("@/components/search-overlay");
 
 const RESULT = {
+  kind: "tv" as const,
   id: "95396",
   name: "Severance",
   posterPath: null,
-  firstAirYear: "2022",
+  year: "2022",
   status: null,
 };
 
@@ -33,13 +37,16 @@ beforeEach(() => {
   searchSuggestions.mockReset();
   searchSuggestions.mockResolvedValue({ results: [RESULT] });
   push.mockReset();
+  addMovieToWatchlist.mockClear();
 });
 
 afterEach(cleanup);
 
 /** Types into the controlled field. */
 function type(value: string) {
-  fireEvent.change(screen.getByLabelText("Show title"), { target: { value } });
+  fireEvent.change(screen.getByLabelText("Search query"), {
+    target: { value },
+  });
 }
 
 function open(props: Partial<Parameters<typeof SearchOverlay>[0]> = {}) {
@@ -64,9 +71,9 @@ describe("the field", () => {
 
     fireEvent.click(clear);
 
-    expect((screen.getByLabelText("Show title") as HTMLInputElement).value).toBe(
-      "",
-    );
+    expect(
+      (screen.getByLabelText("Search query") as HTMLInputElement).value,
+    ).toBe("");
   });
 
   it("names the query when nothing matches", async () => {
@@ -77,8 +84,63 @@ describe("the field", () => {
 
     // The query is echoed back so a typo is visible as a typo rather than as
     // "this show doesn't exist".
-    expect(await screen.findByText(/No shows found for/)).toBeTruthy();
+    expect(await screen.findByText(/No results for/)).toBeTruthy();
     expect(screen.getByText(/zzzz/)).toBeTruthy();
+  });
+});
+
+const MOVIE = {
+  kind: "movie" as const,
+  id: "95396",
+  name: "Severance: The Movie",
+  posterPath: null,
+  year: null,
+  status: null,
+};
+
+describe("shows and movies together", () => {
+  it("tags each row and renders a tv and a movie sharing an id", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    searchSuggestions.mockResolvedValue({ results: [RESULT, MOVIE] });
+    open();
+
+    type("sev");
+
+    expect(await screen.findByText("Severance: The Movie")).toBeTruthy();
+    expect(screen.getByText("Severance")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("TV")).toBeTruthy();
+    expect(screen.getByText("Movie")).toBeTruthy();
+    expect(screen.getByText("Year unknown")).toBeTruthy();
+    expect(
+      error.mock.calls.some((call) => String(call[0]).includes("key")),
+    ).toBe(false);
+    error.mockRestore();
+  });
+
+  it("opens each kind on its own route", async () => {
+    searchSuggestions.mockResolvedValue({ results: [RESULT, MOVIE] });
+    open();
+
+    type("sev");
+    fireEvent.click(await screen.findByText("Severance: The Movie"));
+    expect(push).toHaveBeenLastCalledWith("/movie/95396");
+
+    fireEvent.click(screen.getByText("Severance"));
+    expect(push).toHaveBeenLastCalledWith("/show/95396");
+  });
+
+  it("adds a movie through the movie action, not the show one", async () => {
+    searchSuggestions.mockResolvedValue({ results: [MOVIE] });
+    open();
+
+    type("sev");
+    await screen.findByText("Severance: The Movie");
+    fireEvent.click(screen.getByRole("button", { name: "Add to watchlist" }));
+
+    await waitFor(() => {
+      expect(addMovieToWatchlist).toHaveBeenCalledWith("95396");
+    });
   });
 });
 
@@ -100,9 +162,9 @@ describe("recent searches", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "severance" }));
 
-    expect((screen.getByLabelText("Show title") as HTMLInputElement).value).toBe(
-      "severance",
-    );
+    expect(
+      (screen.getByLabelText("Search query") as HTMLInputElement).value,
+    ).toBe("severance");
     await waitFor(() => {
       expect(searchSuggestions).toHaveBeenCalledWith("severance");
     });
@@ -137,6 +199,8 @@ describe("the field's font size", () => {
     // the next time someone matches the spec.
     open();
 
-    expect(screen.getByLabelText("Show title").className).toContain("text-base");
+    expect(screen.getByLabelText("Search query").className).toContain(
+      "text-base",
+    );
   });
 });

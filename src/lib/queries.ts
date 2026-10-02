@@ -6,7 +6,8 @@ import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
-import type { TrackStatus } from "@/lib/types";
+import { getMovieDetails, TmdbError } from "@/lib/tmdb";
+import type { MovieStatus, TrackStatus } from "@/lib/types";
 
 // Every function here takes a userId, and every read through `Show.tracked` or
 // `Episode.watched` filters by it. Those two relations are lists now — one
@@ -591,3 +592,137 @@ function loadShow(userId: string, showId: string) {
   });
 }
 
+export interface MovieSummary {
+  movieId: string;
+  title: string;
+  posterPath: string | null;
+  releaseDate: Date | null;
+  /** Minutes. */
+  runtime: number | null;
+  status: MovieStatus;
+  watchedAt: Date | null;
+  addedAt: Date;
+}
+
+export interface MovieBuckets {
+  watchlist: MovieSummary[];
+  watched: MovieSummary[];
+  notInterested: MovieSummary[];
+}
+
+/**
+ * The account's movies, one list per status.
+ *
+ * Unlike shows there is nothing derived: the stored status *is* the bucket. The
+ * read is scoped to `userId` on the `TrackedMovie` side, which is the only
+ * place a movie belongs to anyone — `Movie` itself is shared.
+ *
+ * Watchlist and not-interested list newest-added first; watched lists newest
+ * *watched* first, since that is the date the row shows.
+ */
+export async function getMovieBuckets(userId: string): Promise<MovieBuckets> {
+  const rows = await prisma.trackedMovie.findMany({
+    where: { userId },
+    include: { movie: true },
+    orderBy: { addedAt: "desc" },
+  });
+
+  const buckets: MovieBuckets = {
+    watchlist: [],
+    watched: [],
+    notInterested: [],
+  };
+
+  for (const row of rows) {
+    const summary: MovieSummary = {
+      movieId: row.movieId,
+      title: row.movie.title,
+      posterPath: row.movie.posterPath,
+      releaseDate: row.movie.releaseDate,
+      runtime: row.movie.runtime,
+      status: row.status as MovieStatus,
+      watchedAt: row.watchedAt,
+      addedAt: row.addedAt,
+    };
+
+    if (row.status === "watched") buckets.watched.push(summary);
+    else if (row.status === "not_interested")
+      buckets.notInterested.push(summary);
+    else buckets.watchlist.push(summary);
+  }
+
+  const watchedOn = (m: MovieSummary) => (m.watchedAt ?? m.addedAt).getTime();
+  buckets.watched.sort((a, b) => watchedOn(b) - watchedOn(a));
+
+  return buckets;
+}
+
+export interface MovieDetail {
+  id: string;
+  title: string;
+  posterPath: string | null;
+  overview: string | null;
+  releaseDate: Date | null;
+  /** Minutes. */
+  runtime: number | null;
+  genres: string | null;
+  /** This user's list for the movie; null when they don't track it. */
+  status: MovieStatus | null;
+  watchedAt: Date | null;
+}
+
+/**
+ * One movie for the movie page: the cached row plus THIS user's tracked row.
+ *
+ * An uncached movie is fetched from TMDB and returned untracked, and nothing is
+ * written. Viewing must not create a `Movie` row: that would spend the account's
+ * new-movies-per-hour allowance on a page view and fill the cache with movies
+ * nobody tracks. Tracking (including marking watched from here) caches it via
+ * the actions. Callers validate the id first; `getMovieDetails` does not.
+ *
+ * Memoized per request because both `generateMetadata` and the page ask.
+ */
+export const getMovieDetail = cache(async function getMovieDetail(
+  userId: string,
+  movieId: string,
+): Promise<MovieDetail | null> {
+  const cached = await prisma.movie.findUnique({
+    where: { id: movieId },
+    // `tracked` is a list, one row per user: filter by userId or this returns
+    // someone else's status.
+    include: { tracked: { where: { userId } } },
+  });
+
+  if (cached) {
+    const mine = cached.tracked[0];
+    return {
+      id: cached.id,
+      title: cached.title,
+      posterPath: cached.posterPath,
+      overview: cached.overview,
+      releaseDate: cached.releaseDate,
+      runtime: cached.runtime,
+      genres: cached.genres,
+      status: mine ? (mine.status as MovieStatus) : null,
+      watchedAt: mine?.watchedAt ?? null,
+    };
+  }
+
+  try {
+    const fetched = await getMovieDetails(movieId);
+    return {
+      id: movieId,
+      title: fetched.title,
+      posterPath: fetched.posterPath,
+      overview: fetched.overview,
+      releaseDate: fetched.releaseDate,
+      runtime: fetched.runtime,
+      genres: fetched.genres,
+      status: null,
+      watchedAt: null,
+    };
+  } catch (error) {
+    if (error instanceof TmdbError && error.status === 404) return null;
+    throw error;
+  }
+});

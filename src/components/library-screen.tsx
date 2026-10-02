@@ -3,17 +3,22 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { LIBRARY_PAGE_SIZE, LibraryList } from "@/components/library-list";
+import { MovieList } from "@/components/movie-list";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { SearchIconButton } from "@/components/search-icon-button";
 import { limitFrom } from "@/components/show-more-link";
-import type { ShowBuckets } from "@/lib/queries";
+import type { LibraryType } from "@/lib/library-type";
+import type { MovieBuckets, ShowBuckets } from "@/lib/queries";
 
 export type LibrarySegment = "watchlist" | "archive";
 
 interface LibraryScreenProps {
   segment: LibrarySegment;
-  buckets: ShowBuckets;
   searchParams: Record<string, string | string[] | undefined>;
+  /** Only the half being rendered is fetched, so the pages pass one or the other. */
+  data:
+    | { type: "shows"; buckets: ShowBuckets }
+    | { type: "movies"; buckets: MovieBuckets };
 }
 
 /**
@@ -30,14 +35,9 @@ interface LibraryScreenProps {
  */
 export function LibraryScreen({
   segment,
-  buckets,
   searchParams,
+  data,
 }: LibraryScreenProps) {
-  const { watchlist, paused, caughtUp, finished, stopped } = buckets;
-
-  const limit = (param: string) =>
-    limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
-
   return (
     <div>
       <PullToRefreshPage />
@@ -49,9 +49,44 @@ export function LibraryScreen({
       </div>
 
       <div className="mt-3.5">
-        <Segments segment={segment} />
+        <TypeSwitch segment={segment} type={data.type} />
       </div>
 
+      <div className="mt-2.5">
+        <Segments segment={segment} type={data.type} />
+      </div>
+
+      {data.type === "movies" ? (
+        <MoviesView
+          segment={segment}
+          buckets={data.buckets}
+          searchParams={searchParams}
+        />
+      ) : (
+        <ShowsView
+          segment={segment}
+          buckets={data.buckets}
+          searchParams={searchParams}
+        />
+      )}
+    </div>
+  );
+}
+
+interface ViewProps<B> {
+  segment: LibrarySegment;
+  buckets: B;
+  searchParams: Record<string, string | string[] | undefined>;
+}
+
+function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
+  const { watchlist, paused, caughtUp, finished, stopped } = buckets;
+
+  const limit = (param: string) =>
+    limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
+
+  return (
+    <>
       {segment === "watchlist" ? (
         <>
           <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
@@ -163,7 +198,94 @@ export function LibraryScreen({
           ) : null}
         </>
       )}
-    </div>
+    </>
+  );
+}
+
+function MoviesView({
+  segment,
+  buckets,
+  searchParams,
+}: ViewProps<MovieBuckets>) {
+  const { watchlist, watched, notInterested } = buckets;
+
+  const limit = (param: string) =>
+    limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
+
+  if (segment === "watchlist") {
+    return (
+      <>
+        <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
+          Movies you want to watch.
+        </p>
+
+        <div className="mt-[18px]">
+          {watchlist.length === 0 ? (
+            <EmptyState
+              title="Watchlist is empty"
+              description="Add movies here when you want to remember to watch them later."
+              icon="bookmark"
+              action={<FindShowButton label="Find a movie" />}
+            />
+          ) : (
+            <MovieList
+              movies={watchlist}
+              detail="released"
+              param="movieWatchlist"
+              searchParams={searchParams}
+              limit={limit("movieWatchlist")}
+            />
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {watched.length === 0 && notInterested.length === 0 ? (
+        <div className="mt-[18px]">
+          <EmptyState
+            title="Nothing archived yet"
+            description="Movies land here when you mark them watched, or when you decide they aren't for you."
+            icon="archive"
+          />
+        </div>
+      ) : null}
+
+      {watched.length > 0 ? (
+        <Section
+          title="Watched"
+          description="Movies you've seen, most recent first."
+          first
+        >
+          <MovieList
+            movies={watched}
+            detail="watched"
+            param="movieWatched"
+            searchParams={searchParams}
+            limit={limit("movieWatched")}
+          />
+        </Section>
+      ) : null}
+
+      {notInterested.length > 0 ? (
+        <Section
+          title="Not interested"
+          description="Set aside for good. Move one back to the watchlist any time."
+          first={watched.length === 0}
+        >
+          <MovieList
+            movies={notInterested}
+            tone="sunken"
+            detail="released"
+            param="movieNotInterested"
+            searchParams={searchParams}
+            limit={limit("movieNotInterested")}
+          />
+        </Section>
+      ) : null}
+    </>
   );
 }
 
@@ -190,40 +312,100 @@ function Section({
 }
 
 /**
+ * Shows / Movies, as links like the segments below.
+ *
+ * Shows is the bare route and Movies adds `?type=movies`, so the default URL
+ * is unchanged and a visitor who never touches the switch never sees a param.
+ * Staying on the same segment is the point: Archive → Movies is the movie
+ * archive, not a jump back to the watchlist.
+ */
+function TypeSwitch({
+  segment,
+  type,
+}: {
+  segment: LibrarySegment;
+  type: LibraryType;
+}) {
+  const OPTIONS = [
+    { id: "shows", label: "Shows", href: `/${segment}` },
+    { id: "movies", label: "Movies", href: `/${segment}?type=movies` },
+  ] as const;
+
+  return (
+    <div className="flex gap-[3px] rounded-[13px] border border-border bg-surface-sunken p-[3px]">
+      {OPTIONS.map((option) => (
+        <PillLink
+          key={option.id}
+          href={option.href}
+          active={option.id === type}
+        >
+          {option.label}
+        </PillLink>
+      ))}
+    </div>
+  );
+}
+
+/**
  * The two segments, as links.
  *
  * Links rather than a client-side tablist: each one is a real route that
  * already renders the right half, so this needs no JavaScript and the back
  * button does the obvious thing. Search params are deliberately *not* carried
  * across — they page the lists of whichever segment you are leaving, and a
- * `?finished=30` arriving on the watchlist means nothing.
+ * `?finished=30` arriving on the watchlist means nothing. The one exception is
+ * the Shows/Movies choice, which isn't paging state: dropping it would bounce a
+ * movie browser back to shows every time they changed segment. So the movies
+ * links carry `type=movies` and nothing else.
  */
-function Segments({ segment }: { segment: LibrarySegment }) {
+function Segments({
+  segment,
+  type,
+}: {
+  segment: LibrarySegment;
+  type: LibraryType;
+}) {
+  const suffix = type === "movies" ? "?type=movies" : "";
   const SEGMENTS = [
-    { id: "watchlist", label: "Watchlist", href: "/watchlist" },
-    { id: "archive", label: "Archive", href: "/archive" },
+    { id: "watchlist", label: "Watchlist", href: `/watchlist${suffix}` },
+    { id: "archive", label: "Archive", href: `/archive${suffix}` },
   ] as const;
 
   return (
     <div className="flex gap-[3px] rounded-[13px] border border-border bg-surface-sunken p-[3px]">
-      {SEGMENTS.map((option) => {
-        const active = option.id === segment;
-
-        return (
-          <Link
-            key={option.id}
-            href={option.href}
-            aria-current={active ? "page" : undefined}
-            className={`flex min-h-10 flex-1 items-center justify-center rounded-[10px] text-[13px] font-medium transition-colors ${
-              active
-                ? "bg-surface-raised text-foreground shadow-[0_1px_2px_rgba(0,0,0,.12)]"
-                : "text-muted"
-            }`}
-          >
-            {option.label}
-          </Link>
-        );
-      })}
+      {SEGMENTS.map((option) => (
+        <PillLink
+          key={option.id}
+          href={option.href}
+          active={option.id === segment}
+        >
+          {option.label}
+        </PillLink>
+      ))}
     </div>
+  );
+}
+
+function PillLink({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`flex min-h-10 flex-1 items-center justify-center rounded-[10px] text-[13px] font-medium transition-colors ${
+        active
+          ? "bg-surface-raised text-foreground shadow-[0_1px_2px_rgba(0,0,0,.12)]"
+          : "text-muted"
+      }`}
+    >
+      {children}
+    </Link>
   );
 }

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { searchSuggestions, type SearchSuggestion } from "@/app/actions";
 import { AddButton } from "@/components/add-button";
+import { MovieAddButton } from "@/components/movie-add-button";
 import { Poster } from "@/components/poster";
 import { StatusBadge } from "@/components/status-badge";
 
@@ -104,18 +105,18 @@ export function SearchOverlay({
     };
   }, [query]);
 
-  function openShow(id: string) {
+  function open(kind: SearchSuggestion["kind"], id: string) {
     // Remembered on the way out rather than as you type, so the chips hold
     // searches that went somewhere instead of every prefix of them.
     onRemember(trimmedQuery);
     onClose();
-    router.push(`/show/${id}`);
+    router.push(kind === "movie" ? `/movie/${id}` : `/show/${id}`);
   }
 
   return (
     <dialog
       ref={dialogRef}
-      aria-label="Search shows"
+      aria-label="Search shows and movies"
       onCancel={(event) => {
         // Escape closes the dialog without telling the parent otherwise,
         // leaving the state that renders it still true.
@@ -134,8 +135,8 @@ export function SearchOverlay({
               type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search for a show…"
-              aria-label="Show title"
+              placeholder="Search for a show or movie…"
+              aria-label="Search query"
               className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-faint"
             />
 
@@ -203,13 +204,13 @@ export function SearchOverlay({
 
           {!trimmedQuery && recent.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted">
-              Search TMDB for any show, then add it to your watchlist.
+              Search TMDB for any show or movie, then add it to your lists.
             </p>
           ) : null}
 
           {!error && trimmedQuery && !loading && results.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted">
-              No shows found for “{trimmedQuery}”.
+              No results for “{trimmedQuery}”.
             </p>
           ) : null}
 
@@ -222,12 +223,12 @@ export function SearchOverlay({
           <ul className="px-4">
             {results.map((result) => (
               <li
-                key={result.id}
+                key={`${result.kind}-${result.id}`}
                 className="flex items-center gap-3 border-b border-border-faint py-2.5"
               >
                 <button
                   type="button"
-                  onClick={() => openShow(result.id)}
+                  onClick={() => open(result.kind, result.id)}
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
                 >
                   <Poster
@@ -245,19 +246,30 @@ export function SearchOverlay({
                       <span className="min-w-0 truncate text-[15px] font-medium">
                         {result.name}
                       </span>
+                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.08em] text-faint">
+                        {result.kind === "movie" ? "Movie" : "TV"}
+                      </span>
                       <StatusBadge status={result.status} />
                     </span>
                     <span className="text-xs text-faint">
-                      {result.firstAirYear ?? "Year unknown"}
+                      {result.year ?? "Year unknown"}
                     </span>
                   </span>
                 </button>
 
-                <AddButton
-                  showId={result.id}
-                  status={result.status}
-                  variant="icon"
-                />
+                {result.kind === "movie" ? (
+                  <MovieAddButton
+                    movieId={result.id}
+                    status={result.status}
+                    variant="icon"
+                  />
+                ) : (
+                  <AddButton
+                    showId={result.id}
+                    status={result.status}
+                    variant="icon"
+                  />
+                )}
               </li>
             ))}
           </ul>

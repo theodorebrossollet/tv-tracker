@@ -14,3 +14,12 @@
 export function isTmdbShowId(value: string): boolean {
   return /^\d+$/.test(value);
 }
+
+/**
+ * TMDB movie ids are the same decimal integers, and carry the same risk when
+ * interpolated into `/movie/${id}`. A separate name rather than reusing
+ * `isTmdbShowId`, so a call site says which kind of id it holds.
+ */
+export function isTmdbMovieId(value: string): boolean {
+  return /^\d+$/.test(value);
+}

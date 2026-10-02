@@ -66,6 +66,7 @@ model User {
   createdAt DateTime @default(now())
 
   trackedShows    TrackedShow[]
+  trackedMovies   TrackedMovie[]
   watchedEpisodes WatchedEpisode[]
   settings        Settings?
   sessions        Session[]
@@ -139,7 +140,7 @@ model Episode {
   runtime       Int?
   overview      String?
 
-  show    Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
+  show    Show             @relation(fields: [showId], references: [id], onDelete: Cascade)
   watched WatchedEpisode[]
 
   /// Composite rather than `showId` alone: both episode-list reads filter by
@@ -168,6 +169,55 @@ model TrackedShow {
   @@unique([userId, showId])
   /// The cron reads every tracked showId across all users.
   @@index([showId])
+}
+
+/// A movie as cached from TMDB. Populated when a movie is first tracked, for the
+/// same reason as `Show`. Its own table rather than a kind of `Show`: TMDB movie
+/// and TV ids overlap numerically, and a movie has no episodes to sync, so the
+/// cron never touches this table.
+model Movie {
+  id         String   @id // TMDB movie id, stored as a string
+  title      String
+  posterPath String?
+  overview   String?
+  lastSynced DateTime @default(now()) // last refresh of the details from TMDB
+
+  /// Who first caused this movie to be cached, and when. Only there to bound how
+  /// many *new* movies one account can pull from TMDB per hour, on its own
+  /// allowance separate from `Show`'s. Null on rows that predate it.
+  addedById String?
+  createdAt DateTime?
+
+  releaseDate DateTime?
+  /// Minutes.
+  runtime     Int?
+  /// TMDB's release status ("Released", "Post Production", ...); don't rely on
+  /// any particular value existing.
+  status      String?
+  /// Comma-separated, as on `Show`.
+  genres      String?
+
+  tracked TrackedMovie[]
+
+  @@index([addedById, createdAt])
+}
+
+/// A movie on one user's watchlist, watched list or not-interested list.
+model TrackedMovie {
+  id        String    @id @default(cuid())
+  movieId   String
+  userId    String
+  status    String // "watchlist" | "watched" | "not_interested"
+  addedAt   DateTime  @default(now())
+  /// Set when the status becomes "watched" and cleared when it moves away.
+  watchedAt DateTime?
+
+  movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Two people may track the same movie; one person may not track it twice.
+  @@unique([userId, movieId])
+  @@index([movieId])
 }
 
 /// Marks one episode as watched. Presence of the row is the "watched" flag.
@@ -199,7 +249,7 @@ model Settings {
   /// already on one of these, for a "just VPN there" note on the show page —
   /// see docs/scope.md for why that's currently left as UI copy rather than
   /// gated behind anything, and revisit if this ever isn't friends and family.
-  providerIds   String?
+  providerIds String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

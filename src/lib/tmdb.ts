@@ -19,12 +19,15 @@ export class TmdbError extends Error {
   }
 }
 
-export interface TmdbSearchResult {
+export interface TmdbMultiSearchResult {
+  kind: "tv" | "movie";
   id: number;
+  /** A show's `name` or a movie's `title`. */
   name: string;
   posterPath: string | null;
   overview: string | null;
-  firstAirYear: string | null;
+  /** First air year for a show, release year for a movie. */
+  year: string | null;
 }
 
 export interface TmdbShowDetails {
@@ -38,6 +41,20 @@ export interface TmdbShowDetails {
   /** "Ended" | "Returning Series" | "In Production" in practice. */
   status: string | null;
   network: string | null;
+  /** Comma-separated, in TMDB's own order. */
+  genres: string | null;
+}
+
+export interface TmdbMovieDetails {
+  id: number;
+  title: string;
+  posterPath: string | null;
+  overview: string | null;
+  releaseDate: Date | null;
+  /** Minutes, when TMDB knows it. */
+  runtime: number | null;
+  /** "Released" | "Post Production" | "In Production" and so on. */
+  status: string | null;
   /** Comma-separated, in TMDB's own order. */
   genres: string | null;
 }
@@ -284,16 +301,6 @@ function parseAirDate(value: string | null | undefined): Date | null {
   return settled;
 }
 
-interface RawSearchResponse {
-  results: Array<{
-    id: number;
-    name: string;
-    poster_path: string | null;
-    overview: string | null;
-    first_air_date?: string | null;
-  }>;
-}
-
 /**
  * Short, because a search result is the one thing here that genuinely changes:
  * a new show appears the day TMDB adds it. A minute is long enough to cover
@@ -308,32 +315,57 @@ interface RawSearchResponse {
  */
 const SEARCH_CACHE_SECONDS = 60;
 
-export async function searchTvShows(
+interface RawMultiSearchResponse {
+  results: Array<{
+    media_type: string;
+    id: number;
+    name?: string;
+    title?: string;
+    poster_path: string | null;
+    overview: string | null;
+    first_air_date?: string | null;
+    release_date?: string | null;
+  }>;
+}
+
+/**
+ * Shows and movies in one search, for the overlay. `/search/multi` also returns
+ * people, which have nothing to track, so they are dropped here rather than at
+ * every caller. Shares `SEARCH_CACHE_SECONDS` and its reasoning.
+ */
+export async function searchMulti(
   query: string,
-): Promise<TmdbSearchResult[]> {
+): Promise<TmdbMultiSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  // Keyed on the exact query string, so two people searching the same title
-  // within the window share one request. Case included: TMDB treats "The Wire"
-  // and "the wire" as the same search, but folding them here would be this
-  // module deciding that on its behalf.
-  const data = await cached(`search:${trimmed}`, SEARCH_CACHE_SECONDS, () =>
-    tmdbFetch<RawSearchResponse>("/search/tv", {
-      query: trimmed,
-      include_adult: "false",
-    }),
+  const data = await cached(
+    `search-multi:${trimmed}`,
+    SEARCH_CACHE_SECONDS,
+    () =>
+      tmdbFetch<RawMultiSearchResponse>("/search/multi", {
+        query: trimmed,
+        include_adult: "false",
+      }),
   );
 
-  return data.results.map((result) => ({
-    id: result.id,
-    name: result.name,
-    posterPath: result.poster_path,
-    overview: result.overview || null,
-    firstAirYear: result.first_air_date
-      ? result.first_air_date.slice(0, 4)
-      : null,
-  }));
+  return data.results.flatMap((result): TmdbMultiSearchResult[] => {
+    if (result.media_type !== "tv" && result.media_type !== "movie") return [];
+
+    const isMovie = result.media_type === "movie";
+    const date = isMovie ? result.release_date : result.first_air_date;
+
+    return [
+      {
+        kind: result.media_type,
+        id: result.id,
+        name: (isMovie ? result.title : result.name) ?? "",
+        posterPath: result.poster_path,
+        overview: result.overview || null,
+        year: date ? date.slice(0, 4) : null,
+      },
+    ];
+  });
 }
 
 interface RawShowResponse {
@@ -381,6 +413,41 @@ export async function getShowDetails(
     status: data.status || null,
     // Primary network only; TMDB lists co-producers that add noise.
     network: data.networks?.[0]?.name ?? null,
+    genres: data.genres?.length
+      ? data.genres.map((genre) => genre.name).join(", ")
+      : null,
+  };
+}
+
+interface RawMovieResponse {
+  id: number;
+  title: string;
+  poster_path: string | null;
+  overview: string | null;
+  release_date: string | null;
+  runtime?: number | null;
+  status: string | null;
+  genres?: Array<{ name: string }>;
+}
+
+export async function getMovieDetails(
+  tmdbMovieId: string | number,
+): Promise<TmdbMovieDetails> {
+  const data = await tmdbFetch<RawMovieResponse>(`/movie/${tmdbMovieId}`);
+
+  return {
+    id: data.id,
+    title: data.title,
+    // Not validated, for the same reason as a show's: `next.config.ts`'s
+    // `remotePatterns` is the guarantee. See `getShowDetails`.
+    posterPath: data.poster_path,
+    overview: data.overview || null,
+    // A plain calendar date, so it gets the same US-Eastern anchoring as an
+    // episode's air date.
+    releaseDate: parseAirDate(data.release_date),
+    // TMDB reports 0 for "unknown", which is not a film of no length.
+    runtime: data.runtime || null,
+    status: data.status || null,
     genres: data.genres?.length
       ? data.genres.map((genre) => genre.name).join(", ")
       : null,
