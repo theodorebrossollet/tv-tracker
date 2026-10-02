@@ -165,7 +165,7 @@ place in this codebase that can actually hit the cap. `getTrackedShows` binds
 These are noted in [scope.md](scope.md) under Phase 2 / "Ideas for the
 Future" — listed here too so this doc stays the single place to check:
 
-- Movies (search, tracking, watchlist)
+- Movies (search, tracking, watchlist) — core shipped; see the movies-core spec
 - Ratings — 1–5 rating per show/movie
 - Notes/reviews per episode or show
 - Stats dashboard (hours watched, favorite genres, etc.)

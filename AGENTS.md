@@ -1,7 +1,11 @@
 <!-- BEGIN:nextjs-agent-rules -->
+
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
 <!-- END:nextjs-agent-rules -->
 
 # TV Tracker — orientation
@@ -55,8 +59,12 @@ src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logg
                   modules; deliberately not "use server"),
                   up-next (what the show page says when nothing aired is left
                   to watch, and NEXT_UP_QUEUE — which lives here rather than
-                  beside its card for the reason below)
-prisma/           schema + migrations
+                  beside its card for the reason below),
+                  movies (movie cache + NEW_MOVIES_PER_HOUR), movie-status
+                  (movie status transitions), library-type (Library's `type`)
+src/app/movie/    movie page, /movie/[id]
+prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
+                  TrackedMovie — additive, so apply it BEFORE merging
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -64,6 +72,13 @@ scripts/          migrate, backup, one-off backfills, icon generation,
 public/sw.js      service worker: caches the app shell ONLY (see below)
 tests/            vitest
 ```
+
+Movies, in short: Library's `type` param (`?type=movies`, in KNOWN_PARAMS)
+selects Shows or Movies. Movies have their own hourly new-title allowance
+(60, `NEW_MOVIES_PER_HOUR`), separate from shows' 20. `searchSuggestions`
+returns a union discriminated by `kind`; TMDB movie and TV ids overlap
+numerically, so never look one up as the other — separate tables and routes
+(`/movie/[id]` vs `/show/[id]`) keep them apart.
 
 ## Rules that will bite you
 

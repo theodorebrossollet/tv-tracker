@@ -102,7 +102,9 @@ sheet offers the remaining transitions and "Remove".
 - `tmdb.ts`: movie multi-search and `getMovieDetails`, mapped the way show
   details are.
 - Server actions beside the show actions: add to watchlist, set status (which
-  also covers mark watched, including from an unadded movie), remove. Same session gate; adding an uncached movie counts against the movie allowance.
+  also covers mark watched, including from an unadded movie), remove. Same session gate; adding an uncached movie counts against the
+  movie allowance (60/hour, separate from shows' 20). Mark watched is
+  `setMovieStatus(id, "watched")`.
 - `queries.ts`: movie buckets for a user (watchlist, watched, not interested).
 
 ## Testing
