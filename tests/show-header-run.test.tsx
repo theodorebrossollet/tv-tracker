@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/actions", () => ({}));
@@ -51,21 +51,40 @@ describe("ShowHeader run label", () => {
     expect(screen.queryByText(/^Run \d/)).toBeNull();
   });
 
-  it("offers Start over from the pill when startOver is passed through", () => {
-    render(
-      <ShowHeader
-        showId="1399"
-        name="Severance"
-        posterPath={null}
-        metaLine={null}
-        watchedCount={3}
-        airedCount={6}
-        status="watching"
-        finished={false}
-        nextAiring={null}
-        startOver={{ watched: 3, aired: 6, runNumber: 1 }}
-      />,
-    );
-    expect(screen.queryByText("Start over")).toBeNull(); // sheet closed
+  describe("start over pass-through", () => {
+    function withStartOver(startOver?: {
+      watched: number;
+      aired: number;
+      runNumber: number | null;
+    }) {
+      render(
+        <ShowHeader
+          showId="1399"
+          name="Severance"
+          posterPath={null}
+          metaLine={null}
+          watchedCount={3}
+          airedCount={6}
+          status="watching"
+          finished={false}
+          nextAiring={null}
+          startOver={startOver}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Change status for Severance" }),
+      );
+    }
+
+    it("offers Start over in the opened pill when startOver is passed", () => {
+      withStartOver({ watched: 3, aired: 6, runNumber: 1 });
+      expect(screen.getByRole("button", { name: /Start over/ })).toBeTruthy();
+    });
+
+    it("offers no Start over in the opened pill without startOver", () => {
+      withStartOver(undefined);
+      expect(screen.getByText("Track Severance as")).toBeTruthy();
+      expect(screen.queryByText(/Start over/)).toBeNull();
+    });
   });
 });
