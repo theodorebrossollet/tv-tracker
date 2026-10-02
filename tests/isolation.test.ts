@@ -309,20 +309,31 @@ describe("list reads never cross accounts", () => {
   });
 
   it("does not take a show's finished state from another account", async () => {
-    await seedShow({ showId: "500", offsets: [-1], status: "watching", userId: A });
+    // The first seed creates the shared Show row (later upserts leave it
+    // alone), so the series must be ended here for a leak to matter.
+    await seedShow({
+      showId: "500",
+      offsets: [-1],
+      status: "watching",
+      showStatus: "Ended",
+      userId: A,
+    });
     await seedShow({
       showId: "500",
       offsets: [-1],
       status: "watching",
       watched: [0],
-      showStatus: "Ended",
       userId: B,
     });
     const list = await prisma.list.create({ data: { userId: A, name: "L" } });
     await prisma.listItem.create({ data: { listId: list.id, showId: "500" } });
 
     const detail = await getListDetail(A, list.id);
-    expect(detail?.items[0]).toMatchObject({ finished: false, watched: false });
+    expect(detail?.items[0]).toMatchObject({
+      status: "watching",
+      finished: false,
+      watched: false,
+    });
   });
 
   it("hides another account's lists from every list read", async () => {
