@@ -335,3 +335,47 @@ describe("removeMovie", () => {
     });
   });
 });
+
+describe("setMovieStatus and ratings", () => {
+  async function seedRated(status: MovieStatus, rating: number | null) {
+    await prisma.movie.create({ data: { id: "603", title: "Movie 603" } });
+    await prisma.trackedMovie.create({
+      data: {
+        userId: TEST_USER_ID,
+        movieId: "603",
+        status,
+        watchedAt: status === "watched" ? new Date() : null,
+        rating,
+      },
+    });
+  }
+
+  it.each(["watchlist", "not_interested"] as const)(
+    "clears the rating when a watched movie moves to %s",
+    async (target) => {
+      await seedRated("watched", 8);
+      expect(await setMovieStatus("603", target)).toEqual({ ok: true });
+      expect(await tracked("603")).toMatchObject({ status: target, rating: null });
+    },
+  );
+
+  it.each(["watchlist", "not_interested"] as const)(
+    "leaves the rating null moving from %s to watched",
+    async (from) => {
+      await seedRated(from, null);
+      expect(await setMovieStatus("603", "watched")).toEqual({ ok: true });
+      expect(await tracked("603")).toMatchObject({
+        status: "watched",
+        rating: null,
+      });
+    },
+  );
+
+  it("creates an unrated row for an untracked movie marked watched", async () => {
+    expect(await setMovieStatus("603", "watched")).toEqual({ ok: true });
+    expect(await tracked("603")).toMatchObject({
+      status: "watched",
+      rating: null,
+    });
+  });
+});

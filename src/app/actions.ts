@@ -393,7 +393,13 @@ export async function setMovieStatus(
       // thrown P2025; userId scopes it to the caller.
       await prisma.trackedMovie.updateMany({
         where: { userId: user.id, movieId },
-        data: { status, watchedAt: watchedAtFor(status, new Date()) },
+        data: {
+          status,
+          watchedAt: watchedAtFor(status, new Date()),
+          // A rating belongs to a watched movie: leaving "watched" drops it,
+          // and moving to "watched" doesn't touch it.
+          ...(status === "watched" ? {} : { rating: null }),
+        },
       });
     } else {
       await cacheAndTrackMovie(user.id, movieId, status);

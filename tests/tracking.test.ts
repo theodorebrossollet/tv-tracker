@@ -31,6 +31,8 @@ const {
   setSeasonWatched,
 } = await import("@/app/actions");
 
+const { prisma } = await import("@/lib/prisma");
+
 const { TEST_USER_ID, resetDatabase, seedShow, seedUser, statusOf, watchedCount } =
   await import("./helpers");
 
@@ -464,5 +466,73 @@ describe("racing writes", () => {
     expect(result.error).toBe("Something went wrong. Please try again.");
 
     create.mockRestore();
+  });
+});
+
+describe("ratings follow the watched mark", () => {
+  async function rating(episodeId: string) {
+    const row = await prisma.watchedEpisode.findFirst({
+      where: { userId: TEST_USER_ID, episodeId },
+    });
+    return row ? row.rating : "no row";
+  }
+
+  it("creates unrated rows when an episode is marked watched", async () => {
+    const { episodeIds } = await seedShow({ offsets: [-5], status: "watching" });
+    await markEpisodeWatched(episodeIds[0]);
+    expect(await rating(episodeIds[0])).toBeNull();
+  });
+
+  it("creates unrated rows when a season is marked watched", async () => {
+    const { episodeIds } = await seedShow({
+      offsets: [-5, -4],
+      status: "watching",
+    });
+    await setSeasonWatched("101", 1, true);
+    for (const id of episodeIds) expect(await rating(id)).toBeNull();
+  });
+
+  it("removes an episode's rating when it is unmarked", async () => {
+    const { episodeIds } = await seedShow({
+      offsets: [-5, -4],
+      status: "watching",
+      watched: [0, 1],
+    });
+    await prisma.watchedEpisode.updateMany({ data: { rating: 9 } });
+
+    await unmarkEpisodeWatched(episodeIds[0]);
+
+    expect(await rating(episodeIds[0])).toBe("no row");
+    expect(await rating(episodeIds[1])).toBe(9);
+
+    // Marking it again starts unrated.
+    await markEpisodeWatched(episodeIds[0]);
+    expect(await rating(episodeIds[0])).toBeNull();
+  });
+
+  it("removes every rating in a season but leaves other seasons", async () => {
+    const { episodeIds } = await seedShow({
+      offsets: [-5, -4],
+      status: "watching",
+      watched: [0, 1],
+    });
+    await prisma.episode.create({
+      data: {
+        id: "101-s2e1",
+        showId: "101",
+        seasonNumber: 2,
+        episodeNumber: 1,
+        airDate: new Date(Date.now() - 86_400_000),
+      },
+    });
+    await prisma.watchedEpisode.create({
+      data: { userId: TEST_USER_ID, episodeId: "101-s2e1" },
+    });
+    await prisma.watchedEpisode.updateMany({ data: { rating: 6 } });
+
+    await setSeasonWatched("101", 1, false);
+
+    for (const id of episodeIds) expect(await rating(id)).toBe("no row");
+    expect(await rating("101-s2e1")).toBe(6);
   });
 });
