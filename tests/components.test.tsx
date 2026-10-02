@@ -32,6 +32,7 @@ function show(id: string, status: TrackStatus = "watching"): TrackedShowSummary 
     showStatus: "Ended",
     lastWatchedAt: null,
     addedAt: new Date(),
+    ratingAverage: null,
     nextUnwatched: null,
   };
 }

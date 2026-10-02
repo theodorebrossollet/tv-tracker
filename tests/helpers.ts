@@ -134,3 +134,62 @@ export async function setWatchedAt(
     data: { watchedAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000) },
   });
 }
+
+/**
+ * Creates a show whose episodes span several seasons: `seasons[i]` is how many
+ * episodes season i+1 has. All of them have aired. Ids are `<showId>-s<S>e<E>`.
+ * Like `seedShow`, the shared Show row is only created by the first call.
+ */
+export async function seedSeasonedShow({
+  showId = "101",
+  seasons,
+  status = "watching",
+  userId = TEST_USER_ID,
+}: {
+  showId?: string;
+  seasons: number[];
+  status?: "watching" | "watchlist" | "paused" | "stopped" | null;
+  userId?: string;
+}) {
+  await prisma.show.upsert({
+    where: { id: showId },
+    create: { id: showId, name: "Seasoned Show" },
+    update: {},
+  });
+
+  for (const [s, count] of seasons.entries()) {
+    for (let e = 1; e <= count; e++) {
+      const id = `${showId}-s${s + 1}e${e}`;
+      await prisma.episode.upsert({
+        where: { id },
+        update: {},
+        create: {
+          id,
+          showId,
+          seasonNumber: s + 1,
+          episodeNumber: e,
+          name: `S${s + 1}E${e}`,
+          airDate: new Date(Date.now() - DAY_MS),
+          runtime: 45,
+        },
+      });
+    }
+  }
+
+  if (status) {
+    await prisma.trackedShow.upsert({
+      where: { userId_showId: { userId, showId } },
+      update: {},
+      create: { userId, showId, status },
+    });
+  }
+}
+
+/** Marks an episode watched for a user, optionally with a rating. */
+export async function watchEpisode(
+  episodeId: string,
+  rating: number | null = null,
+  userId = TEST_USER_ID,
+) {
+  await prisma.watchedEpisode.create({ data: { userId, episodeId, rating } });
+}

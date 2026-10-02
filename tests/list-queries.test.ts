@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 const { getListDetail, getLists, getListsForTitle, getShowBuckets } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
-const { TEST_USER_ID, resetDatabase, seedShow, seedUser } = await import(
+const { TEST_USER_ID, resetDatabase, seedSeasonedShow, seedShow, seedUser, watchEpisode } = await import(
   "./helpers"
 );
 
@@ -407,5 +407,56 @@ describe("getListsForTitle", () => {
     expect(await getListsForTitle(TEST_USER_ID, "movie", "7")).toEqual([
       { listId: list.id, name: "L", onList: true, itemId: movieItem.id },
     ]);
+  });
+});
+
+describe("getListDetail ratings", () => {
+  it("carries each item's own rating", async () => {
+    const list = await seedList("L");
+    await seedMovie("1");
+    await seedMovie("2");
+    await seedMovie("3");
+    await trackMovie("1", "watched");
+    await prisma.trackedMovie.update({
+      where: { userId_movieId: { userId: TEST_USER_ID, movieId: "1" } },
+      data: { rating: 7 },
+    });
+    await trackMovie("2", "watched"); // unrated
+    // movie 3 is untracked
+    await seedSeasonedShow({ showId: "50", seasons: [2, 2] });
+    await seedSeasonedShow({ showId: "51", seasons: [1], status: null });
+    await watchEpisode("50-s1e1", 10);
+    await watchEpisode("50-s2e1", 6);
+    await addMovie(list.id, "1");
+    await addMovie(list.id, "2");
+    await addMovie(list.id, "3");
+    await addShow(list.id, "50");
+    await addShow(list.id, "51");
+
+    const items = (await getListDetail(TEST_USER_ID, list.id))!.items;
+    const byKey = new Map(items.map((i) => [`${i.kind}:${i.titleId}`, i.rating]));
+    expect(byKey.get("movie:1")).toBe(7);
+    expect(byKey.get("movie:2")).toBeNull();
+    expect(byKey.get("movie:3")).toBeNull();
+    expect(byKey.get("show:50")).toBe(8);
+    expect(byKey.get("show:51")).toBeNull();
+  });
+
+  it("keeps a movie and a show sharing an id apart", async () => {
+    const list = await seedList("L");
+    await seedMovie("77");
+    await trackMovie("77", "watched");
+    await prisma.trackedMovie.update({
+      where: { userId_movieId: { userId: TEST_USER_ID, movieId: "77" } },
+      data: { rating: 3 },
+    });
+    await seedSeasonedShow({ showId: "77", seasons: [1] });
+    await watchEpisode("77-s1e1", 9);
+    await addMovie(list.id, "77");
+    await addShow(list.id, "77");
+
+    const items = (await getListDetail(TEST_USER_ID, list.id))!.items;
+    expect(items.find((i) => i.kind === "movie")!.rating).toBe(3);
+    expect(items.find((i) => i.kind === "show")!.rating).toBe(9);
   });
 });

@@ -53,6 +53,7 @@ function movie(over: Partial<MovieSummary> = {}): MovieSummary {
     status: "watchlist",
     watchedAt: null,
     addedAt: new Date("2026-01-01T00:00:00Z"),
+    rating: null,
     ...over,
   };
 }

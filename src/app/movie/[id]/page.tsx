@@ -6,6 +6,7 @@ import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
+import { RatingStrip } from "@/components/rating-strip";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
@@ -119,6 +120,15 @@ export default async function MoviePage({ params }: MoviePageProps) {
           ) : null}
           <MarkMovieWatchedButton movieId={movie.id} />
         </div>
+      ) : null}
+
+      {movie.status === "watched" ? (
+        <section className="mt-5">
+          <h2 className="mb-2 text-xs font-medium leading-4 text-muted">
+            Your rating
+          </h2>
+          <RatingStrip kind="movie" id={movie.id} rating={movie.rating} />
+        </section>
       ) : null}
 
       {movie.overview ? (

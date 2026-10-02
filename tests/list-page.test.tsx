@@ -69,6 +69,7 @@ function item(over: Partial<ListItemView> = {}): ListItemView {
     tickedAt: null,
     watched: false,
     addedAt: new Date("2026-01-01T00:00:00Z"),
+    rating: null,
     ...over,
   };
 }

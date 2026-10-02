@@ -11,6 +11,7 @@ import {
 } from "@/components/next-up-card";
 import { RefreshStrip } from "@/components/refresh-strip";
 import { limitFrom } from "@/components/show-more-link";
+import { SeasonRatingLine } from "@/components/season-rating-line";
 import { ShowHeader } from "@/components/show-header";
 import {
   SeasonTabs,
@@ -32,6 +33,7 @@ import {
   findAlternateCountries,
   parseProviderIds,
 } from "@/lib/alternate-countries";
+import { coverageText } from "@/lib/ratings";
 import { getListsForTitle, getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
@@ -381,6 +383,18 @@ export default async function ShowPage({
         status={show.status}
         finished={finished}
         lists={lists}
+        rating={
+          show.ratingAverage !== null
+            ? {
+                average: show.ratingAverage,
+                coverage: coverageText(
+                  show.ratedCount,
+                  show.watchedEpisodeCount,
+                  "show",
+                ),
+              }
+            : null
+        }
         nextAiring={
           upcoming
             ? `${upcoming.code} airs ${formatAirDate(upcoming.date.toISOString())}`
@@ -415,6 +429,14 @@ export default async function ShowPage({
             params={params_}
           />
 
+          {season ? (
+            <SeasonRatingLine
+              average={season.ratingAverage}
+              rated={season.ratedCount}
+              watched={season.watchedEpisodeCount}
+            />
+          ) : null}
+
           <ul className="flex flex-col">
             {season?.episodes.map((episode) => (
               <EpisodeRow
@@ -428,6 +450,7 @@ export default async function ShowPage({
                 aired={episode.aired}
                 runtime={episode.runtime}
                 overview={episode.overview}
+                rating={episode.rating}
               />
             ))}
           </ul>

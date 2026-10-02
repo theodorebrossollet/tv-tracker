@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { AddToListButton } from "@/components/add-to-list-button";
 import { Poster } from "@/components/poster";
+import { RatingValue } from "@/components/rating-value";
 import { StatusMenu } from "@/components/status-sheet";
 import { progressPercent } from "@/lib/format";
 import { posterUrl } from "@/lib/images";
@@ -25,6 +26,8 @@ interface ShowHeaderProps {
    * Null or absent when the read failed: the button is then left out.
    */
   lists?: TitleListMembership[] | null;
+  /** The show average and, when partial, its coverage. Null/absent: nothing. */
+  rating?: { average: number; coverage: string | null } | null;
 }
 
 /**
@@ -49,6 +52,7 @@ export function ShowHeader({
   finished,
   nextAiring,
   lists,
+  rating,
 }: ShowHeaderProps) {
   const percent = progressPercent(watchedCount, airedCount);
   const backdrop = posterUrl(posterPath, "w500");
@@ -147,6 +151,17 @@ export function ShowHeader({
                   {percent}%
                 </span>
               </div>
+            ) : null}
+
+            {rating ? (
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px]">
+                <RatingValue value={rating.average} average />
+                {rating.coverage ? (
+                  <span className="font-mono text-[10.5px] text-faint">
+                    {rating.coverage}
+                  </span>
+                ) : null}
+              </p>
             ) : null}
 
             {nextAiring ? (

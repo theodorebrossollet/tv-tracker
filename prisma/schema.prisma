@@ -214,6 +214,9 @@ model TrackedMovie {
   addedAt   DateTime  @default(now())
   /// Set when the status becomes "watched" and cleared when it moves away.
   watchedAt DateTime?
+  /// 1–10, enforced by the actions; null means unrated; cleared when the title
+  /// stops being watched.
+  rating    Int?
 
   movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -273,6 +276,9 @@ model WatchedEpisode {
   episodeId String
   userId    String
   watchedAt DateTime @default(now())
+  /// 1–10, enforced by the actions; null means unrated; cleared when the title
+  /// stops being watched.
+  rating    Int?
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
