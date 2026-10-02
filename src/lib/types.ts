@@ -31,3 +31,25 @@ export function isTrackStatus(value: unknown): value is TrackStatus {
 
 /** Statuses that mean "set aside", as opposed to active or planned. */
 export const INACTIVE_STATUSES = ["paused", "stopped"] as const;
+
+/**
+ * Which list a movie is on.
+ *
+ * - `watchlist`      — want to see it
+ * - `watched`        — seen it
+ * - `not_interested` — decided against it
+ *
+ * Unlike a show, a movie has no in-between: there are no episodes to be
+ * partway through, so no status is ever derived from progress.
+ */
+export type MovieStatus = "watchlist" | "watched" | "not_interested";
+
+const MOVIE_STATUSES: readonly MovieStatus[] = [
+  "watchlist",
+  "watched",
+  "not_interested",
+];
+
+export function isMovieStatus(value: unknown): value is MovieStatus {
+  return MOVIE_STATUSES.includes(value as MovieStatus);
+}
