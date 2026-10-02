@@ -153,6 +153,27 @@ describe("shows and movies together", () => {
       expect(addMovieToWatchlist).toHaveBeenCalledWith("95396");
     });
   });
+
+  it("keeps a result's added state after the save finishes", async () => {
+    searchSuggestions.mockResolvedValue({ results: [MOVIE, RESULT] });
+    open();
+
+    type("sev");
+    await screen.findByText("Severance: The Movie");
+    const adds = screen.getAllByRole("button", { name: "Add to watchlist" });
+    fireEvent.click(adds[0]);
+    fireEvent.click(adds[1]);
+
+    // The results are a snapshot, so nothing re-reads the status for the
+    // button; it has to hold what the save returned. The badge only appears
+    // once that happens (the optimistic value never draws it).
+    await waitFor(() => {
+      expect(screen.getAllByText("Watchlist")).toHaveLength(2);
+    });
+    expect(
+      screen.getAllByRole("button", { name: "Remove on watchlist" }),
+    ).toHaveLength(2);
+  });
 });
 
 describe("recent searches", () => {

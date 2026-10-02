@@ -10,6 +10,7 @@ import { ListAddButton } from "@/components/list-add-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { Poster } from "@/components/poster";
 import { StatusBadge } from "@/components/status-badge";
+import type { MovieStatus, TrackStatus } from "@/lib/types";
 
 type Filter = "all" | "tv" | "movie";
 
@@ -74,10 +75,22 @@ export function SearchOverlay({
     error: string | null;
   }>({ query: "", filter: "all", results: [], error: null });
 
+  // Statuses set from the buttons since the results arrived. The results are a
+  // snapshot, so without this a button's optimistic value falls back to the
+  // fetched one the moment its save finishes.
+  const [statuses, setStatuses] = useState<
+    Record<string, TrackStatus | MovieStatus | null>
+  >({});
+
   const trimmedQuery = query.trim();
   const isStale = data.query !== trimmedQuery || data.filter !== filter;
   const loading = trimmedQuery !== "" && isStale;
-  const results = isStale ? [] : data.results;
+  const results = (isStale ? [] : data.results).map((result) => {
+    const key = `${result.kind}-${result.id}`;
+    if (!(key in statuses)) return result;
+    // A button only ever reports a status valid for its own kind.
+    return { ...result, status: statuses[key] } as SearchSuggestion;
+  });
   const error = isStale ? null : data.error;
 
   useEffect(() => {
@@ -304,12 +317,24 @@ export function SearchOverlay({
                         movieId={result.id}
                         status={result.status}
                         variant="icon"
+                        onStatusChange={(status) =>
+                          setStatuses((all) => ({
+                            ...all,
+                            [`${result.kind}-${result.id}`]: status,
+                          }))
+                        }
                       />
                     ) : (
                       <AddButton
                         showId={result.id}
                         status={result.status}
                         variant="icon"
+                        onStatusChange={(status) =>
+                          setStatuses((all) => ({
+                            ...all,
+                            [`${result.kind}-${result.id}`]: status,
+                          }))
+                        }
                       />
                     )}
                   </>

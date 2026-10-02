@@ -11,6 +11,12 @@ interface AddButtonProps {
   status: TrackStatus | null;
   /** `icon` is the bare circular +, for dense lists. */
   variant?: "icon" | "full";
+  /**
+   * Called once a save succeeds, with the status the title now has. For hosts
+   * that hold a snapshot of `status` (search results) and would otherwise hand
+   * the old one back when the optimistic value is dropped.
+   */
+  onStatusChange?: (status: TrackStatus | null) => void;
 }
 
 const LABELS: Record<TrackStatus, string> = {
@@ -29,6 +35,7 @@ export function AddButton({
   showId,
   status,
   variant = "full",
+  onStatusChange,
 }: AddButtonProps) {
   // Derived from the prop via useOptimistic, not copied into useState. The
   // status changes for reasons this button never sees — marking an episode
@@ -58,7 +65,9 @@ export function AddButton({
 
       // No manual rollback: when the transition ends the optimistic value is
       // dropped and the prop wins either way.
-      if (!result.ok) {
+      if (result.ok) {
+        onStatusChange?.(tracked ? null : "watchlist");
+      } else {
         setError(result.error ?? "Something went wrong.");
       }
     });
