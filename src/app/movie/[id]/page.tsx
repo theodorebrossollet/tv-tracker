@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AddToListButton } from "@/components/add-to-list-button";
 import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
-import { getMovieDetail } from "@/lib/queries";
+import { getListsForTitle, getMovieDetail } from "@/lib/queries";
 import { isTmdbMovieId } from "@/lib/show-id";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,9 @@ export default async function MoviePage({ params }: MoviePageProps) {
   // Falls back to TMDB for movies nobody has cached, so null means TMDB
   // doesn't know the id either.
   if (!movie) notFound();
+
+  // A read, never a write: viewing a page must not change anything.
+  const lists = await getListsForTitle(user.id, "movie", id);
 
   const year =
     movie.releaseDate && !Number.isNaN(movie.releaseDate.getTime())
@@ -73,14 +77,18 @@ export default async function MoviePage({ params }: MoviePageProps) {
           </svg>
         </Link>
 
-        {movie.status ? (
-          <MovieStatusMenu
-            movieId={movie.id}
-            title={movie.title}
-            status={movie.status}
-            variant="pill"
-          />
-        ) : null}
+        <div className="flex items-center gap-2">
+          <AddToListButton kind="movie" titleId={movie.id} lists={lists} />
+
+          {movie.status ? (
+            <MovieStatusMenu
+              movieId={movie.id}
+              title={movie.title}
+              status={movie.status}
+              variant="pill"
+            />
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-3 flex items-end gap-3.5">

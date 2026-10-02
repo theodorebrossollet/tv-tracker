@@ -1,10 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { AddToListButton } from "@/components/add-to-list-button";
 import { Poster } from "@/components/poster";
 import { StatusMenu } from "@/components/status-sheet";
 import { progressPercent } from "@/lib/format";
 import { posterUrl } from "@/lib/images";
+import type { TitleListMembership } from "@/lib/queries";
 import type { TrackStatus } from "@/lib/types";
 
 interface ShowHeaderProps {
@@ -18,6 +20,8 @@ interface ShowHeaderProps {
   finished: boolean;
   /** e.g. "S3E01 airs 21 Sep 2026". Omitted when nothing is scheduled. */
   nextAiring: string | null;
+  /** The caller's lists, for the "Add to list" control beside the status pill. */
+  lists: TitleListMembership[];
 }
 
 /**
@@ -41,6 +45,7 @@ export function ShowHeader({
   status,
   finished,
   nextAiring,
+  lists,
 }: ShowHeaderProps) {
   const percent = progressPercent(watchedCount, airedCount);
   const backdrop = posterUrl(posterPath, "w500");
@@ -88,13 +93,17 @@ export function ShowHeader({
             </svg>
           </Link>
 
-          <StatusMenu
-            showId={showId}
-            name={name}
-            status={status}
-            finished={finished}
-            variant="pill"
-          />
+          <div className="flex items-center gap-2">
+            <AddToListButton kind="show" titleId={showId} lists={lists} />
+
+            <StatusMenu
+              showId={showId}
+              name={name}
+              status={status}
+              finished={finished}
+              variant="pill"
+            />
+          </div>
         </div>
 
         <div className="mt-3 flex items-end gap-3.5">

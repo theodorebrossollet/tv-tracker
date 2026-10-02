@@ -32,7 +32,7 @@ import {
   findAlternateCountries,
   parseProviderIds,
 } from "@/lib/alternate-countries";
-import { getShowDetail } from "@/lib/queries";
+import { getListsForTitle, getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
 import { NEXT_UP_QUEUE, currentSeason, upNextState } from "@/lib/up-next";
@@ -103,11 +103,14 @@ export default async function ShowPage({
 
   let show: Awaited<ReturnType<typeof getShowDetail>>;
   let settings: Awaited<ReturnType<typeof getSettings>>;
+  let lists: Awaited<ReturnType<typeof getListsForTitle>>;
 
   try {
-    [show, settings] = await Promise.all([
+    // The lists are a read like the rest: an empty array is the normal case.
+    [show, settings, lists] = await Promise.all([
       getShowDetail(user.id, id),
       getSettings(user.id),
+      getListsForTitle(user.id, "show", id),
     ]);
   } catch (error) {
     if (error instanceof NewShowLimitError) {
@@ -371,6 +374,7 @@ export default async function ShowPage({
         airedCount={airedCount}
         status={show.status}
         finished={finished}
+        lists={lists}
         nextAiring={
           upcoming
             ? `${upcoming.code} airs ${formatAirDate(upcoming.date.toISOString())}`
