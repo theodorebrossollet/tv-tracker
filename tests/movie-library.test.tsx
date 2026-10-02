@@ -83,6 +83,22 @@ const hrefOf = (name: string) =>
   screen.getByRole("link", { name }).getAttribute("href");
 
 describe("the Shows/Movies switch and segments", () => {
+  it("puts the Shows/Movies switch in the header and the segments below it", () => {
+    renderMovies("watchlist");
+
+    const header = screen.getByRole("heading", {
+      name: "Library",
+    }).parentElement!;
+
+    expect(within(header).getByRole("link", { name: "Shows" })).toBeTruthy();
+    expect(within(header).getByRole("link", { name: "Movies" })).toBeTruthy();
+    expect(
+      within(header).queryByRole("link", { name: "Watchlist" }),
+    ).toBeNull();
+    expect(within(header).queryByRole("link", { name: "Archive" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Watchlist" })).toBeTruthy();
+  });
+
   it("links the switch to the bare segment and ?type=movies", () => {
     renderMovies("watchlist");
 
