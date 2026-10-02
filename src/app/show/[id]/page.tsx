@@ -9,6 +9,7 @@ import {
   NextUpCard,
   type NextUpEpisode,
 } from "@/components/next-up-card";
+import { PastRuns } from "@/components/past-runs";
 import { RefreshStrip } from "@/components/refresh-strip";
 import { limitFrom } from "@/components/show-more-link";
 import { SeasonRatingLine } from "@/components/season-rating-line";
@@ -148,6 +149,17 @@ export default async function ShowPage({
   // This page used to derive them, which put a second implementation of both
   // rules a directory away from the one the lists use — see the note there.
   const { airedCount, watchedCount, finished } = show;
+
+  // Only a show with watched episodes has anything to start over; the run
+  // number is withheld when the history couldn't be read.
+  const startOver =
+    watchedCount > 0
+      ? {
+          watched: watchedCount,
+          aired: airedCount,
+          runNumber: show.pastRuns === null ? null : show.runNumber,
+        }
+      : null;
 
   const allEpisodes = show.seasons.flatMap((entry) => entry.episodes);
 
@@ -382,6 +394,8 @@ export default async function ShowPage({
         airedCount={airedCount}
         status={show.status}
         finished={finished}
+        runNumber={show.pastRuns === null ? null : show.runNumber}
+        startOver={startOver}
         lists={lists}
         rating={
           show.ratingAverage !== null
@@ -454,6 +468,8 @@ export default async function ShowPage({
               />
             ))}
           </ul>
+
+          <PastRuns runs={show.pastRuns} />
         </div>
       ) : null}
 
@@ -526,6 +542,7 @@ export default async function ShowPage({
                 status={show.status}
                 finished={finished}
                 variant="pill"
+                startOver={startOver}
               />
             </div>
           </dl>

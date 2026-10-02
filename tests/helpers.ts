@@ -29,6 +29,9 @@ export async function seedUser(id = TEST_USER_ID) {
 
 /** Clears every table between tests, children first. */
 export async function resetDatabase() {
+  await prisma.archivedEpisodeWatch.deleteMany();
+  await prisma.showRun.deleteMany();
+  await prisma.pastMovieWatch.deleteMany();
   await prisma.listItem.deleteMany();
   await prisma.list.deleteMany();
   await prisma.trackedMovie.deleteMany();

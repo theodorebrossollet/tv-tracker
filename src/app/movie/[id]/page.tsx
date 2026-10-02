@@ -5,8 +5,10 @@ import { AddToListButton } from "@/components/add-to-list-button";
 import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
+import { PastWatches } from "@/components/past-watches";
 import { Poster } from "@/components/poster";
 import { RatingStrip } from "@/components/rating-strip";
+import { WatchAgainButton } from "@/components/watch-again-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
@@ -128,8 +130,17 @@ export default async function MoviePage({ params }: MoviePageProps) {
             Your rating
           </h2>
           <RatingStrip kind="movie" id={movie.id} rating={movie.rating} />
+          <div className="mt-3">
+            <WatchAgainButton
+              movieId={movie.id}
+              watchedAt={movie.watchedAt?.toISOString() ?? null}
+              rating={movie.rating}
+            />
+          </div>
         </section>
       ) : null}
+
+      <PastWatches watches={movie.pastWatches} />
 
       {movie.overview ? (
         <p className="mt-5 text-sm leading-[21px] text-muted">

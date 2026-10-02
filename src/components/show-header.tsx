@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ComponentProps } from "react";
 
 import { AddToListButton } from "@/components/add-to-list-button";
 import { Poster } from "@/components/poster";
@@ -28,6 +29,13 @@ interface ShowHeaderProps {
   lists?: TitleListMembership[] | null;
   /** The show average and, when partial, its coverage. Null/absent: nothing. */
   rating?: { average: number; coverage: string | null } | null;
+  /**
+   * Which run of the show this is. Labelled only above 1; null when the
+   * history couldn't be read, so no number is guessed.
+   */
+  runNumber?: number | null;
+  /** Passed straight to the pill's `StatusMenu`. */
+  startOver?: ComponentProps<typeof StatusMenu>["startOver"];
 }
 
 /**
@@ -53,6 +61,8 @@ export function ShowHeader({
   nextAiring,
   lists,
   rating,
+  runNumber,
+  startOver,
 }: ShowHeaderProps) {
   const percent = progressPercent(watchedCount, airedCount);
   const backdrop = posterUrl(posterPath, "w500");
@@ -111,6 +121,7 @@ export function ShowHeader({
               status={status}
               finished={finished}
               variant="pill"
+              startOver={startOver}
             />
           </div>
         </div>
@@ -150,6 +161,11 @@ export function ShowHeader({
                 <span className="font-mono text-[11px] text-accent-deep">
                   {percent}%
                 </span>
+                {runNumber != null && runNumber > 1 ? (
+                  <span className="font-mono text-[10.5px] text-faint">
+                    Run {runNumber}
+                  </span>
+                ) : null}
               </div>
             ) : null}
 

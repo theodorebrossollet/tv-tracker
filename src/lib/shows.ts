@@ -130,7 +130,10 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
   // "Watched" here means *by anybody*, not by a particular user — `none: {}`
   // rather than a userId filter. This runs from the cron with no session, and
   // deleting the episode would cascade away every user's watch row for it, so
-  // one person's history is enough to keep it.
+  // one person's history is enough to keep it. It also covers watches archived
+  // by a rewatch ("Start over" moves every current watch into
+  // `ArchivedEpisodeWatch`, which cascades on the episode), so "watched" means
+  // current OR archived.
   const removedIds = existing
     .filter((row) => !fetchedIds.has(row.id))
     .map((row) => row.id);
@@ -139,7 +142,11 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
     let deleted = 0;
     for (const batch of chunk(removedIds, WRITE_BATCH_SIZE)) {
       const { count } = await prisma.episode.deleteMany({
-        where: { id: { in: batch }, watched: { none: {} } },
+        where: {
+          id: { in: batch },
+          watched: { none: {} },
+          archivedWatches: { none: {} },
+        },
       });
       deleted += count;
     }

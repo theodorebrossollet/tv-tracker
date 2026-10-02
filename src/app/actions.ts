@@ -918,6 +918,9 @@ export async function clearAllData(): Promise<ActionResult> {
     // everyone's". In v1 these were bare deleteMany calls on tables that held
     // one user's rows; they are now shared.
     await prisma.$transaction([
+      // Runs take their archived watches with them (cascade).
+      prisma.showRun.deleteMany({ where: { userId: user.id } }),
+      prisma.pastMovieWatch.deleteMany({ where: { userId: user.id } }),
       prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
       prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
       prisma.trackedMovie.deleteMany({ where: { userId: user.id } }),

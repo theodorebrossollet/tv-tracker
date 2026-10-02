@@ -8,9 +8,6 @@ capture ideas as they come up, to revisit once the current phase is done.
 
 - **Shared watchlists** — let another user (friend/family) see or contribute to
   a watchlist, not just their own private one
-- **Rewatching** — mark a show/episode as watched again without losing the
-  original watch history (currently, watched state doesn't distinguish "first
-  watch" from "rewatch")
 - **Mobile app** — native app rather than the responsive web view (currently
   listed as explicitly out of scope in [scope.md](scope.md); revisit that if
   this gets prioritized)
@@ -168,7 +165,7 @@ Future" — listed here too so this doc stays the single place to check:
 - Movies (search, tracking, watchlist) — core shipped; see the movies-core spec
 - Lists — shipped; private per-account lists of movies and shows, see the lists spec
 - Ratings — shipped; 1–10 whole numbers, per movie and per episode, with season and show averages derived (see the ratings spec)
-- Rewatch tracking (runs for shows and movies, history kept)
+- Rewatch tracking — shipped; "Start over" for shows and "Watch again" for movies, old runs/watches kept as read-only history (see the rewatch spec)
 - Notes/reviews per episode or show
 - Stats dashboard (hours watched, favorite genres, etc.)
 - Notifications for new episodes of shows you're watching

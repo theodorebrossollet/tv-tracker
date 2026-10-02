@@ -5,6 +5,7 @@ import { cache } from "react";
 import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
 import { isListItemWatched, type ListKind } from "@/lib/lists";
+import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { seasonAverage, showAverage } from "@/lib/ratings";
 import { ensureShowCached } from "@/lib/shows";
@@ -527,6 +528,73 @@ function isFinished(airedCount: number, watchedCount: number): boolean {
   return airedCount > 0 && watchedCount === airedCount;
 }
 
+/** One archived run of a show, as the show page's history lists it. */
+export interface PastRun {
+  runNumber: number;
+  archivedAt: Date;
+  /** Earliest and latest archived watch; null when the run has no rows. */
+  firstWatchedAt: Date | null;
+  lastWatchedAt: Date | null;
+  episodeCount: number;
+  /** Mean of the run's season averages; null when it had no ratings. */
+  ratingAverage: number | null;
+}
+
+/**
+ * This account's archived runs of a show, newest first; `null` means the read
+ * failed (logged), which callers must treat as "unavailable", not "none".
+ *
+ * Secondary to the page, like the title pages' list read: code deployed before
+ * the rewatch migration drops the history instead of taking the page down.
+ * Filtered by the run's `userId`, and archived watches are reached ONLY through
+ * those runs: `Show` and `Episode` are shared between accounts. Nothing here
+ * feeds current progress; `WatchedEpisode` does that.
+ */
+async function loadPastRuns(
+  userId: string,
+  showId: string,
+): Promise<PastRun[] | null> {
+  try {
+    const runs = await prisma.showRun.findMany({
+      where: { userId, showId },
+      orderBy: { runNumber: "desc" },
+      include: {
+        archivedWatches: {
+          select: {
+            watchedAt: true,
+            rating: true,
+            episode: { select: { seasonNumber: true } },
+          },
+        },
+      },
+    });
+
+    return runs.map((run) => {
+      const times = run.archivedWatches.map((w) => w.watchedAt.getTime());
+      const bySeason = new Map<number, number[]>();
+      for (const w of run.archivedWatches) {
+        if (w.rating === null) continue;
+        const bucket = bySeason.get(w.episode.seasonNumber);
+        if (bucket) bucket.push(w.rating);
+        else bySeason.set(w.episode.seasonNumber, [w.rating]);
+      }
+      return {
+        runNumber: run.runNumber,
+        archivedAt: run.archivedAt,
+        firstWatchedAt: times.length ? new Date(Math.min(...times)) : null,
+        lastWatchedAt: times.length ? new Date(Math.max(...times)) : null,
+        episodeCount: run.archivedWatches.length,
+        ratingAverage: showAverage(
+          [...bySeason.values()].map((ratings) => seasonAverage(ratings)),
+        ),
+      };
+    });
+  } catch (error) {
+    logger.warn("rewatch.past_runs_failed", describeError(error));
+    return null;
+  }
+}
+
 /**
  * Full detail for one show, with episodes grouped into seasons.
  *
@@ -558,6 +626,8 @@ export const getShowDetail = cache(async function getShowDetail(
 
   const show = await loadShow(userId, showId);
   if (!show) return null;
+
+  const pastRuns = await loadPastRuns(userId, showId);
 
   // One clock reading for the whole derivation, so two episodes either side of
   // "now" can't be judged against different instants.
@@ -646,6 +716,9 @@ export const getShowDetail = cache(async function getShowDetail(
     ratedCount,
     watchedEpisodeCount,
     seasons: seasonSummaries,
+    /** Past runs + 1; 1 too when the history is unavailable. */
+    runNumber: (pastRuns?.length ?? 0) + 1,
+    pastRuns,
   };
 });
 
@@ -735,6 +808,12 @@ export async function getMovieBuckets(userId: string): Promise<MovieBuckets> {
   return buckets;
 }
 
+/** An earlier watch of a movie, archived by Watch again. */
+export interface PastWatch {
+  watchedAt: Date;
+  rating: number | null;
+}
+
 export interface MovieDetail {
   id: string;
   title: string;
@@ -749,6 +828,12 @@ export interface MovieDetail {
   watchedAt: Date | null;
   /** This account's 1-10 rating; null when unrated, untracked or uncached. */
   rating: number | null;
+  /**
+   * This account's earlier watches, newest first. `[]` when none, and for an
+   * untracked or uncached movie (a past watch needs a cached `Movie` row);
+   * `null` only when the read failed, which is logged.
+   */
+  pastWatches: PastWatch[] | null;
 }
 
 /**
@@ -775,6 +860,19 @@ export const getMovieDetail = cache(async function getMovieDetail(
 
   if (cached) {
     const mine = cached.tracked[0];
+    // Narrow try/catch around the new-table read only; see `loadPastRuns`.
+    // Filtered by `userId`: the movie is shared.
+    let pastWatches: PastWatch[] | null;
+    try {
+      pastWatches = await prisma.pastMovieWatch.findMany({
+        where: { userId, movieId },
+        orderBy: { watchedAt: "desc" },
+        select: { watchedAt: true, rating: true },
+      });
+    } catch (error) {
+      logger.warn("rewatch.past_watches_failed", describeError(error));
+      pastWatches = null;
+    }
     return {
       id: cached.id,
       title: cached.title,
@@ -786,6 +884,7 @@ export const getMovieDetail = cache(async function getMovieDetail(
       status: mine ? (mine.status as MovieStatus) : null,
       watchedAt: mine?.watchedAt ?? null,
       rating: mine?.rating ?? null,
+      pastWatches,
     };
   }
 
@@ -802,6 +901,7 @@ export const getMovieDetail = cache(async function getMovieDetail(
       status: null,
       watchedAt: null,
       rating: null,
+      pastWatches: [],
     };
   } catch (error) {
     if (error instanceof TmdbError && error.status === 404) return null;
