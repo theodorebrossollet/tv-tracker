@@ -47,6 +47,9 @@ export const KNOWN_PARAMS = [
   "movieWatchlist",
   "movieWatched",
   "movieNotInterested",
+  // A list's page — its unwatched titles, then its watched ones.
+  "listToWatch",
+  "listWatched",
   // Settings.
   "providers",
 ] as const;
