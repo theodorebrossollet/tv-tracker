@@ -43,3 +43,18 @@ describe("isMovieStatus", () => {
     expect(isMovieStatus(v)).toBe(false);
   });
 });
+
+describe("splitByRelease", () => {
+  it("treats past dates as released and future or missing dates as not", async () => {
+    const { splitByRelease } = await import("@/lib/movie-status");
+    const now = new Date("2026-06-01T00:00:00Z");
+    const out = { releaseDate: new Date("2020-01-01T00:00:00Z") };
+    const soon = { releaseDate: new Date("2027-01-01T00:00:00Z") };
+    const undated = { releaseDate: null };
+
+    expect(splitByRelease([out, soon, undated], now)).toEqual({
+      released: [out],
+      unreleased: [soon, undated],
+    });
+  });
+});

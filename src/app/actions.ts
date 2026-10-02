@@ -15,7 +15,11 @@ import { cacheNewMovie, syncMovieFromTmdb } from "@/lib/movies";
 import { prisma } from "@/lib/prisma";
 import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 import { cacheNewShow, refreshShowDeduped, syncShowFromTmdb } from "@/lib/shows";
-import { searchMulti, type TmdbMultiSearchResult } from "@/lib/tmdb";
+import {
+  searchMulti,
+  type SearchFilter,
+  type TmdbMultiSearchResult,
+} from "@/lib/tmdb";
 import { isMovieStatus, type MovieStatus, type TrackStatus } from "@/lib/types";
 
 // Every write in the app that isn't an account operation — those live in
@@ -106,6 +110,7 @@ export type SearchSuggestion =
 export async function searchSuggestions(
   query: string,
   listId?: string,
+  filter: SearchFilter = "all",
 ): Promise<{ results?: SearchSuggestion[]; error?: string }> {
   const { user } = await requireOnboardedSession();
 
@@ -132,13 +137,18 @@ export async function searchSuggestions(
 
   let found: TmdbMultiSearchResult[];
   try {
-    found = await searchMulti(trimmed);
+    // Actions are POST-able directly, so anything but the two known kinds
+    // falls back to the mixed search.
+    found = await searchMulti(
+      trimmed,
+      filter === "tv" || filter === "movie" ? filter : "all",
+    );
   } catch (error) {
     return { error: toResult(error).error };
   }
 
-  // Capped before the lookups so they only cover rows that will be returned.
-  const results = found.slice(0, 12);
+  // `searchMulti` already caps the list; the lookups below cover just those.
+  const results = found;
 
   // Deliberately NOT guarded, unlike the cosmetic movie badges below: the
   // overlay uses this to decide what can still be added, so a failure that

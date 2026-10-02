@@ -14,7 +14,7 @@ interface LibraryListProps {
    */
   tone?: "card" | "sunken";
   /** What to show under the title. */
-  detail?: "available" | "progress";
+  detail?: "available" | "progress" | "unaired";
   /** Puts an accent tick before the counter, for the Finished section. */
   tick?: boolean;
   /** Search-param name this list expands with — unique per list on a page. */
@@ -76,7 +76,9 @@ export function LibraryList({
                 {tick ? <CheckIcon className="size-[11px] text-accent" /> : null}
                 {detail === "progress"
                   ? `${show.watchedCount} / ${show.airedCount} watched`
-                  : `${show.airedCount} episode${
+                  : detail === "unaired"
+                    ? "Not aired yet"
+                    : `${show.airedCount} episode${
                       show.airedCount === 1 ? "" : "s"
                     } available`}
                 {show.ratingAverage !== null ? (

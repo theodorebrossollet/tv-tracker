@@ -13,3 +13,8 @@ export function posterUrl(
 ): string | null {
   return path ? `${IMAGE_BASE}/${size}${path}` : null;
 }
+
+/** A cast member's photo, or null when TMDB has none. */
+export function profileUrl(path: string | null | undefined): string | null {
+  return path ? `${IMAGE_BASE}/w185${path}` : null;
+}

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAllEpisodes,
   getMovieDetails,
+  getMovieExtras,
   getSeasonEpisodes,
   getShowTrailer,
   getWatchProviderList,
@@ -328,7 +329,8 @@ describe("response cache", () => {
     await searchMulti("the wire");
     await searchMulti("the wire");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Two pages, once.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("keys searches by query, so a different title still asks", async () => {
@@ -337,7 +339,7 @@ describe("response cache", () => {
     await searchMulti("severance");
     await searchMulti("succession");
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("shares one request between callers that miss together", async () => {
@@ -640,7 +642,7 @@ describe("multi search", () => {
     await searchMulti("  multi-cache ");
     await searchMulti("multi-cache");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const [url] = fetchMock.mock.calls[0] as unknown as [URL];
     expect(url.pathname).toBe("/3/search/multi");
     expect(url.searchParams.get("query")).toBe("multi-cache");
@@ -711,6 +713,200 @@ describe("movie details", () => {
       overview: null,
       status: null,
       releaseDate: null,
+    });
+  });
+});
+
+describe("search pages and filters", () => {
+  const hit = (id: number, kind = "tv") => ({
+    media_type: kind,
+    id,
+    ...(kind === "movie" ? { title: `M${id}` } : { name: `S${id}` }),
+    poster_path: null,
+    overview: "",
+  });
+
+  /** A fetch that answers page 1 and page 2 differently. */
+  function mockPages(pages: Record<string, unknown>) {
+    const fetchMock = vi.fn(async (url: URL) => ({
+      ok: true,
+      status: 200,
+      json: async () => pages[url.searchParams.get("page") ?? "1"] ?? { results: [] },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("reads two pages and joins them in order", async () => {
+    const fetchMock = mockPages({
+      "1": { results: [hit(1), hit(2)] },
+      "2": { results: [hit(3)] },
+    });
+
+    const results = await searchMulti("pages-join");
+
+    expect(results.map((r) => r.id)).toEqual([1, 2, 3]);
+    const pages = fetchMock.mock.calls.map(([url]) => url.searchParams.get("page"));
+    expect(pages).toEqual(["1", "2"]);
+  });
+
+  it("drops a title that shows up on both pages", async () => {
+    mockPages({
+      "1": { results: [hit(1), hit(2)] },
+      "2": { results: [hit(2), hit(3)] },
+    });
+
+    const results = await searchMulti("pages-dupes");
+
+    expect(results.map((r) => r.id)).toEqual([1, 2, 3]);
+  });
+
+  it("keeps a show and a movie that share an id", async () => {
+    mockPages({ "1": { results: [hit(5, "tv"), hit(5, "movie")] } });
+
+    expect((await searchMulti("pages-sameid")).map((r) => r.kind)).toEqual([
+      "tv",
+      "movie",
+    ]);
+  });
+
+  it("caps a mixed search at 30", async () => {
+    mockPages({
+      "1": { results: Array.from({ length: 20 }, (_, i) => hit(i + 1)) },
+      "2": { results: Array.from({ length: 20 }, (_, i) => hit(i + 21)) },
+    });
+
+    expect(await searchMulti("pages-cap")).toHaveLength(30);
+  });
+
+  it("still returns page one when page two fails", async () => {
+    const fetchMock = vi.fn(async (url: URL) => {
+      if (url.searchParams.get("page") === "2") throw new Error("down");
+      return { ok: true, status: 200, json: async () => ({ results: [hit(1)] }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect((await searchMulti("pages-fail2")).map((r) => r.id)).toEqual([1]);
+  });
+
+  it("fails when page one fails", async () => {
+    mockFetch({}, { ok: false, status: 500 });
+
+    await expect(searchMulti("pages-fail1")).rejects.toBeInstanceOf(TmdbError);
+  });
+
+  it("uses TMDB's own show endpoint for the Shows filter", async () => {
+    // Per-kind endpoints carry no `media_type`; the filter supplies the kind.
+    const fetchMock = mockPages({
+      "1": { results: [{ id: 9, name: "Only Shows", poster_path: null, overview: "", first_air_date: "2020-01-01" }] },
+    });
+
+    const results = await searchMulti("filter-tv", "tv");
+
+    expect(results).toEqual([
+      { kind: "tv", id: 9, name: "Only Shows", posterPath: null, overview: null, year: "2020" },
+    ]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(url.pathname).toBe("/3/search/tv");
+  });
+
+  it("uses TMDB's own movie endpoint for the Movies filter", async () => {
+    const fetchMock = mockPages({
+      "1": { results: [{ id: 4, title: "Only Movies", poster_path: null, overview: "", release_date: "2001-02-03" }] },
+    });
+
+    const results = await searchMulti("filter-movie", "movie");
+
+    expect(results[0]).toMatchObject({ kind: "movie", id: 4, name: "Only Movies", year: "2001" });
+    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(url.pathname).toBe("/3/search/movie");
+  });
+
+  it("caches each filter separately", async () => {
+    const fetchMock = mockPages({ "1": { results: [] } });
+
+    await searchMulti("filter-cache", "tv");
+    await searchMulti("filter-cache", "movie");
+    await searchMulti("filter-cache", "tv");
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("movie extras", () => {
+  const extras = (overrides: Record<string, unknown> = {}) => ({
+    tagline: "Welcome to the real world.",
+    vote_average: 8.2349,
+    vote_count: 25000,
+    belongs_to_collection: { name: "The Matrix Collection" },
+    credits: {
+      cast: [
+        { id: 2, name: "Second", character: "B", profile_path: null, order: 1 },
+        { id: 1, name: "First", character: "A", profile_path: "/a.jpg", order: 0 },
+      ],
+      crew: [
+        { name: "Lana", job: "Director" },
+        { name: "Someone", job: "Producer" },
+        { name: "Lilly", job: "Director" },
+      ],
+    },
+    videos: {
+      results: [
+        { key: "abc123", name: "Official Trailer", site: "YouTube", type: "Trailer", official: true },
+      ],
+    },
+    ...overrides,
+  });
+
+  it("maps tagline, score, franchise, directors, cast and trailer from one request", async () => {
+    const fetchMock = mockFetch(extras());
+
+    expect(await getMovieExtras(900)).toEqual({
+      tagline: "Welcome to the real world.",
+      score: 8.2,
+      voteCount: 25000,
+      collection: "The Matrix Collection",
+      directors: ["Lana", "Lilly"],
+      cast: [
+        { id: 1, name: "First", character: "A", profilePath: "/a.jpg" },
+        { id: 2, name: "Second", character: "B", profilePath: null },
+      ],
+      trailer: { key: "abc123", name: "Official Trailer", type: "Trailer" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
+    expect(url.pathname).toBe("/3/movie/900");
+    expect(url.searchParams.get("append_to_response")).toBe("credits,videos");
+  });
+
+  it("keeps only the top ten cast", async () => {
+    mockFetch(
+      extras({
+        credits: {
+          cast: Array.from({ length: 25 }, (_, i) => ({
+            id: i,
+            name: `P${i}`,
+            profile_path: null,
+            order: i,
+          })),
+        },
+      }),
+    );
+
+    expect((await getMovieExtras(901)).cast).toHaveLength(10);
+  });
+
+  it("has no score before anyone has voted, and tolerates missing parts", async () => {
+    mockFetch({ tagline: "", vote_average: 0, vote_count: 0 });
+
+    expect(await getMovieExtras(902)).toEqual({
+      tagline: null,
+      score: null,
+      voteCount: 0,
+      collection: null,
+      directors: [],
+      cast: [],
+      trailer: null,
     });
   });
 });

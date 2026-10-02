@@ -181,6 +181,37 @@ describe("recent searches", () => {
     });
   });
 
+  it("starts on All and asks for one kind when a filter is tapped", async () => {
+    open();
+
+    expect(
+      screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    type("sev");
+    await waitFor(() => expect(searchSuggestions).toHaveBeenCalledWith("sev"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+
+    expect(
+      screen.getByRole("button", { name: "Movies" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    await waitFor(() => {
+      expect(searchSuggestions).toHaveBeenLastCalledWith("sev", undefined, "movie");
+    });
+  });
+
+  it("keeps the list target when filtering", async () => {
+    open({ target: { id: "list-1", name: "Favourites" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Shows" }));
+    type("sev");
+
+    await waitFor(() => {
+      expect(searchSuggestions).toHaveBeenCalledWith("sev", "list-1", "tv");
+    });
+  });
+
   it("remembers a search that went somewhere, not every prefix of it", async () => {
     // Recorded on the way out rather than as you type — otherwise the chips
     // fill up with "s", "se", "sev" and the feature is worse than nothing.

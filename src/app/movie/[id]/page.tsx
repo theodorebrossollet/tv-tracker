@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AddToListButton } from "@/components/add-to-list-button";
+import { CastRow } from "@/components/cast-row";
 import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { PastWatches } from "@/components/past-watches";
 import { Poster } from "@/components/poster";
 import { RatingStrip } from "@/components/rating-strip";
+import { Trailer } from "@/components/trailer";
 import { WatchAgainButton } from "@/components/watch-again-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
@@ -15,6 +17,7 @@ import { describeError, logger } from "@/lib/logger";
 import { getListsForTitle, getMovieDetail } from "@/lib/queries";
 import { movieResetHistory } from "@/lib/rewatch";
 import { isTmdbMovieId } from "@/lib/show-id";
+import { getMovieExtras, type TmdbMovieExtras } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +55,15 @@ export default async function MoviePage({ params }: MoviePageProps) {
     logger.warn("lists.for_title_failed", describeError(error));
     return null;
   });
+
+  // Tagline, cast, trailer and the rest. Cosmetic, so TMDB being slow or down
+  // drops the extras instead of the page.
+  const extras: TmdbMovieExtras | null = await getMovieExtras(id).catch(
+    (error) => {
+      logger.warn("movie.extras_failed", describeError(error));
+      return null;
+    },
+  );
 
   // Built from what the page already read. Offered whenever there is something
   // to delete, which includes an untracked movie that only has past watches.
@@ -118,8 +130,28 @@ export default async function MoviePage({ params }: MoviePageProps) {
           <h1 className="text-2xl font-semibold leading-[27px] tracking-[-0.025em]">
             {movie.title}
           </h1>
+          {extras?.tagline ? (
+            <p className="mt-1 text-[13px] italic leading-[18px] text-muted">
+              {extras.tagline}
+            </p>
+          ) : null}
           {meta ? (
             <p className="mt-[5px] text-xs leading-4 text-muted">{meta}</p>
+          ) : null}
+          {extras?.directors.length ? (
+            <p className="mt-[3px] text-xs leading-4 text-muted">
+              Directed by {extras.directors.join(", ")}
+            </p>
+          ) : null}
+          {extras?.score ? (
+            <p className="mt-[3px] text-xs leading-4 text-muted">
+              TMDB {extras.score.toFixed(1)}/10
+            </p>
+          ) : null}
+          {extras?.collection ? (
+            <p className="mt-[3px] text-xs leading-4 text-muted">
+              Part of {extras.collection}
+            </p>
           ) : null}
         </div>
       </div>
@@ -156,6 +188,24 @@ export default async function MoviePage({ params }: MoviePageProps) {
           {movie.overview}
         </p>
       ) : null}
+
+      {extras?.trailer ? (
+        <div className="mt-5">
+          <Trailer
+            options={[
+              {
+                id: "movie",
+                label: "Movie",
+                videoKey: extras.trailer.key,
+                name: extras.trailer.name,
+              },
+            ]}
+            showName={movie.title}
+          />
+        </div>
+      ) : null}
+
+      {extras ? <CastRow cast={extras.cast} /> : null}
     </div>
   );
 }

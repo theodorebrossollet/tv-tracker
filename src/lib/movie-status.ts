@@ -38,3 +38,23 @@ export function movieStatusTargets(status: MovieStatus | null): MovieStatus[] {
 export function watchedAtFor(next: MovieStatus, now: Date): Date | null {
   return next === "watched" ? now : null;
 }
+
+/**
+ * Splits a watchlist into movies that are out and movies that aren't. A movie
+ * with no release date counts as not out: nothing says it can be watched.
+ */
+export function splitByRelease<T extends { releaseDate: Date | null }>(
+  movies: T[],
+  now: Date = new Date(),
+): { released: T[]; unreleased: T[] } {
+  const released: T[] = [];
+  const unreleased: T[] = [];
+
+  for (const movie of movies) {
+    (movie.releaseDate && movie.releaseDate <= now ? released : unreleased).push(
+      movie,
+    );
+  }
+
+  return { released, unreleased };
+}

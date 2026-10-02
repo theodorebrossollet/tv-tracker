@@ -7,6 +7,7 @@ import { MovieList } from "@/components/movie-list";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { SearchIconButton } from "@/components/search-icon-button";
 import { limitFrom } from "@/components/show-more-link";
+import { splitByRelease } from "@/lib/movie-status";
 import type { LibraryType } from "@/lib/library-type";
 import type { MovieBuckets, ShowBuckets } from "@/lib/queries";
 
@@ -84,6 +85,11 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
   const limit = (param: string) =>
     limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
 
+  // Shows with nothing aired can't be started, so they sit apart from the
+  // ones that can.
+  const readyToWatch = watchlist.filter((show) => show.airedCount > 0);
+  const notOutYet = watchlist.filter((show) => show.airedCount === 0);
+
   return (
     <>
       {segment === "watchlist" ? (
@@ -101,15 +107,35 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 icon="bookmark"
                 action={<FindShowButton />}
               />
-            ) : (
+            ) : readyToWatch.length > 0 ? (
               <LibraryList
-                shows={watchlist}
+                shows={readyToWatch}
                 param="watchlist"
                 searchParams={searchParams}
                 limit={limit("watchlist")}
               />
+            ) : (
+              <p className="text-[12.5px] leading-relaxed text-muted">
+                Nothing on your watchlist has aired yet.
+              </p>
             )}
           </div>
+
+          {notOutYet.length > 0 ? (
+            <Section
+              title="Not out yet"
+              description="Nothing has aired. These move up on their own once an episode does."
+            >
+              <LibraryList
+                shows={notOutYet}
+                tone="sunken"
+                detail="unaired"
+                param="notOutYet"
+                searchParams={searchParams}
+                limit={limit("notOutYet")}
+              />
+            </Section>
+          ) : null}
 
           {paused.length > 0 ? (
             <Section
@@ -211,6 +237,8 @@ function MoviesView({
   const limit = (param: string) =>
     limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
 
+  const { released, unreleased } = splitByRelease(watchlist);
+
   if (segment === "watchlist") {
     return (
       <>
@@ -226,16 +254,36 @@ function MoviesView({
               icon="bookmark"
               action={<FindShowButton label="Find a movie" />}
             />
-          ) : (
+          ) : released.length > 0 ? (
             <MovieList
-              movies={watchlist}
+              movies={released}
               detail="released"
               param="movieWatchlist"
               searchParams={searchParams}
               limit={limit("movieWatchlist")}
             />
+          ) : (
+            <p className="text-[12.5px] leading-relaxed text-muted">
+              Nothing on your watchlist has been released yet.
+            </p>
           )}
         </div>
+
+        {unreleased.length > 0 ? (
+          <Section
+            title="Not released yet"
+            description="Not out in cinemas or at home yet, or without a release date."
+          >
+            <MovieList
+              movies={unreleased}
+              tone="sunken"
+              detail="released"
+              param="movieUnreleased"
+              searchParams={searchParams}
+              limit={limit("movieUnreleased")}
+            />
+          </Section>
+        ) : null}
       </>
     );
   }

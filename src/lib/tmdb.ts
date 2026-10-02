@@ -315,9 +315,10 @@ function parseAirDate(value: string | null | undefined): Date | null {
  */
 const SEARCH_CACHE_SECONDS = 60;
 
-interface RawMultiSearchResponse {
+interface RawSearchResponse {
   results: Array<{
-    media_type: string;
+    /** Absent on `/search/tv` and `/search/movie`, which return one kind. */
+    media_type?: string;
     id: number;
     name?: string;
     title?: string;
@@ -328,44 +329,88 @@ interface RawMultiSearchResponse {
   }>;
 }
 
+export type SearchFilter = "all" | "tv" | "movie";
+
 /**
- * Shows and movies in one search, for the overlay. `/search/multi` also returns
- * people, which have nothing to track, so they are dropped here rather than at
- * every caller. Shares `SEARCH_CACHE_SECONDS` and its reasoning.
+ * TMDB returns 20 results a page. One page was too few once people were
+ * dropped from a mixed search, so two are read. `all` stays smaller than a
+ * single-kind search because it is one list holding two kinds.
+ */
+const SEARCH_PAGES = [1, 2];
+const SEARCH_LIMIT: Record<SearchFilter, number> = {
+  all: 30,
+  tv: 40,
+  movie: 40,
+};
+
+/**
+ * Shows and movies for the overlay, optionally narrowed to one kind.
+ * `/search/multi` also returns people, which have nothing to track, so they
+ * are dropped here rather than at every caller. A narrowed search uses TMDB's
+ * own per-kind endpoint so the filter picks from everything it knows, not just
+ * what happened to be in the mixed top results. Shares `SEARCH_CACHE_SECONDS`
+ * and its reasoning.
  */
 export async function searchMulti(
   query: string,
+  filter: SearchFilter = "all",
 ): Promise<TmdbMultiSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const data = await cached(
-    `search-multi:${trimmed}`,
-    SEARCH_CACHE_SECONDS,
-    () =>
-      tmdbFetch<RawMultiSearchResponse>("/search/multi", {
+  const path =
+    filter === "tv"
+      ? "/search/tv"
+      : filter === "movie"
+        ? "/search/movie"
+        : "/search/multi";
+
+  const fetchPage = (page: number) =>
+    cached(`search:${filter}:${page}:${trimmed}`, SEARCH_CACHE_SECONDS, () =>
+      tmdbFetch<RawSearchResponse>(path, {
         query: trimmed,
         include_adult: "false",
+        page: String(page),
       }),
+    );
+
+  const [first, ...rest] = await Promise.all(
+    SEARCH_PAGES.map((page, index) =>
+      // The first page decides whether the search worked. A later page
+      // failing only means fewer results, not an error screen.
+      index === 0 ? fetchPage(page) : fetchPage(page).catch(() => null),
+    ),
   );
 
-  return data.results.flatMap((result): TmdbMultiSearchResult[] => {
-    if (result.media_type !== "tv" && result.media_type !== "movie") return [];
+  const seen = new Set<string>();
+  const results: TmdbMultiSearchResult[] = [];
 
-    const isMovie = result.media_type === "movie";
-    const date = isMovie ? result.release_date : result.first_air_date;
+  for (const data of [first, ...rest]) {
+    for (const result of data?.results ?? []) {
+      const mediaType =
+        filter === "all" ? result.media_type : filter;
+      if (mediaType !== "tv" && mediaType !== "movie") continue;
 
-    return [
-      {
-        kind: result.media_type,
+      // A title can move between pages while the second request is in flight.
+      const key = `${mediaType}-${result.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const isMovie = mediaType === "movie";
+      const date = isMovie ? result.release_date : result.first_air_date;
+
+      results.push({
+        kind: mediaType,
         id: result.id,
         name: (isMovie ? result.title : result.name) ?? "",
         posterPath: result.poster_path,
         overview: result.overview || null,
         year: date ? date.slice(0, 4) : null,
-      },
-    ];
-  });
+      });
+    }
+  }
+
+  return results.slice(0, SEARCH_LIMIT[filter]);
 }
 
 interface RawShowResponse {
@@ -851,4 +896,93 @@ export async function getSeasonTrailers(
   return results
     .filter((entry): entry is SeasonTrailer => entry !== null)
     .sort((a, b) => a.seasonNumber - b.seasonNumber);
+}
+
+export interface TmdbCastMember {
+  id: number;
+  name: string;
+  character: string | null;
+  profilePath: string | null;
+}
+
+/** What the movie page shows beyond what is cached in the database. */
+export interface TmdbMovieExtras {
+  tagline: string | null;
+  /** 0–10, one decimal; null until TMDB has any votes. */
+  score: number | null;
+  voteCount: number;
+  /** The franchise TMDB groups this film into, if any. */
+  collection: string | null;
+  directors: string[];
+  cast: TmdbCastMember[];
+  trailer: TmdbVideo | null;
+}
+
+interface RawMovieExtrasResponse {
+  tagline?: string | null;
+  vote_average?: number;
+  vote_count?: number;
+  belongs_to_collection?: { name: string } | null;
+  credits?: {
+    cast?: Array<{
+      id: number;
+      name: string;
+      character?: string | null;
+      profile_path: string | null;
+      order?: number;
+    }>;
+    crew?: Array<{ name: string; job: string }>;
+  };
+  videos?: RawVideosResponse;
+}
+
+const CAST_SHOWN = 10;
+
+/**
+ * Tagline, director, top cast, score, franchise and trailer, in one request.
+ *
+ * Fetched live and held in the in-process cache rather than stored: none of it
+ * is needed by a list or a card, and storing it would mean a migration on a
+ * core table for data that is only ever read on this one page. Image paths are
+ * not validated here for the same reason as posters — see `getShowDetails`.
+ */
+export async function getMovieExtras(
+  tmdbMovieId: string | number,
+): Promise<TmdbMovieExtras> {
+  const data = await cached(
+    `movie-extras:${tmdbMovieId}`,
+    VIDEO_CACHE_SECONDS,
+    () =>
+      tmdbFetch<RawMovieExtrasResponse>(`/movie/${tmdbMovieId}`, {
+        append_to_response: "credits,videos",
+        include_video_language: "en,null",
+        language: "en-US",
+      }),
+  );
+
+  const voteCount = data.vote_count ?? 0;
+
+  return {
+    tagline: data.tagline || null,
+    score:
+      voteCount > 0 && data.vote_average
+        ? Math.round(data.vote_average * 10) / 10
+        : null,
+    voteCount,
+    collection: data.belongs_to_collection?.name ?? null,
+    directors: (data.credits?.crew ?? [])
+      .filter((person) => person.job === "Director")
+      .map((person) => person.name),
+    // TMDB's `order` is billing order, which is what "top cast" means.
+    cast: [...(data.credits?.cast ?? [])]
+      .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+      .slice(0, CAST_SHOWN)
+      .map((person) => ({
+        id: person.id,
+        name: person.name,
+        character: person.character || null,
+        profilePath: person.profile_path,
+      })),
+    trailer: data.videos ? pickBestTrailer(data.videos) : null,
+  };
 }
