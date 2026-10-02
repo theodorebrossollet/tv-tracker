@@ -498,7 +498,7 @@ describe("list menu", () => {
     ).toBe(true);
   });
 
-  it("asks before deleting, then deletes and goes back to the lists", async () => {
+  it("asks before deleting, then calls deleteList (the action redirects)", async () => {
     await renderPage(list());
 
     fireEvent.click(screen.getByRole("button", { name: "List options" }));
@@ -507,7 +507,6 @@ describe("list menu", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(actions.deleteList).toHaveBeenCalledWith("L1"));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/lists"));
   });
 
   it("can back out of deleting and shows a failure", async () => {
@@ -526,6 +525,8 @@ describe("list menu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete list" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await screen.findByText("Could not delete.");
-    expect(push).not.toHaveBeenCalled();
+    // Still open on failure, with the message and the buttons to retry.
+    expect(screen.getByRole("alert").textContent).toBe("Could not delete.");
+    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 });

@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Same doubles as movie-actions.test.ts: no request scope for revalidatePath,
 // and a stubbed session that individual tests can point at another account.
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+// `redirect` throws in Next, which is what ends a successful `deleteList`.
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn((to: string) => {
+    throw new Error(`NEXT_REDIRECT:${to}`);
+  }),
+}));
 
 vi.mock("@/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/auth")>()),
@@ -40,6 +46,7 @@ const { NEW_MOVIES_PER_HOUR } = await import("@/lib/movies");
 const { requireOnboardedSession } = await import("@/lib/auth");
 const { MAX_LISTS, LIST_NAME_MAX, MAX_ITEMS_PER_LIST } = await import("@/lib/lists");
 const { prisma } = await import("@/lib/prisma");
+const { redirect } = await import("next/navigation");
 const { resetDatabase, seedUser, TEST_USER_ID } = await import("./helpers");
 
 const OTHER = "other";
@@ -59,6 +66,7 @@ async function listCount(userId = TEST_USER_ID) {
 }
 
 beforeEach(async () => {
+  vi.mocked(redirect).mockClear();
   await resetDatabase();
   await seedUser();
   actAs(TEST_USER_ID);
@@ -246,7 +254,9 @@ describe("deleteList", () => {
     });
     await prisma.listItem.create({ data: { listId: id!, movieId: "603" } });
 
-    expect(await deleteList(id!)).toEqual({ ok: true });
+    await expect(deleteList(id!)).rejects.toThrow("NEXT_REDIRECT:/lists");
+    expect(redirect).toHaveBeenCalledTimes(1);
+    expect(redirect).toHaveBeenCalledWith("/lists");
 
     expect(await prisma.list.count()).toBe(0);
     expect(await prisma.listItem.count()).toBe(0);
@@ -261,6 +271,7 @@ describe("deleteList", () => {
     });
     expect((await deleteList(5 as never)).ok).toBe(false);
     expect((await deleteList("")).ok).toBe(false);
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("refuses another user's list and leaves it, with its items", async () => {
@@ -278,6 +289,7 @@ describe("deleteList", () => {
       error: "List not found.",
     });
 
+    expect(redirect).not.toHaveBeenCalled();
     expect(await listCount(OTHER)).toBe(1);
     expect(await prisma.listItem.count({ where: { listId: theirs.id } })).toBe(1);
   });

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import {
   isUniqueConstraintError,
@@ -135,7 +136,8 @@ export async function updateList(
 
 /**
  * Deletes a list and, by cascade, its items. The movies and shows themselves
- * and the account's Library tracking are untouched.
+ * and the account's Library tracking are untouched. Success redirects to
+ * `/lists`; only failures return.
  */
 export async function deleteList(listId: string): Promise<ActionResult> {
   const { user } = await requireOnboardedSession();
@@ -152,7 +154,11 @@ export async function deleteList(listId: string): Promise<ActionResult> {
   }
 
   revalidateListViews();
-  return { ok: true };
+  // The action's response re-renders the CURRENT route, which is now the page
+  // of a list that no longer exists — a visible not-found before a client-side
+  // push could land. Redirecting from the action replaces that render. It
+  // throws, so it sits after the try, and a success never returns.
+  redirect("/lists");
 }
 
 // ---------------------------------------------------------------------------

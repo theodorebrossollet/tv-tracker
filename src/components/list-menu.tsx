@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { deleteList } from "@/app/list-actions";
@@ -21,7 +20,6 @@ type Step = "closed" | "menu" | "confirm" | "edit";
  * The error is plain state so it is still there once the transition settles.
  */
 export function ListMenu({ list }: ListMenuProps) {
-  const router = useRouter();
   const [step, setStep] = useState<Step>("closed");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -42,7 +40,8 @@ export function ListMenu({ list }: ListMenuProps) {
         return;
       }
 
-      router.push("/lists");
+      // Success never returns: the action redirects to /lists itself, so the
+      // page of the deleted list is never re-rendered as a not-found.
     });
   }
 
