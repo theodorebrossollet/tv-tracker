@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 
 import { addMovieToWatchlist, removeMovie } from "@/app/actions";
 import type { MovieStatus } from "@/lib/types";
@@ -31,10 +31,9 @@ export function MovieAddButton({
   // Derived from the prop via useOptimistic, not copied into useState: the
   // status can change on the movie page for reasons this button never sees.
   const [current, setCurrent] = useOptimistic(status);
-  const [error, setError] = useOptimistic<string | null, string | null>(
-    null,
-    (_, next) => next,
-  );
+  // Plain state, not optimistic: optimistic values are dropped when the
+  // transition ends, which would erase the message the moment it appeared.
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const tracked = current !== null;
@@ -43,6 +42,8 @@ export function MovieAddButton({
     // These buttons sit inside links on the list pages.
     event.preventDefault();
     event.stopPropagation();
+
+    setError(null);
 
     startTransition(async () => {
       setCurrent(tracked ? null : "watchlist");

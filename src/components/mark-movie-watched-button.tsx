@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { setMovieStatus } from "@/app/actions";
 
@@ -10,19 +10,17 @@ import { setMovieStatus } from "@/app/actions";
  *
  * No `useState` copy of server state: the page re-renders from the server once
  * the action revalidates, and the button disappears (or the pill changes) then.
- * The error line is optimistic state so it clears itself when the next
- * transition starts.
+ * The error line is plain state: optimistic state is dropped when the
+ * transition ends, which would erase the message the moment it appeared.
  */
 export function MarkMovieWatchedButton({ movieId }: { movieId: string }) {
-  const [error, setError] = useOptimistic<string | null, string | null>(
-    null,
-    (_, next) => next,
-  );
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function markWatched() {
+    setError(null);
+
     startTransition(async () => {
-      setError(null);
 
       const result = await setMovieStatus(movieId, "watched");
       if (!result.ok) {
