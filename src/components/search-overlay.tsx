@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { searchSuggestions, type SearchSuggestion } from "@/app/actions";
 import { AddButton } from "@/components/add-button";
 import { KindBadge } from "@/components/kind-badge";
+import { ListAddButton } from "@/components/list-add-button";
 import { MovieAddButton } from "@/components/movie-add-button";
 import { Poster } from "@/components/poster";
 import { StatusBadge } from "@/components/status-badge";
@@ -18,6 +19,8 @@ interface SearchOverlayProps {
   /** Session-lived, held by SearchProvider — see the note there. */
   recent: string[];
   onRemember: (query: string) => void;
+  /** When set, the overlay adds titles to this list instead of the Library. */
+  target?: { id: string; name: string };
 }
 
 /**
@@ -41,11 +44,13 @@ export function SearchOverlay({
   onClose,
   recent,
   onRemember,
+  target,
 }: SearchOverlayProps) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const targetId = target?.id;
   const [query, setQuery] = useState("");
 
   // Results are stored together with the query they belong to. Deriving
@@ -90,7 +95,9 @@ export function SearchOverlay({
     let cancelled = false;
 
     const timer = setTimeout(async () => {
-      const response = await searchSuggestions(trimmed);
+      const response = targetId
+        ? await searchSuggestions(trimmed, targetId)
+        : await searchSuggestions(trimmed);
       if (cancelled) return;
 
       setData({
@@ -104,7 +111,7 @@ export function SearchOverlay({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, targetId]);
 
   function open(kind: SearchSuggestion["kind"], id: string) {
     // Remembered on the way out rather than as you type, so the chips hold
@@ -127,6 +134,11 @@ export function SearchOverlay({
       className="m-0 h-full max-h-full w-full max-w-full bg-background p-0 text-foreground"
     >
       <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
+        {target ? (
+          <p className="px-4 pt-4 text-sm text-muted">
+            {`Adding to ${target.name}`}
+          </p>
+        ) : null}
         <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-border-faint bg-background/95 p-4 backdrop-blur">
           <div className="flex h-11 min-w-0 flex-1 items-center gap-[9px] rounded-[13px] border border-border bg-surface px-3">
             <SearchIcon className="size-4 shrink-0 text-faint" />
@@ -172,7 +184,7 @@ export function SearchOverlay({
             onClick={onClose}
             className="min-h-11 shrink-0 px-1 text-[15px] text-accent-deep"
           >
-            Cancel
+            {target ? "Done" : "Cancel"}
           </button>
         </div>
 
@@ -205,7 +217,9 @@ export function SearchOverlay({
 
           {!trimmedQuery && recent.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-muted">
-              Search TMDB for any show or movie, then add it to your lists.
+              {target
+                ? "Search for a show or movie to add to this list."
+                : "Search TMDB for any show or movie, then add it to your lists."}
             </p>
           ) : null}
 
@@ -227,49 +241,40 @@ export function SearchOverlay({
                 key={`${result.kind}-${result.id}`}
                 className="flex items-center gap-3 border-b border-border-faint py-2.5"
               >
-                <button
-                  type="button"
-                  onClick={() => open(result.kind, result.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                >
-                  <span className="relative shrink-0">
-                    <Poster
-                      path={result.posterPath}
-                      name={result.name}
-                      width={40}
-                    />
-                    <KindBadge kind={result.kind} />
-                  </span>
-
-                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    {/* Badge rather than trailing text in the subtitle: the
-                        point is to be readable at a glance while typing, and
-                        the old form silently said nothing for two of the four
-                        statuses. */}
-                    <span className="flex items-center gap-[7px]">
-                      <span className="min-w-0 truncate text-[15px] font-medium">
-                        {result.name}
-                      </span>
-                      <StatusBadge status={result.status} />
-                    </span>
-                    <span className="text-xs text-faint">
-                      {result.year ?? "Year unknown"}
-                    </span>
-                  </span>
-                </button>
-
-                {result.kind === "movie" ? (
-                  <MovieAddButton
-                    movieId={result.id}
-                    status={result.status}
-                    variant="icon"
-                  />
+                {target ? (
+                  <ListAddButton
+                    listId={target.id}
+                    kind={result.kind === "movie" ? "movie" : "show"}
+                    titleId={result.id}
+                    onList={result.onList ?? false}
+                    title={result.name}
+                    listName={target.name}
+                  >
+                    <ResultContent result={result} />
+                  </ListAddButton>
                 ) : (
-                  <AddButton
-                    showId={result.id}
-                    status={result.status}
-                    variant="icon"
-                  />
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => open(result.kind, result.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <ResultContent result={result} />
+                    </button>
+                    {result.kind === "movie" ? (
+                      <MovieAddButton
+                        movieId={result.id}
+                        status={result.status}
+                        variant="icon"
+                      />
+                    ) : (
+                      <AddButton
+                        showId={result.id}
+                        status={result.status}
+                        variant="icon"
+                      />
+                    )}
+                  </>
                 )}
               </li>
             ))}
@@ -277,6 +282,34 @@ export function SearchOverlay({
         </div>
       </div>
     </dialog>
+  );
+}
+
+/** The poster, title and year of a result — the content of its tap target. */
+function ResultContent({ result }: { result: SearchSuggestion }) {
+  return (
+    <>
+      <span className="relative shrink-0">
+        <Poster path={result.posterPath} name={result.name} width={40} />
+        <KindBadge kind={result.kind} />
+      </span>
+
+      <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        {/* Badge rather than trailing text in the subtitle: the
+              point is to be readable at a glance while typing, and
+              the old form silently said nothing for two of the four
+              statuses. */}
+        <span className="flex items-center gap-[7px]">
+          <span className="min-w-0 truncate text-[15px] font-medium">
+            {result.name}
+          </span>
+          <StatusBadge status={result.status} />
+        </span>
+        <span className="text-xs text-faint">
+          {result.year ?? "Year unknown"}
+        </span>
+      </span>
+    </>
   );
 }
 

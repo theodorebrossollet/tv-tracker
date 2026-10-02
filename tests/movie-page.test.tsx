@@ -24,7 +24,22 @@ vi.mock("@/lib/auth", () => ({
     user: { id: "u1", nickname: "u", hasPassword: true },
   })),
 }));
-vi.mock("@/lib/queries", () => ({ getMovieDetail: vi.fn() }));
+vi.mock("@/app/list-actions", () => ({
+  addToList: vi.fn(async () => ({ ok: true })),
+  removeFromList: vi.fn(async () => ({ ok: true })),
+  createList: vi.fn(async () => ({ ok: true, id: "n" })),
+  updateList: vi.fn(),
+}));
+vi.mock("@/lib/queries", () => ({
+  getMovieDetail: vi.fn(),
+  getListsForTitle: vi.fn(async () => []),
+}));
+vi.mock("@/lib/logger", () => ({
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+  describeError: (e: unknown) => ({
+    errorMessage: e instanceof Error ? e.message : String(e),
+  }),
+}));
 vi.mock("@/lib/tmdb", () => ({
   getMovieDetails: vi.fn(),
   TmdbError: class TmdbError extends Error {},
@@ -33,9 +48,10 @@ vi.mock("@/lib/tmdb", () => ({
 const { default: MoviePage, generateMetadata } = await import(
   "@/app/movie/[id]/page"
 );
-const { getMovieDetail } = await import("@/lib/queries");
+const { getMovieDetail, getListsForTitle } = await import("@/lib/queries");
 const { getMovieDetails } = await import("@/lib/tmdb");
 const { requireOnboardedSession } = await import("@/lib/auth");
+const { logger } = await import("@/lib/logger");
 
 import type { MovieDetail } from "@/lib/queries";
 
@@ -106,6 +122,45 @@ describe("movie page actions", () => {
 
     expect(screen.queryByRole("button", { name: /mark watched/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /add to watchlist/i })).toBeNull();
+  });
+});
+
+describe("movie page add to list", () => {
+  it.each([
+    ["untracked", null],
+    ["watchlist", "watchlist"],
+    ["watched", "watched"],
+    ["not_interested", "not_interested"],
+  ] as const)("renders Add to list when %s", async (_name, status) => {
+    detailMock.mockResolvedValue(
+      movie({ status, watchedAt: status === "watched" ? new Date() : null }),
+    );
+    await renderPage();
+
+    expect(screen.getByRole("button", { name: "Add to list" })).toBeTruthy();
+    expect(getListsForTitle).toHaveBeenCalledWith("u1", "movie", "603");
+  });
+
+  it("still renders the page, without the button, when the lists read fails", async () => {
+    detailMock.mockResolvedValue(movie());
+    vi.mocked(getListsForTitle).mockRejectedValueOnce(
+      new Error('relation "List" does not exist'),
+    );
+    await renderPage();
+
+    expect(screen.getByRole("heading", { name: "The Matrix" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add to list" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /mark watched/i }),
+    ).toBeTruthy();
+    expect(logger.warn).toHaveBeenCalledWith("lists.for_title_failed", {
+      errorMessage: 'relation "List" does not exist',
+    });
+  });
+
+  it("does not look up lists for a malformed id", async () => {
+    await expect(renderPage("abc")).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(getListsForTitle).not.toHaveBeenCalled();
   });
 });
 

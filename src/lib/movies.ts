@@ -86,3 +86,31 @@ export async function cacheNewMovie(
   await assertCanCacheNewMovie(userId);
   return syncMovieFromTmdb(tmdbMovieId, userId);
 }
+
+/**
+ * Makes sure a movie is in the local cache, for callers that want the row to
+ * exist but have no use for the details (a list item).
+ *
+ * An already-cached movie costs no TMDB call and is not refreshed. An absent
+ * one is cached through `cacheNewMovie`, so the hourly allowance applies and
+ * `NewMovieLimitError` can be thrown. Returns false when TMDB doesn't
+ * recognise the id; any other error propagates.
+ */
+export async function ensureMovieCached(
+  tmdbMovieId: string,
+  userId: string,
+): Promise<boolean> {
+  const existing = await prisma.movie.findUnique({
+    where: { id: tmdbMovieId },
+    select: { id: true },
+  });
+  if (existing) return true;
+
+  try {
+    await cacheNewMovie(tmdbMovieId, userId);
+    return true;
+  } catch (error) {
+    if (error instanceof TmdbError && error.status === 404) return false;
+    throw error;
+  }
+}

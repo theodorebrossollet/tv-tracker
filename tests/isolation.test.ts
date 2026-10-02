@@ -50,7 +50,7 @@ const {
   setSeasonWatched,
   unmarkEpisodeWatched,
 } = await import("@/app/actions");
-const { getMovieBuckets, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
+const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase, seedShow, seedUser, statusOf } = await import("./helpers");
@@ -292,5 +292,57 @@ describe("writes never touch another account", () => {
     await expect(
       prisma.watchedEpisode.count({ where: { userId: B } }),
     ).resolves.toBe(2);
+  });
+});
+
+describe("list reads never cross accounts", () => {
+  it("shows the caller's own tracking, not another account's", async () => {
+    await prisma.movie.create({ data: { id: "9", title: "Nine" } });
+    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
+    await prisma.listItem.create({ data: { listId: list.id, movieId: "9" } });
+    await prisma.trackedMovie.create({
+      data: { userId: B, movieId: "9", status: "watched" },
+    });
+
+    const detail = await getListDetail(A, list.id);
+    expect(detail?.items[0]).toMatchObject({ status: null, watched: false });
+  });
+
+  it("does not take a show's finished state from another account", async () => {
+    // The first seed creates the shared Show row (later upserts leave it
+    // alone), so the series must be ended here for a leak to matter.
+    await seedShow({
+      showId: "500",
+      offsets: [-1],
+      status: "watching",
+      showStatus: "Ended",
+      userId: A,
+    });
+    await seedShow({
+      showId: "500",
+      offsets: [-1],
+      status: "watching",
+      watched: [0],
+      userId: B,
+    });
+    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
+    await prisma.listItem.create({ data: { listId: list.id, showId: "500" } });
+
+    const detail = await getListDetail(A, list.id);
+    expect(detail?.items[0]).toMatchObject({
+      status: "watching",
+      finished: false,
+      watched: false,
+    });
+  });
+
+  it("hides another account's lists from every list read", async () => {
+    const theirs = await prisma.list.create({ data: { userId: B, name: "T" } });
+    await prisma.movie.create({ data: { id: "9", title: "Nine" } });
+    await prisma.listItem.create({ data: { listId: theirs.id, movieId: "9" } });
+
+    expect(await getLists(A)).toEqual([]);
+    expect(await getListDetail(A, theirs.id)).toBeNull();
+    expect(await getListsForTitle(A, "movie", "9")).toEqual([]);
   });
 });

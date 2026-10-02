@@ -87,8 +87,17 @@ interface SuggestionBase {
 
 /** TMDB numbers shows and movies separately, so `kind` is part of the identity. */
 export type SearchSuggestion =
-  | (SuggestionBase & { kind: "tv"; status: TrackStatus | null })
-  | (SuggestionBase & { kind: "movie"; status: MovieStatus | null });
+  | (SuggestionBase & {
+      kind: "tv";
+      status: TrackStatus | null;
+      /** Present only when a list was given: is this title already on it? */
+      onList?: boolean;
+    })
+  | (SuggestionBase & {
+      kind: "movie";
+      status: MovieStatus | null;
+      onList?: boolean;
+    });
 
 /**
  * Backs the search overlay's as-you-type suggestions. Results aren't cached in
@@ -96,8 +105,25 @@ export type SearchSuggestion =
  */
 export async function searchSuggestions(
   query: string,
+  listId?: string,
 ): Promise<{ results?: SearchSuggestion[]; error?: string }> {
   const { user } = await requireOnboardedSession();
+
+  // Checked before anything else, even for an empty query, so a list that
+  // isn't the caller's is always refused and never reaches TMDB. Actions are
+  // POST-able directly, so a non-string id is possible.
+  let listItems: { movieId: string | null; showId: string | null }[] | null =
+    null;
+  if (listId !== undefined) {
+    if (typeof listId !== "string" || !listId.trim()) {
+      return { error: "List not found." };
+    }
+    const list = await prisma.list.findFirst({
+      where: { id: listId, userId: user.id },
+      select: { id: true },
+    });
+    if (!list) return { error: "List not found." };
+  }
 
   // Capped rather than rejected: TMDB has nothing useful to say about a pasted
   // wall of text, and sending it verbatim helps no one.
@@ -113,6 +139,23 @@ export async function searchSuggestions(
 
   // Capped before the lookups so they only cover rows that will be returned.
   const results = found.slice(0, 12);
+
+  // Deliberately NOT guarded, unlike the cosmetic movie badges below: the
+  // overlay uses this to decide what can still be added, so a failure that
+  // quietly reported "nothing is on the list" would invite duplicate adds.
+  // Surfacing it as an error result is the honest outcome.
+  if (listId !== undefined) {
+    try {
+      listItems = await prisma.listItem.findMany({
+        where: { listId },
+        select: { movieId: true, showId: true },
+      });
+    } catch (error) {
+      return { error: toResult(error).error };
+    }
+  }
+  const onListMovies = new Set(listItems?.map((i) => i.movieId));
+  const onListShows = new Set(listItems?.map((i) => i.showId));
   const idsOf = (kind: "tv" | "movie") =>
     results.filter((r) => r.kind === kind).map((r) => String(r.id));
 
@@ -156,11 +199,13 @@ export async function searchSuggestions(
             kind: "tv",
             ...base,
             status: (statusByShow.get(id) ?? null) as TrackStatus | null,
+            ...(listItems && { onList: onListShows.has(id) }),
           }
         : {
             kind: "movie",
             ...base,
             status: (statusByMovie.get(id) ?? null) as MovieStatus | null,
+            ...(listItems && { onList: onListMovies.has(id) }),
           };
     }),
   };
@@ -853,7 +898,7 @@ export async function updateProviders(ids: number[]): Promise<ActionResult> {
 }
 
 /**
- * Wipes the user's tracking data. The global Show/Episode cache is kept so
+ * Wipes the user's tracking data and lists. The global Show/Episode cache is kept so
  * re-adding a show doesn't have to re-download everything from TMDB.
  */
 export async function clearAllData(): Promise<ActionResult> {
@@ -870,6 +915,8 @@ export async function clearAllData(): Promise<ActionResult> {
       prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
       prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
       prisma.trackedMovie.deleteMany({ where: { userId: user.id } }),
+      // Items go with their list (cascade); the titles themselves stay cached.
+      prisma.list.deleteMany({ where: { userId: user.id } }),
       prisma.settings.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {

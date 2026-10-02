@@ -67,6 +67,7 @@ model User {
 
   trackedShows    TrackedShow[]
   trackedMovies   TrackedMovie[]
+  lists           List[]
   watchedEpisodes WatchedEpisode[]
   settings        Settings?
   sessions        Session[]
@@ -123,6 +124,7 @@ model Show {
 
   episodes Episode[]
   tracked  TrackedShow[]
+  items    ListItem[]
 
   @@index([addedById, createdAt])
 }
@@ -198,6 +200,7 @@ model Movie {
   genres      String?
 
   tracked TrackedMovie[]
+  items   ListItem[]
 
   @@index([addedById, createdAt])
 }
@@ -218,6 +221,50 @@ model TrackedMovie {
   /// Two people may track the same movie; one person may not track it twice.
   @@unique([userId, movieId])
   @@index([movieId])
+}
+
+/// A private, named list of movies and shows. Only its owner can see or change
+/// it; it is separate from the Library and never alters tracking status.
+model List {
+  id              String   @id @default(cuid())
+  userId          String
+  /// Trimmed, 1-60 characters (enforced by the actions). Names need not be
+  /// unique, even within one account.
+  name            String
+  /// When on, items carry their own watched tick (`ListItem.watchedAt`), for
+  /// "what we've watched together". When off, watched is read from the
+  /// account's Library status instead.
+  trackSeparately Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ListItem[]
+
+  @@index([userId, createdAt])
+}
+
+/// One title on a list. Exactly one of `movieId` / `showId` is set: the actions
+/// enforce it, since SQLite cannot check it. Two nullable columns rather than
+/// one id because TMDB movie and TV ids overlap numerically.
+model ListItem {
+  id        String    @id @default(cuid())
+  listId    String
+  movieId   String?
+  showId    String?
+  addedAt   DateTime  @default(now())
+  /// Only counts while the list's `trackSeparately` is on.
+  watchedAt DateTime?
+
+  list  List   @relation(fields: [listId], references: [id], onDelete: Cascade)
+  movie Movie? @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  show  Show?  @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  /// A title appears at most once per list. SQLite treats NULLs as distinct, so
+  /// the unset column of each row never collides.
+  @@unique([listId, movieId])
+  @@unique([listId, showId])
+  @@index([movieId])
+  @@index([showId])
 }
 
 /// Marks one episode as watched. Presence of the row is the "watched" flag.

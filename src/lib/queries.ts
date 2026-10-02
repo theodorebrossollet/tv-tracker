@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
+import { isListItemWatched, type ListKind } from "@/lib/lists";
 import { prisma } from "@/lib/prisma";
 import { ensureShowCached } from "@/lib/shows";
 import { getMovieDetails, TmdbError } from "@/lib/tmdb";
@@ -726,3 +727,205 @@ export const getMovieDetail = cache(async function getMovieDetail(
     throw error;
   }
 });
+
+export interface ListSummary {
+  id: string;
+  name: string;
+  trackSeparately: boolean;
+  itemCount: number;
+}
+
+/** The account's lists, newest first, each with how many titles it holds. */
+export async function getLists(userId: string): Promise<ListSummary[]> {
+  const rows = await prisma.list.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    include: { _count: { select: { items: true } } },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    trackSeparately: row.trackSeparately,
+    itemCount: row._count.items,
+  }));
+}
+
+export interface ListItemView {
+  itemId: string;
+  kind: ListKind;
+  titleId: string;
+  title: string;
+  posterPath: string | null;
+  /** UTC year of the movie's release date / the show's first air date. */
+  year: string | null;
+  /** The account's own tracking for the title; null when it doesn't track it. */
+  status: MovieStatus | TrackStatus | null;
+  /** Shows only: the Library's derived "finished". False for movies. */
+  finished: boolean;
+  /**
+   * The item's stored tick, returned as stored even when the list doesn't
+   * track separately (it is kept across flag changes). `watched` is what
+   * decides whether it counts.
+   */
+  tickedAt: Date | null;
+  watched: boolean;
+  addedAt: Date;
+}
+
+export interface ListDetail {
+  id: string;
+  name: string;
+  trackSeparately: boolean;
+  items: ListItemView[];
+}
+
+/**
+ * One of the account's lists with its titles, or null when the list doesn't
+ * exist or belongs to someone else.
+ *
+ * Titles the account hasn't watched come first, newest added first, then the
+ * watched ones in the same order. "Watched" is `isListItemWatched`; a show's
+ * "finished" is taken from `getTrackedShows` (the Library's own derivation)
+ * rather than worked out here.
+ *
+ * Memoized per request with React's `cache`, like `getShowDetail`: the list
+ * page calls this from both `generateMetadata` and the component, and each
+ * call loads every tracked show when the list holds one.
+ */
+export const getListDetail = cache(async function getListDetail(
+  userId: string,
+  listId: string,
+): Promise<ListDetail | null> {
+  const list = await prisma.list.findFirst({
+    where: { id: listId, userId },
+    include: {
+      items: {
+        // `id` breaks ties between items added in the same instant.
+        orderBy: [{ addedAt: "desc" }, { id: "desc" }],
+        include: {
+          movie: { include: { tracked: { where: { userId } } } },
+          show: { include: { tracked: { where: { userId } } } },
+        },
+      },
+    },
+  });
+
+  if (!list) return null;
+
+  const hasShows = list.items.some((item) => item.showId !== null);
+  const trackedShows = hasShows ? await getTrackedShows(userId) : [];
+  const finishedByShow = new Map(
+    trackedShows.map((show) => [
+      show.showId,
+      // The Library's "finished": all aired episodes watched AND the series is
+      // over. A caught-up show that is still running is not finished.
+      show.fullyWatched && hasSeriesEnded(show.showStatus),
+    ]),
+  );
+
+  const items: ListItemView[] = [];
+
+  for (const item of list.items) {
+    if (item.movie) {
+      const mine = item.movie.tracked[0];
+      const status = mine ? (mine.status as MovieStatus) : null;
+      items.push({
+        itemId: item.id,
+        kind: "movie",
+        titleId: item.movie.id,
+        title: item.movie.title,
+        posterPath: item.movie.posterPath,
+        year: utcYear(item.movie.releaseDate),
+        status,
+        finished: false,
+        tickedAt: item.watchedAt,
+        watched: isListItemWatched({
+          trackSeparately: list.trackSeparately,
+          tickedAt: item.watchedAt,
+          kind: "movie",
+          movieStatus: status,
+          showFinished: false,
+        }),
+        addedAt: item.addedAt,
+      });
+    } else if (item.show) {
+      const mine = item.show.tracked[0];
+      const finished = finishedByShow.get(item.show.id) ?? false;
+      items.push({
+        itemId: item.id,
+        kind: "show",
+        titleId: item.show.id,
+        title: item.show.name,
+        posterPath: item.show.posterPath,
+        year: utcYear(item.show.firstAirDate),
+        status: mine ? (mine.status as TrackStatus) : null,
+        finished,
+        tickedAt: item.watchedAt,
+        watched: isListItemWatched({
+          trackSeparately: list.trackSeparately,
+          tickedAt: item.watchedAt,
+          kind: "show",
+          movieStatus: null,
+          showFinished: finished,
+        }),
+        addedAt: item.addedAt,
+      });
+    }
+  }
+
+  items.sort(
+    (a, b) =>
+      Number(a.watched) - Number(b.watched) ||
+      b.addedAt.getTime() - a.addedAt.getTime() ||
+      (a.itemId < b.itemId ? 1 : a.itemId > b.itemId ? -1 : 0),
+  );
+
+  return {
+    id: list.id,
+    name: list.name,
+    trackSeparately: list.trackSeparately,
+    items,
+  };
+});
+
+function utcYear(date: Date | null): string | null {
+  return date ? String(date.getUTCFullYear()) : null;
+}
+
+export interface TitleListMembership {
+  listId: string;
+  name: string;
+  onList: boolean;
+  /** The list item's id when `onList`, so a toggle can remove it. */
+  itemId: string | null;
+}
+
+/**
+ * All of the account's lists, newest first, flagged by whether they hold this
+ * title. A movie and a show can share a numeric id, so membership matches the
+ * kind as well as the id.
+ */
+export async function getListsForTitle(
+  userId: string,
+  kind: ListKind,
+  titleId: string,
+): Promise<TitleListMembership[]> {
+  const rows = await prisma.list.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    include: {
+      items: {
+        where: kind === "movie" ? { movieId: titleId } : { showId: titleId },
+        select: { id: true },
+      },
+    },
+  });
+
+  return rows.map((row) => ({
+    listId: row.id,
+    name: row.name,
+    onList: row.items.length > 0,
+    itemId: row.items[0]?.id ?? null,
+  }));
+}

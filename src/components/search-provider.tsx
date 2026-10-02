@@ -15,6 +15,8 @@ const RECENT_LIMIT = 6;
 
 interface SearchContextValue {
   open: () => void;
+  /** Opens search in "adding to a list" mode for the given list. */
+  openForList: (target: { id: string; name: string }) => void;
   /**
    * Whether the overlay is showing. The tab bar needs it: Search is a tab like
    * any other, but it has no route to match `usePathname` against, so this is
@@ -37,10 +39,21 @@ const SearchContext = createContext<SearchContextValue | null>(null);
  */
 export function SearchProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [target, setTarget] = useState<{ id: string; name: string } | undefined>();
   const [recent, setRecent] = useState<string[]>([]);
 
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
+  const open = useCallback(() => {
+    setTarget(undefined);
+    setIsOpen(true);
+  }, []);
+  const openForList = useCallback((next: { id: string; name: string }) => {
+    setTarget(next);
+    setIsOpen(true);
+  }, []);
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setTarget(undefined);
+  }, []);
 
   const remember = useCallback((query: string) => {
     const trimmed = query.trim();
@@ -57,13 +70,20 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
 
   // Memoised: without it every consumer re-renders on any parent render, and
   // the tab bar is one of them on every screen.
-  const value = useMemo(() => ({ open, isOpen }), [open, isOpen]);
+  const value = useMemo(() => ({ open, openForList, isOpen }),
+    [open, openForList, isOpen],
+  );
 
   return (
     <SearchContext.Provider value={value}>
       {children}
       {isOpen ? (
-        <SearchOverlay onClose={close} recent={recent} onRemember={remember} />
+        <SearchOverlay
+          onClose={close}
+          recent={recent}
+          onRemember={remember}
+          target={target}
+        />
       ) : null}
     </SearchContext.Provider>
   );

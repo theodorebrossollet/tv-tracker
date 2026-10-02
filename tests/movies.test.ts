@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   cacheNewMovie,
+  ensureMovieCached,
   NEW_MOVIES_PER_HOUR,
   NewMovieLimitError,
   syncMovieFromTmdb,
 } from "@/lib/movies";
 import { prisma } from "@/lib/prisma";
-import { getMovieDetails } from "@/lib/tmdb";
+import { getMovieDetails, TmdbError } from "@/lib/tmdb";
 
 import { TEST_USER_ID, resetDatabase, seedUser } from "./helpers";
 
@@ -134,5 +135,54 @@ describe("the hourly allowance of new movies", () => {
     await seedMovies(NEW_MOVIES_PER_HOUR, { minutesAgo: 61 });
 
     await expect(cacheNewMovie(MOVIE_ID, TEST_USER_ID)).resolves.toBeDefined();
+  });
+});
+
+describe("ensureMovieCached", () => {
+  it("returns true without calling TMDB when the movie is already cached", async () => {
+    await prisma.movie.create({ data: { id: MOVIE_ID, title: "Cached" } });
+
+    expect(await ensureMovieCached(MOVIE_ID, TEST_USER_ID)).toBe(true);
+
+    expect(getMovieDetails).not.toHaveBeenCalled();
+    expect((await prisma.movie.findUnique({ where: { id: MOVIE_ID } }))?.title).toBe("Cached");
+  });
+
+  it("caches an absent movie and counts it against the caller", async () => {
+    expect(await ensureMovieCached(MOVIE_ID, TEST_USER_ID)).toBe(true);
+
+    expect(getMovieDetails).toHaveBeenCalledTimes(1);
+    expect(await prisma.movie.findUnique({ where: { id: MOVIE_ID } })).toMatchObject({
+      title: "The Matrix",
+      addedById: TEST_USER_ID,
+    });
+  });
+
+  it("returns false when TMDB reports 404 and writes nothing", async () => {
+    vi.mocked(getMovieDetails).mockRejectedValueOnce(new TmdbError("gone", 404));
+
+    expect(await ensureMovieCached(MOVIE_ID, TEST_USER_ID)).toBe(false);
+    expect(await prisma.movie.count()).toBe(0);
+  });
+
+  it("propagates any other TMDB error", async () => {
+    vi.mocked(getMovieDetails).mockRejectedValueOnce(new TmdbError("boom", 500));
+
+    await expect(ensureMovieCached(MOVIE_ID, TEST_USER_ID)).rejects.toThrow("boom");
+  });
+
+  it("enforces the hourly allowance for an absent movie", async () => {
+    await prisma.movie.createMany({
+      data: Array.from({ length: NEW_MOVIES_PER_HOUR }, (_, i) => ({
+        id: `9${i}`,
+        title: `M${i}`,
+        addedById: TEST_USER_ID,
+        createdAt: new Date(),
+      })),
+    });
+
+    await expect(ensureMovieCached(MOVIE_ID, TEST_USER_ID)).rejects.toBeInstanceOf(
+      NewMovieLimitError,
+    );
   });
 });

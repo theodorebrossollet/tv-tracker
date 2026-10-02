@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -13,11 +14,16 @@ const push = vi.fn();
 const addMovieToWatchlist = vi.fn(async (id: string) => ({ ok: Boolean(id) }));
 
 vi.mock("@/app/actions", () => ({
-  searchSuggestions: (query: string) => searchSuggestions(query),
+  searchSuggestions: (...args: unknown[]) => searchSuggestions(...args),
   addToWatchlist: vi.fn(async () => ({ ok: true })),
   removeShow: vi.fn(async () => ({ ok: true })),
   addMovieToWatchlist: (id: string) => addMovieToWatchlist(id),
   removeMovie: vi.fn(async () => ({ ok: true })),
+}));
+
+const addToList = vi.fn();
+vi.mock("@/app/list-actions", () => ({
+  addToList: (...args: unknown[]) => addToList(...args),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -38,6 +44,8 @@ beforeEach(() => {
   searchSuggestions.mockResolvedValue({ results: [RESULT] });
   push.mockReset();
   addMovieToWatchlist.mockClear();
+  addToList.mockReset();
+  addToList.mockResolvedValue({ ok: true });
 });
 
 afterEach(cleanup);
@@ -205,5 +213,158 @@ describe("the field's font size", () => {
     expect(screen.getByLabelText("Search query").className).toContain(
       "text-base",
     );
+  });
+});
+
+describe("adding to a list", () => {
+  const TARGET = { id: "list-1", name: "Family" };
+  const SHOW = { ...RESULT, onList: false };
+  const FILM = { ...MOVIE, onList: false };
+
+  function openForList(props: Partial<Parameters<typeof SearchOverlay>[0]> = {}) {
+    return open({ target: TARGET, ...props });
+  }
+
+  it("says where it is adding, and Done closes", () => {
+    const onClose = vi.fn();
+    openForList({ onClose });
+
+    expect(screen.getByText("Adding to Family")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the normal header in normal mode", () => {
+    open();
+    expect(screen.queryByText(/Adding to/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  it("searches with the list id, and without one in normal mode", async () => {
+    openForList();
+    type("sev");
+    await waitFor(() => {
+      expect(searchSuggestions).toHaveBeenCalledWith("sev", "list-1");
+    });
+    cleanup();
+
+    searchSuggestions.mockClear();
+    open();
+    type("sev");
+    await waitFor(() => {
+      expect(searchSuggestions).toHaveBeenCalledWith("sev");
+    });
+  });
+
+  it("renders the list control, not the Library plus", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW, FILM] });
+    openForList();
+    type("sev");
+
+    await screen.findByText("Severance");
+    expect(
+      screen.getAllByRole("button", { name: /^Add .* to Family$/ }),
+    ).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Add to watchlist" })).toBeNull();
+  });
+
+  it("adds without navigating, closing or remembering", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW] });
+    const onClose = vi.fn();
+    const onRemember = vi.fn();
+    openForList({ onClose, onRemember });
+    type("sev");
+
+    await screen.findByText("Severance");
+    fireEvent.click(screen.getByRole("button", { name: "Add Severance to Family" }));
+
+    await waitFor(() => {
+      expect(addToList).toHaveBeenCalledWith("list-1", "show", "95396");
+    });
+    expect(await screen.findByRole("button", { name: "Severance is on Family" })).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onRemember).not.toHaveBeenCalled();
+  });
+
+  it("adds when the title text is tapped, without navigating", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW] });
+    openForList();
+    type("sev");
+
+    fireEvent.click(await screen.findByText("Severance"));
+
+    await waitFor(() => {
+      expect(addToList).toHaveBeenCalledWith("list-1", "show", "95396");
+    });
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("has exactly one button per row", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW, FILM] });
+    openForList();
+    type("sev");
+
+    await screen.findByText("Severance: The Movie");
+    for (const row of screen.getAllByRole("listitem")) {
+      expect(within(row).getAllByRole("button")).toHaveLength(1);
+    }
+  });
+
+  it("sends each kind for a movie and a show sharing an id", async () => {
+    searchSuggestions.mockResolvedValue({ results: [SHOW, FILM] });
+    openForList();
+    type("sev");
+
+    await screen.findByText("Severance: The Movie");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    const showButton = screen.getByRole("button", {
+      name: "Add Severance to Family",
+    });
+    const movieButton = screen.getByRole("button", {
+      name: "Add Severance: The Movie to Family",
+    });
+
+    fireEvent.click(movieButton);
+    await waitFor(() => {
+      expect(addToList).toHaveBeenLastCalledWith("list-1", "movie", "95396");
+    });
+    fireEvent.click(showButton);
+    await waitFor(() => {
+      expect(addToList).toHaveBeenLastCalledWith("list-1", "show", "95396");
+    });
+  });
+
+  it("shows a tick for a title already on the list and ignores taps", async () => {
+    searchSuggestions.mockResolvedValue({ results: [{ ...SHOW, onList: true }] });
+    openForList();
+    type("sev");
+
+    const tick = await screen.findByRole("button", { name: "Severance is on Family" });
+    fireEvent.click(tick);
+    expect(addToList).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed add's message on screen after the action settles", async () => {
+    addToList.mockResolvedValue({ ok: false, error: "List is full." });
+    searchSuggestions.mockResolvedValue({ results: [SHOW] });
+    openForList();
+    type("sev");
+
+    await screen.findByText("Severance");
+    fireEvent.click(screen.getByRole("button", { name: "Add Severance to Family" }));
+
+    expect((await screen.findByText("List is full.")).getAttribute("role")).toBe(
+      "alert",
+    );
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Add Severance to Family" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+    expect(screen.getByText("List is full.")).toBeTruthy();
   });
 });

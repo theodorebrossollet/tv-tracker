@@ -345,9 +345,10 @@ export async function ensureShowCached(
 
     // `after` runs the callback once the response is sent. It must not touch
     // request-time APIs (`cookies`, `headers`) from a Server Component, which
-    // is why the callback is only Prisma and TMDB. Every caller of this
-    // function reaches it through the show page or its `generateMetadata`, so
-    // there is always a request scope — `after` throws without one.
+    // is why the callback is only Prisma and TMDB. Callers are the show
+    // page, its `generateMetadata`, and the `addToList` server action; each
+    // runs inside a request, so there is always a request scope — `after`
+    // throws without one.
     after(() => refreshShowDeduped(tmdbShowId));
     return true;
   }

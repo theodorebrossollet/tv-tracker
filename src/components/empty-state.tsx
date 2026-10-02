@@ -1,4 +1,4 @@
-type EmptyIcon = "shows" | "bookmark" | "archive";
+type EmptyIcon = "shows" | "bookmark" | "archive" | "list";
 
 interface EmptyStateProps {
   title: string;
@@ -89,6 +89,15 @@ function Glyph({ icon }: { icon: EmptyIcon }) {
     >
       {icon === "bookmark" ? (
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+      ) : icon === "list" ? (
+        <>
+          <path d="M9 6h11" />
+          <path d="M9 12h11" />
+          <path d="M9 18h11" />
+          <circle cx="4.5" cy="6" r="1" />
+          <circle cx="4.5" cy="12" r="1" />
+          <circle cx="4.5" cy="18" r="1" />
+        </>
       ) : (
         <>
           <rect x="3" y="4" width="18" height="4" rx="1" />
