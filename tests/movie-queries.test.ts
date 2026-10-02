@@ -174,6 +174,7 @@ describe("getMovieDetail", () => {
       genres: "Drama",
       status: null,
       watchedAt: null,
+      rating: null,
     });
     expect(await prisma.movie.count()).toBe(0);
   });

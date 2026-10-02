@@ -5,7 +5,21 @@ vi.mock("@/lib/shows", async (importOriginal) => ({
   ensureShowCached: vi.fn(async () => true),
 }));
 
-const { getShowDetail, getTrackedShows } = await import("@/lib/queries");
+vi.mock("@/lib/tmdb", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tmdb")>()),
+  getMovieDetails: vi.fn(async (id: string | number) => ({
+    title: `Fetched ${id}`,
+    posterPath: null,
+    overview: null,
+    releaseDate: null,
+    runtime: null,
+    genres: null,
+  })),
+}));
+
+const { getMovieBuckets, getMovieDetail, getShowDetail, getTrackedShows } =
+  await import("@/lib/queries");
+const { prisma } = await import("@/lib/prisma");
 const { TEST_USER_ID, resetDatabase, seedSeasonedShow, seedUser, watchEpisode } =
   await import("./helpers");
 
@@ -197,5 +211,63 @@ describe("detail and summary agree on the show average", () => {
       expect(Math.abs(detail.ratingAverage! - summary.ratingAverage!)).toBeLessThan(1e-9);
       expect(detail.ratingAverage!).toBeCloseTo(expected, 9);
     }
+  });
+});
+
+describe("movie ratings", () => {
+  async function track(
+    id: string,
+    status: "watchlist" | "watched" | "not_interested",
+    rating: number | null,
+    userId = TEST_USER_ID,
+  ) {
+    await prisma.movie.upsert({
+      where: { id },
+      update: {},
+      create: { id, title: `Movie ${id}` },
+    });
+    await prisma.trackedMovie.create({
+      data: { movieId: id, userId, status, rating },
+    });
+  }
+
+  it("carries the caller's rating in the buckets, null when unrated", async () => {
+    await track("1", "watched", 8);
+    await track("2", "watched", null);
+    await track("3", "watchlist", null);
+
+    const buckets = await getMovieBuckets(TEST_USER_ID);
+    expect(buckets.watched.map((m) => [m.movieId, m.rating]).sort()).toEqual([
+      ["1", 8],
+      ["2", null],
+    ]);
+    expect(buckets.watchlist[0].rating).toBeNull();
+  });
+
+  it("carries the caller's rating in the detail, null when unrated or untracked", async () => {
+    await track("1", "watched", 9);
+    await track("2", "watchlist", null);
+    await prisma.movie.create({ data: { id: "3", title: "Untracked" } });
+
+    expect((await getMovieDetail(TEST_USER_ID, "1"))!.rating).toBe(9);
+    expect((await getMovieDetail(TEST_USER_ID, "2"))!.rating).toBeNull();
+    expect((await getMovieDetail(TEST_USER_ID, "3"))!.rating).toBeNull();
+  });
+
+  it("has no rating for a movie fetched from TMDB", async () => {
+    expect((await getMovieDetail(TEST_USER_ID, "999"))!.rating).toBeNull();
+  });
+
+  it("never shows another account's rating of the same movie", async () => {
+    await track("1", "watched", 3);
+    await track("1", "watched", 10, B);
+    await track("2", "watched", null);
+    await track("2", "watched", 7, B);
+
+    expect((await getMovieDetail(TEST_USER_ID, "1"))!.rating).toBe(3);
+    expect((await getMovieDetail(TEST_USER_ID, "2"))!.rating).toBeNull();
+    const mine = (await getMovieBuckets(TEST_USER_ID)).watched;
+    expect(mine.find((m) => m.movieId === "1")!.rating).toBe(3);
+    expect(mine.find((m) => m.movieId === "2")!.rating).toBeNull();
   });
 });

@@ -50,7 +50,7 @@ const {
   setSeasonWatched,
   unmarkEpisodeWatched,
 } = await import("@/app/actions");
-const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
+const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getMovieDetail, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase, seedSeasonedShow, seedShow, seedUser, statusOf, watchEpisode } =
@@ -381,5 +381,42 @@ describe("rating reads never cross accounts", () => {
 
     expect((await getShowDetail(A, "300"))!.ratingAverage).toBeNull();
     expect((await getTrackedShows(A))[0].ratingAverage).toBeNull();
+  });
+});
+
+describe("movie and list ratings never cross accounts", () => {
+  async function sharedMovie() {
+    await prisma.movie.create({ data: { id: "9", title: "Nine" } });
+    await prisma.trackedMovie.create({
+      data: { userId: A, movieId: "9", status: "watched", rating: 4 },
+    });
+    await prisma.trackedMovie.create({
+      data: { userId: B, movieId: "9", status: "watched", rating: 10 },
+    });
+  }
+
+  it("keeps the movie rating per account in buckets and detail", async () => {
+    await sharedMovie();
+    expect((await getMovieBuckets(A)).watched[0].rating).toBe(4);
+    expect((await getMovieBuckets(B)).watched[0].rating).toBe(10);
+    expect((await getMovieDetail(A, "9"))!.rating).toBe(4);
+    expect((await getMovieDetail(B, "9"))!.rating).toBe(10);
+  });
+
+  it("shows the caller's movie rating on a list, not another account's", async () => {
+    await sharedMovie();
+    await prisma.movie.create({ data: { id: "8", title: "Eight" } });
+    await prisma.trackedMovie.create({
+      data: { userId: B, movieId: "8", status: "watched", rating: 9 },
+    });
+    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
+    await prisma.listItem.create({ data: { listId: list.id, movieId: "9" } });
+    await prisma.listItem.create({ data: { listId: list.id, movieId: "8" } });
+
+    const byId = new Map(
+      (await getListDetail(A, list.id))!.items.map((i) => [i.titleId, i.rating]),
+    );
+    expect(byId.get("9")).toBe(4);
+    expect(byId.get("8")).toBeNull();
   });
 });

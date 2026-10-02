@@ -677,6 +677,8 @@ export interface MovieSummary {
   status: MovieStatus;
   watchedAt: Date | null;
   addedAt: Date;
+  /** This account's 1-10 rating; null when unrated. */
+  rating: number | null;
 }
 
 export interface MovieBuckets {
@@ -718,6 +720,7 @@ export async function getMovieBuckets(userId: string): Promise<MovieBuckets> {
       status: row.status as MovieStatus,
       watchedAt: row.watchedAt,
       addedAt: row.addedAt,
+      rating: row.rating,
     };
 
     if (row.status === "watched") buckets.watched.push(summary);
@@ -744,6 +747,8 @@ export interface MovieDetail {
   /** This user's list for the movie; null when they don't track it. */
   status: MovieStatus | null;
   watchedAt: Date | null;
+  /** This account's 1-10 rating; null when unrated, untracked or uncached. */
+  rating: number | null;
 }
 
 /**
@@ -780,6 +785,7 @@ export const getMovieDetail = cache(async function getMovieDetail(
       genres: cached.genres,
       status: mine ? (mine.status as MovieStatus) : null,
       watchedAt: mine?.watchedAt ?? null,
+      rating: mine?.rating ?? null,
     };
   }
 
@@ -795,6 +801,7 @@ export const getMovieDetail = cache(async function getMovieDetail(
       genres: fetched.genres,
       status: null,
       watchedAt: null,
+      rating: null,
     };
   } catch (error) {
     if (error instanceof TmdbError && error.status === 404) return null;
@@ -845,6 +852,11 @@ export interface ListItemView {
   tickedAt: Date | null;
   watched: boolean;
   addedAt: Date;
+  /**
+   * A movie: the account's own rating. A show: the average of its season
+   * averages (`ratingAverage`). Null when unrated or untracked.
+   */
+  rating: number | null;
 }
 
 export interface ListDetail {
@@ -889,6 +901,9 @@ export const getListDetail = cache(async function getListDetail(
 
   const hasShows = list.items.some((item) => item.showId !== null);
   const trackedShows = hasShows ? await getTrackedShows(userId) : [];
+  const ratingByShow = new Map(
+    trackedShows.map((show) => [show.showId, show.ratingAverage]),
+  );
   const finishedByShow = new Map(
     trackedShows.map((show) => [
       show.showId,
@@ -922,6 +937,7 @@ export const getListDetail = cache(async function getListDetail(
           showFinished: false,
         }),
         addedAt: item.addedAt,
+        rating: mine?.rating ?? null,
       });
     } else if (item.show) {
       const mine = item.show.tracked[0];
@@ -944,6 +960,7 @@ export const getListDetail = cache(async function getListDetail(
           showFinished: finished,
         }),
         addedAt: item.addedAt,
+        rating: ratingByShow.get(item.show.id) ?? null,
       });
     }
   }

@@ -68,6 +68,7 @@ function movie(over: Partial<MovieDetail> = {}): MovieDetail {
     genres: "Action, Science Fiction",
     status: null,
     watchedAt: null,
+    rating: null,
     ...over,
   };
 }
