@@ -68,7 +68,7 @@ describe("EpisodeRow ratings", () => {
     render(row(true, null));
 
     expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
 
     expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
   });
@@ -76,7 +76,9 @@ describe("EpisodeRow ratings", () => {
   it("shows the chip for a rated episode and opens the strip from it", () => {
     render(row(true, 8));
 
-    const chip = screen.getByRole("button", { name: /Rated 8 out of 10/ });
+    const chip = screen.getByRole("button", {
+      name: "Change rating for S01E02, rated 8",
+    });
     expect(chip.textContent).toContain("★ 8");
 
     fireEvent.click(chip);
@@ -90,8 +92,8 @@ describe("EpisodeRow ratings", () => {
   it("toggles the strip closed again", () => {
     render(row(true, null));
 
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
 
     expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
   });
@@ -99,7 +101,7 @@ describe("EpisodeRow ratings", () => {
   it("sends rateEpisode with the episode id", async () => {
     render(row(true, null));
 
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
     fireEvent.click(screen.getByRole("button", { name: "Rate 7 out of 10" }));
 
     await waitFor(() => expect(rateEpisode).toHaveBeenCalledWith("ep-1", 7));
@@ -114,7 +116,7 @@ describe("EpisodeRow ratings", () => {
       }),
     );
     render(row(true, 8));
-    fireEvent.click(screen.getByRole("button", { name: /Rated 8/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Change rating for S01E02, rated 8" }));
     expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("checkbox"));
@@ -139,7 +141,7 @@ describe("EpisodeRow ratings", () => {
 
   it("does not reopen the strip after an un-watch settles back to watched", async () => {
     render(row(true, null));
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
     expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("checkbox"));
@@ -148,14 +150,14 @@ describe("EpisodeRow ratings", () => {
     // The mocked action does not change the prop, so the optimistic value
     // settles back to watched: the strip must not come back with it.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Rate" })).toBeTruthy(),
+      expect(screen.getByRole("button", { name: "Rate S01E02" })).toBeTruthy(),
     );
     expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
   });
 
   it("closes the strip when the watched prop goes false, and stays closed on re-watch", () => {
     const { rerender } = render(row(true, null));
-    fireEvent.click(screen.getByRole("button", { name: "Rate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rate S01E02" }));
     expect(screen.getByRole("group", { name: "Your rating" })).toBeTruthy();
 
     rerender(row(false, null));
@@ -163,6 +165,92 @@ describe("EpisodeRow ratings", () => {
 
     rerender(row(true, null));
     expect(screen.queryByRole("group", { name: "Your rating" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Rate" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rate S01E02" })).toBeTruthy();
+  });
+
+  it("names each episode's rating button distinctly", () => {
+    render(
+      <ul>
+        <EpisodeRow
+          episodeId="ep-1"
+          seasonNumber={1}
+          episodeNumber={2}
+          name="Half Loop"
+          airDate="2024-01-01T00:00:00.000Z"
+          watched
+          aired
+          runtime={50}
+          overview={null}
+          rating={null}
+        />
+        <EpisodeRow
+          episodeId="ep-2"
+          seasonNumber={1}
+          episodeNumber={3}
+          name="Full Loop"
+          airDate="2024-01-08T00:00:00.000Z"
+          watched
+          aired
+          runtime={50}
+          overview={null}
+          rating={9}
+        />
+      </ul>,
+    );
+
+    expect(screen.getByRole("button", { name: "Rate S01E02" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Change rating for S01E03, rated 9" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Rate" })).toBeNull();
+  });
+
+  it("gives the rating button a comfortable tap target", () => {
+    render(row(true, null));
+
+    const button = screen.getByRole("button", { name: "Rate S01E02" });
+    expect(button.className).toContain("min-h-10");
+    expect(button.className).toContain("min-w-10");
+  });
+
+  it("shows no Rate button after an optimistic mark until the server confirms", async () => {
+    let finish!: () => void;
+    markEpisodeWatched.mockReturnValue(
+      new Promise((resolve) => {
+        finish = () => resolve({ ok: true });
+      }),
+    );
+    const { rerender } = render(row(false, null));
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    await waitFor(() => expect(markEpisodeWatched).toHaveBeenCalled());
+    expect(screen.getByRole("checkbox").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: /^Rate S01E02/ })).toBeNull();
+
+    rerender(row(true, null));
+    expect(screen.getByRole("button", { name: "Rate S01E02" })).toBeTruthy();
+    finish();
+  });
+
+  it("hides the Rate button immediately on an optimistic un-watch", async () => {
+    let finish!: () => void;
+    unmarkEpisodeWatched.mockReturnValue(
+      new Promise((resolve) => {
+        finish = () => resolve({ ok: true });
+      }),
+    );
+    render(row(true, null));
+    expect(screen.getByRole("button", { name: "Rate S01E02" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /^Rate S01E02|^Change rating/ }),
+      ).toBeNull(),
+    );
+    finish();
   });
 });

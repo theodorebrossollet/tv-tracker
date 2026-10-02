@@ -52,8 +52,8 @@ src/app/          routes; actions.ts holds the Library writes, account-actions.t
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
-                  action-result (ActionResult + toResult, shared by both action
-                  modules; deliberately not "use server"),
+                  action-result (ActionResult + toResult, shared by all four
+                  action modules; deliberately not "use server"),
                   up-next (what the show page says when nothing aired is left
                   to watch, and NEXT_UP_QUEUE — which lives here rather than
                   beside its card for the reason below),
@@ -72,7 +72,14 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   additive (two new tables), also apply BEFORE merging;
                   20261002142452_add_ratings adds WatchedEpisode.rating and
                   TrackedMovie.rating — additive (two `ALTER TABLE ... ADD
-                  COLUMN`), also apply BEFORE merging
+                  COLUMN`), also apply BEFORE merging — and verify it:
+                  because it adds a column to two core tables and Prisma
+                  selects every column by default, deploying the code first
+                  breaks nearly every screen (dashboard, Library, show and
+                  movie pages, marking things watched) for everyone, not just
+                  ratings; after `npm run db:deploy`, check on Turso that
+                  `SELECT rating FROM TrackedMovie LIMIT 1; SELECT rating FROM
+                  WatchedEpisode LIMIT 1;` succeed BEFORE merging
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);

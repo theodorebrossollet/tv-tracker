@@ -46,13 +46,20 @@ export function EpisodeRow({
   // whenever the episode is un-watched, or a later re-watch (the checkbox, or
   // "Mark all watched") would pop the strip open unsolicited. `toggle` closes
   // it for a user un-watch; the render-time reset below covers an un-watch
-  // that arrives from the server as a `watched` prop change.
+  // that arrives from the server as a `watched` prop change. The rating UI is
+  // only rendered once BOTH the optimistic state and the prop say watched, so
+  // it never shows (dead, because the reset would close it) between an
+  // optimistic mark and the server confirming it.
   const [ratingOpen, setRatingOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   // React's "adjusting state when a prop changes": setState during render,
   // guarded so it settles after one extra pass, with no effect and no flash.
   if (!watched && ratingOpen) setRatingOpen(false);
+
+  // Optimistic false hides it at once on an un-watch; the prop false hides it
+  // until the server has confirmed a watch.
+  const showRating = optimisticWatched && watched;
 
   function toggle() {
     // Episodes that haven't aired can't be marked, matching what
@@ -144,12 +151,17 @@ export function EpisodeRow({
 
         {/* Rating is its own control, never part of the watched checkbox:
             it can't block, delay or trigger marking watched. */}
-        {optimisticWatched ? (
+        {showRating ? (
           <button
             type="button"
             onClick={() => setRatingOpen((value) => !value)}
             aria-expanded={ratingOpen}
-            className="shrink-0 rounded-full px-2 py-1 text-xs transition-colors hover:bg-surface"
+            aria-label={
+              rating !== null
+                ? `Change rating for ${code}, rated ${rating}`
+                : `Rate ${code}`
+            }
+            className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full px-2 py-1 text-xs transition-colors hover:bg-surface"
           >
             {rating !== null ? (
               <RatingValue value={rating} />
@@ -191,7 +203,7 @@ export function EpisodeRow({
         ) : null}
       </div>
 
-      {optimisticWatched && ratingOpen ? (
+      {showRating && ratingOpen ? (
         <div className="px-2 pb-3 pl-11">
           <RatingStrip kind="episode" id={episodeId} rating={rating} />
         </div>
