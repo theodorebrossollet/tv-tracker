@@ -53,7 +53,8 @@ const {
 const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
-const { resetDatabase, seedShow, seedUser, statusOf } = await import("./helpers");
+const { resetDatabase, seedSeasonedShow, seedShow, seedUser, statusOf, watchEpisode } =
+  await import("./helpers");
 
 const A = "user-a";
 const B = "user-b";
@@ -344,5 +345,41 @@ describe("list reads never cross accounts", () => {
     expect(await getLists(A)).toEqual([]);
     expect(await getListDetail(A, theirs.id)).toBeNull();
     expect(await getListsForTitle(A, "movie", "9")).toEqual([]);
+  });
+});
+
+describe("rating reads never cross accounts", () => {
+  it("keeps B's ratings out of A's episode ratings, averages and summary", async () => {
+    await seedSeasonedShow({ showId: "300", seasons: [1, 3], userId: A });
+    await seedSeasonedShow({ showId: "300", seasons: [1, 3], userId: B });
+    await watchEpisode("300-s1e1", 4, A);
+    await watchEpisode("300-s2e1", 8, A);
+    await watchEpisode("300-s2e2", null, A);
+    // B rates everything, differently, including episodes A has not watched.
+    await watchEpisode("300-s1e1", 10, B);
+    await watchEpisode("300-s2e1", 1, B);
+    await watchEpisode("300-s2e2", 1, B);
+    await watchEpisode("300-s2e3", 1, B);
+
+    const detail = (await getShowDetail(A, "300"))!;
+    expect(detail.seasons[0].episodes[0].rating).toBe(4);
+    expect(detail.seasons[1].episodes.map((e) => e.rating)).toEqual([8, null, null]);
+    expect(detail.seasons.map((s) => s.ratingAverage)).toEqual([4, 8]);
+    expect(detail.seasons.map((s) => s.ratedCount)).toEqual([1, 1]);
+    expect(detail.seasons.map((s) => s.watchedEpisodeCount)).toEqual([1, 2]);
+    expect(detail.ratingAverage).toBe(6);
+    expect(detail.ratedCount).toBe(2);
+
+    const summary = (await getTrackedShows(A)).find((s) => s.showId === "300");
+    expect(summary?.ratingAverage).toBe(6);
+  });
+
+  it("gives a user who rated nothing no average even if others rated", async () => {
+    await seedSeasonedShow({ showId: "300", seasons: [2], userId: A });
+    await seedSeasonedShow({ showId: "300", seasons: [2], userId: B });
+    await watchEpisode("300-s1e1", 9, B);
+
+    expect((await getShowDetail(A, "300"))!.ratingAverage).toBeNull();
+    expect((await getTrackedShows(A))[0].ratingAverage).toBeNull();
   });
 });

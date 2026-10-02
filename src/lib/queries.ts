@@ -6,6 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { hasSeriesEnded } from "@/lib/format";
 import { isListItemWatched, type ListKind } from "@/lib/lists";
 import { prisma } from "@/lib/prisma";
+import { seasonAverage, showAverage } from "@/lib/ratings";
 import { ensureShowCached } from "@/lib/shows";
 import { getMovieDetails, TmdbError } from "@/lib/tmdb";
 import type { MovieStatus, TrackStatus } from "@/lib/types";
@@ -44,6 +45,12 @@ export interface TrackedShowSummary {
   lastWatchedAt: Date | null;
   /** Fallback ordering key for shows with no watch history yet. */
   addedAt: Date;
+  /**
+   * Mean of this account's per-season rating means; null when no episode is
+   * rated. Computed in SQL, and kept equal to `getShowDetail`'s
+   * `ratingAverage` by a parity test.
+   */
+  ratingAverage: number | null;
   nextUnwatched: {
     /**
      * Carried so the dashboard can mark this episode watched in place —
@@ -88,9 +95,10 @@ export async function getTrackedShows(
   const showIds = tracked.map((entry) => entry.showId);
 
   // Independent, and neither reads the other's rows.
-  const [progress, nextUp] = await Promise.all([
+  const [progress, nextUp, ratings] = await Promise.all([
     loadShowProgress(userId, showIds, now),
     loadNextUnwatched(userId, showIds, now),
+    loadShowRatings(userId, showIds),
   ]);
 
   const summaries = tracked.map((entry) => {
@@ -112,6 +120,7 @@ export async function getTrackedShows(
       showStatus: entry.show.status,
       lastWatchedAt: counts?.lastWatchedAt ?? null,
       addedAt: entry.addedAt,
+      ratingAverage: ratings.get(entry.showId) ?? null,
       nextUnwatched: nextUp.get(entry.showId) ?? null,
     };
   });
@@ -204,6 +213,49 @@ async function loadShowProgress(
         lastWatchedAt: row.lastWatchedAt ? new Date(row.lastWatchedAt) : null,
       },
     ]),
+  );
+}
+
+/**
+ * Each show's rating average: the mean of the caller's per-season means.
+ *
+ * Averaging per season first (rather than over every rated episode) means a
+ * ten-episode season doesn't outweigh a two-episode one; `getShowDetail` does
+ * the same in TypeScript via `showAverage`, and a parity test keeps them equal.
+ * A season with no rated episode produces no group, so it is left out, and a
+ * show with no rated episode is absent from the map.
+ *
+ * As in `loadShowProgress`, `userId` is a join condition, so dropping
+ * `w."userId" = ${userId}` would average the whole household's ratings.
+ * AVG() erases the column type, hence `Number(...)`.
+ */
+async function loadShowRatings(
+  userId: string,
+  showIds: string[],
+): Promise<Map<string, number>> {
+  const rows = await prisma.$queryRaw<
+    Array<{ showId: string; ratingAverage: number | null }>
+  >`
+    SELECT s."showId" AS "showId", AVG(s."seasonAverage") AS "ratingAverage"
+    FROM (
+      SELECT e."showId" AS "showId",
+             e."seasonNumber" AS "seasonNumber",
+             AVG(w."rating") AS "seasonAverage"
+      FROM "Episode" e
+      JOIN "WatchedEpisode" w
+        ON w."episodeId" = e."id"
+       AND w."userId" = ${userId}
+      WHERE e."showId" IN (${Prisma.join(showIds)})
+        AND w."rating" IS NOT NULL
+      GROUP BY e."showId", e."seasonNumber"
+    ) s
+    GROUP BY s."showId"
+  `;
+
+  return new Map(
+    rows
+      .filter((row) => row.ratingAverage !== null)
+      .map((row) => [row.showId, Number(row.ratingAverage)]),
   );
 }
 
@@ -523,6 +575,9 @@ export const getShowDetail = cache(async function getShowDetail(
   const episodes = show.episodes.map(({ watched, ...episode }) => ({
     ...episode,
     watched: watched.length > 0,
+    // The caller's own rating (the include is filtered to them); null when
+    // unwatched or unrated.
+    rating: watched[0]?.rating ?? null,
     aired: isAired(episode.airDate, now),
   }));
 
@@ -538,6 +593,8 @@ export const getShowDetail = cache(async function getShowDetail(
 
   let airedCount = 0;
   let watchedCount = 0;
+  let ratedCount = 0;
+  let watchedEpisodeCount = 0;
 
   const seasonSummaries = [...seasons.entries()]
     .sort(([a], [b]) => a - b)
@@ -548,7 +605,18 @@ export const getShowDetail = cache(async function getShowDetail(
       airedCount += aired.length;
       watchedCount += watched.length;
 
+      // Ratings and watch totals count every watched episode, aired or not.
+      const ratings = episodes.flatMap((episode) =>
+        episode.rating === null ? [] : [episode.rating],
+      );
+      const watchedInSeason = episodes.filter((episode) => episode.watched);
+      ratedCount += ratings.length;
+      watchedEpisodeCount += watchedInSeason.length;
+
       return {
+        ratingAverage: seasonAverage(ratings),
+        ratedCount: ratings.length,
+        watchedEpisodeCount: watchedInSeason.length,
         seasonNumber,
         episodes,
         airedCount: aired.length,
@@ -573,6 +641,10 @@ export const getShowDetail = cache(async function getShowDetail(
     airedCount,
     watchedCount,
     finished: isFinished(airedCount, watchedCount),
+    // Each season counts equally; seasons with no rating are left out.
+    ratingAverage: showAverage(seasonSummaries.map((s) => s.ratingAverage)),
+    ratedCount,
+    watchedEpisodeCount,
     seasons: seasonSummaries,
   };
 });
@@ -584,10 +656,12 @@ function loadShow(userId: string, showId: string) {
       tracked: { where: { userId } },
       episodes: {
         orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-        // Only the id: the caller collapses these rows to `watched.length > 0`
-        // immediately, so `watchedAt` and the foreign keys were being fetched
-        // for every episode of the show to produce a boolean.
-        include: { watched: { where: { userId }, select: { id: true } } },
+        // Only the id and rating: the caller collapses these rows to
+        // `watched.length > 0` and the user's rating, so `watchedAt` and the
+        // foreign keys were being fetched for every episode of the show.
+        include: {
+          watched: { where: { userId }, select: { id: true, rating: true } },
+        },
       },
     },
   });

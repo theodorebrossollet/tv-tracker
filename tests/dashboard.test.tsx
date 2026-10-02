@@ -30,6 +30,7 @@ function show(overrides: Partial<TrackedShowSummary> = {}): TrackedShowSummary {
     showStatus: "Returning Series",
     lastWatchedAt: null,
     addedAt: new Date(),
+    ratingAverage: null,
     nextUnwatched: {
       id: "101-e17",
       seasonNumber: 2,
