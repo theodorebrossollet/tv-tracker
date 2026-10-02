@@ -853,7 +853,7 @@ export async function updateProviders(ids: number[]): Promise<ActionResult> {
 }
 
 /**
- * Wipes the user's tracking data. The global Show/Episode cache is kept so
+ * Wipes the user's tracking data and lists. The global Show/Episode cache is kept so
  * re-adding a show doesn't have to re-download everything from TMDB.
  */
 export async function clearAllData(): Promise<ActionResult> {
@@ -870,6 +870,8 @@ export async function clearAllData(): Promise<ActionResult> {
       prisma.watchedEpisode.deleteMany({ where: { userId: user.id } }),
       prisma.trackedShow.deleteMany({ where: { userId: user.id } }),
       prisma.trackedMovie.deleteMany({ where: { userId: user.id } }),
+      // Items go with their list (cascade); the titles themselves stay cached.
+      prisma.list.deleteMany({ where: { userId: user.id } }),
       prisma.settings.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {
