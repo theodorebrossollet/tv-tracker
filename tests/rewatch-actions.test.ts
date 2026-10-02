@@ -12,8 +12,11 @@ vi.mock("@/lib/auth", async (importOriginal) => ({
   })),
 }));
 
-const { startShowOver } = await import("@/app/rewatch-actions");
-const { MAX_PAST_RUNS } = await import("@/lib/rewatch");
+const { startShowOver, watchMovieAgain } = await import(
+  "@/app/rewatch-actions"
+);
+const { rateMovie } = await import("@/app/rating-actions");
+const { MAX_PAST_RUNS, MAX_PAST_WATCHES } = await import("@/lib/rewatch");
 const { getListDetail, getShowBuckets, getTrackedShows } = await import(
   "@/lib/queries"
 );
@@ -286,5 +289,208 @@ describe("startShowOver", () => {
     expect(await runsOf()).toHaveLength(0);
     expect(await statusOf("101")).toBe("paused");
     expect(revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+const FIRST = "2026-01-02T03:04:05.000Z";
+const MARK_FIRST = { ok: false, error: "Mark it watched first." };
+
+async function seedMovie({
+  status = "watched",
+  watchedAt = new Date(FIRST),
+  rating = 7,
+  userId = TEST_USER_ID,
+}: {
+  status?: string;
+  watchedAt?: Date | null;
+  rating?: number | null;
+  userId?: string;
+} = {}) {
+  await prisma.movie.upsert({
+    where: { id: "603" },
+    create: { id: "603", title: "Movie 603" },
+    update: {},
+  });
+  await prisma.trackedMovie.create({
+    data: { userId, movieId: "603", status, watchedAt, rating },
+  });
+}
+
+function pastOf(userId = TEST_USER_ID) {
+  return prisma.pastMovieWatch.findMany({
+    where: { userId, movieId: "603" },
+    orderBy: { archivedAt: "asc" },
+  });
+}
+
+function currentOf(userId = TEST_USER_ID) {
+  return prisma.trackedMovie.findUniqueOrThrow({
+    where: { userId_movieId: { userId, movieId: "603" } },
+  });
+}
+
+async function seedPast(n: number) {
+  for (let i = 0; i < n; i++) {
+    await prisma.pastMovieWatch.create({
+      data: { userId: TEST_USER_ID, movieId: "603", watchedAt: new Date(FIRST) },
+    });
+  }
+}
+
+describe("watchMovieAgain", () => {
+  it("archives the stored date and rating, restarts the watch now, unrated", async () => {
+    await seedMovie({ rating: 8 });
+
+    expect(await watchMovieAgain("603")).toEqual({ ok: true });
+
+    const past = await pastOf();
+    expect(past).toHaveLength(1);
+    expect(past[0].watchedAt.toISOString()).toBe(FIRST);
+    expect(past[0].rating).toBe(8);
+    expect(Math.abs(past[0].archivedAt.getTime() - Date.now())).toBeLessThan(60_000);
+    const now = await currentOf();
+    expect(now.status).toBe("watched");
+    expect(now.rating).toBeNull();
+    expect(Math.abs(now.watchedAt!.getTime() - Date.now())).toBeLessThan(5_000);
+    expect(revalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+
+  it("archives an unrated watch as unrated", async () => {
+    await seedMovie({ rating: null });
+    await watchMovieAgain("603");
+    expect((await pastOf())[0].rating).toBeNull();
+  });
+
+  it("two successive calls make two past watches, each as it was", async () => {
+    await seedMovie({ rating: 8 });
+    await watchMovieAgain("603");
+    await prisma.trackedMovie.updateMany({ data: { rating: 5 } });
+    const secondStart = (await currentOf()).watchedAt!;
+
+    expect(await watchMovieAgain("603")).toEqual({ ok: true });
+
+    const past = await pastOf();
+    expect(past.map((p) => p.rating)).toEqual([8, 5]);
+    expect(past[0].watchedAt.toISOString()).toBe(FIRST);
+    expect(past[1].watchedAt.getTime()).toBe(secondStart.getTime());
+  });
+
+  it("leaves another account's watch of the same movie alone and unarchived", async () => {
+    await seedUser(OTHER);
+    await seedMovie({ rating: 8 });
+    await seedMovie({ userId: OTHER, rating: 3 });
+
+    await watchMovieAgain("603");
+
+    const other = await currentOf(OTHER);
+    expect(other.rating).toBe(3);
+    expect(other.watchedAt!.toISOString()).toBe(FIRST);
+    expect(await pastOf(OTHER)).toHaveLength(0);
+    expect(await prisma.pastMovieWatch.count()).toBe(1);
+  });
+
+  it.each(["watchlist", "not_interested"])("refuses a %s movie", async (status) => {
+    await seedMovie({ status, watchedAt: null, rating: null });
+    expect(await watchMovieAgain("603")).toEqual(MARK_FIRST);
+    expect(await prisma.pastMovieWatch.count()).toBe(0);
+    expect((await currentOf()).status).toBe(status);
+  });
+
+  it("refuses an untracked movie, and one only another account has watched", async () => {
+    expect(await watchMovieAgain("603")).toEqual(MARK_FIRST);
+    await seedUser(OTHER);
+    await seedMovie({ userId: OTHER });
+    expect(await watchMovieAgain("603")).toEqual(MARK_FIRST);
+    expect(await prisma.pastMovieWatch.count()).toBe(0);
+    expect((await currentOf(OTHER)).watchedAt!.toISOString()).toBe(FIRST);
+  });
+
+  it("refuses malformed and non-string ids before touching the database", async () => {
+    const spy = vi.spyOn(prisma, "$transaction");
+    const find = vi.spyOn(prisma.trackedMovie, "findUnique");
+    for (const bad of ["12/x", "", 603, null, undefined, {}]) {
+      expect(await watchMovieAgain(bad as unknown as string)).toEqual({
+        ok: false,
+        error: "Missing movie id.",
+      });
+    }
+    expect(spy).not.toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+    spy.mockRestore();
+    find.mockRestore();
+  });
+
+  it("refuses a movie already at the limit of past watches", async () => {
+    await seedMovie();
+    await seedPast(MAX_PAST_WATCHES);
+
+    expect(await watchMovieAgain("603")).toEqual({
+      ok: false,
+      error: "This movie has reached the limit of 20 past watches.",
+    });
+
+    expect(await prisma.pastMovieWatch.count()).toBe(MAX_PAST_WATCHES);
+    const now = await currentOf();
+    expect(now.rating).toBe(7);
+    expect(now.watchedAt!.toISOString()).toBe(FIRST);
+  });
+
+  it("is all or nothing: a failure of the update rolls the archive back", async () => {
+    await seedMovie({ rating: 8 });
+    // Fails the UPDATE (statement 2 of 2) after the archive row was inserted.
+    await prisma.$executeRawUnsafe(
+      `CREATE TRIGGER "test_block_restart" BEFORE UPDATE ON "TrackedMovie"
+       BEGIN SELECT RAISE(ABORT, 'forced failure'); END`,
+    );
+    try {
+      expect((await watchMovieAgain("603")).ok).toBe(false);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER "test_block_restart"`);
+    }
+
+    expect(await prisma.pastMovieWatch.count()).toBe(0);
+    const now = await currentOf();
+    expect(now.rating).toBe(8);
+    expect(now.watchedAt!.toISOString()).toBe(FIRST);
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("two concurrent calls at 19 past watches reach 20, not 21", async () => {
+    await seedMovie({ rating: 8 });
+    await seedPast(MAX_PAST_WATCHES - 1);
+    // Hold both calls after their pre-check count until each has passed it, so
+    // both really reach the conditional insert believing there is room.
+    let entered = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const original = prisma.pastMovieWatch.count.bind(prisma.pastMovieWatch);
+    const spy = vi
+      .spyOn(prisma.pastMovieWatch, "count")
+      .mockImplementation((async (args: never) => {
+        const n = await original(args);
+        if (++entered === 2) release();
+        await gate;
+        return n;
+      }) as never);
+
+    const results = await Promise.all([watchMovieAgain("603"), watchMovieAgain("603")]);
+    spy.mockRestore();
+
+    expect(entered).toBe(2);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok)).toEqual([
+      { ok: false, error: "This movie has reached the limit of 20 past watches." },
+    ]);
+    expect(await pastOf()).toHaveLength(MAX_PAST_WATCHES);
+  });
+
+  it("lets the movie rating be set on the new watch afterwards", async () => {
+    await seedMovie({ rating: 8 });
+    await watchMovieAgain("603");
+
+    expect(await rateMovie("603", 9)).toEqual({ ok: true });
+
+    expect((await currentOf()).rating).toBe(9);
+    expect((await pastOf())[0].rating).toBe(8);
   });
 });

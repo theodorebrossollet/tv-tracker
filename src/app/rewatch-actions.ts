@@ -6,8 +6,8 @@ import { revalidatePath } from "next/cache";
 import { toResult, type ActionResult } from "@/lib/action-result";
 import { requireOnboardedSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { MAX_PAST_RUNS } from "@/lib/rewatch";
-import { isTmdbShowId } from "@/lib/show-id";
+import { MAX_PAST_RUNS, MAX_PAST_WATCHES } from "@/lib/rewatch";
+import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 
 // Watching a show or movie again.
 //
@@ -126,6 +126,84 @@ export async function startShowOver(showId: string): Promise<ActionResult> {
         where: { userId: user.id, episode: { showId } },
       });
       return left === 0 ? NOTHING : { ok: false, error: limitMessage() };
+    }
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateRewatchViews();
+  return { ok: true };
+}
+
+const MARK_WATCHED_FIRST = { ok: false, error: "Mark it watched first." } as const;
+const watchLimitMessage = () =>
+  `This movie has reached the limit of ${MAX_PAST_WATCHES} past watches.`;
+
+/**
+ * Archives the caller's current watch of a movie and starts a new one: the
+ * date and rating move to `PastMovieWatch`, and the tracked row gets
+ * `watchedAt = now` and no rating. The status stays `watched`.
+ *
+ * Same shape as `startShowOver`: the reads above the transaction are only for
+ * friendly messages, the archive INSERT is itself conditional in SQL (still
+ * watched AND fewer than MAX_PAST_WATCHES past watches), and the UPDATE runs
+ * only if that archive row exists, so a racing call, a status change or the
+ * cap can never clear a watch without it having been archived. Both statements
+ * are in ONE array-form `$transaction`. Dates written here are bound as JS
+ * `Date`s; the archived `watchedAt` is copied as stored.
+ */
+export async function watchMovieAgain(movieId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // `regex.test` coerces a number to a string, so the type is checked first.
+  if (typeof movieId !== "string" || !isTmdbMovieId(movieId)) {
+    return { ok: false, error: "Missing movie id." };
+  }
+
+  try {
+    const [tracked, past] = await Promise.all([
+      prisma.trackedMovie.findUnique({
+        where: { userId_movieId: { userId: user.id, movieId } },
+        select: { status: true },
+      }),
+      prisma.pastMovieWatch.count({ where: { userId: user.id, movieId } }),
+    ]);
+    if (!tracked || tracked.status !== "watched") return MARK_WATCHED_FIRST;
+    if (past >= MAX_PAST_WATCHES) {
+      return { ok: false, error: watchLimitMessage() };
+    }
+
+    const pastId = crypto.randomUUID();
+    const now = new Date();
+
+    const [inserted] = await prisma.$transaction([
+      prisma.$executeRaw`
+        INSERT INTO "PastMovieWatch" ("id", "userId", "movieId", "watchedAt", "rating", "archivedAt")
+        SELECT ${pastId}, "userId", "movieId", COALESCE("watchedAt", "addedAt"), "rating", ${now}
+        FROM "TrackedMovie"
+        WHERE "userId" = ${user.id} AND "movieId" = ${movieId}
+          AND "status" = 'watched'
+          AND (
+            SELECT COUNT(*) FROM "PastMovieWatch"
+            WHERE "userId" = ${user.id} AND "movieId" = ${movieId}
+          ) < ${MAX_PAST_WATCHES}
+      `,
+      prisma.$executeRaw`
+        UPDATE "TrackedMovie" SET "watchedAt" = ${now}, "rating" = NULL
+        WHERE "userId" = ${user.id} AND "movieId" = ${movieId}
+          AND "status" = 'watched'
+          AND EXISTS (SELECT 1 FROM "PastMovieWatch" WHERE "id" = ${pastId})
+      `,
+    ]);
+
+    if (inserted === 0) {
+      // Lost a race after the reads above. Tell the two causes apart.
+      const again = await prisma.trackedMovie.findUnique({
+        where: { userId_movieId: { userId: user.id, movieId } },
+        select: { status: true },
+      });
+      if (!again || again.status !== "watched") return MARK_WATCHED_FIRST;
+      return { ok: false, error: watchLimitMessage() };
     }
   } catch (error) {
     return toResult(error);
