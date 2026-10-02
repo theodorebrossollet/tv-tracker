@@ -212,3 +212,96 @@ export async function watchMovieAgain(movieId: string): Promise<ActionResult> {
   revalidateRewatchViews();
   return { ok: true };
 }
+
+const RESET_NOTHING = { ok: false, error: "Nothing to reset." } as const;
+
+/**
+ * Permanently deletes the caller's whole history of one show: the current
+ * watches (their ratings live on those rows), every archived run (its
+ * `ArchivedEpisodeWatch` rows go by the `onDelete: Cascade` on `runId`), and
+ * moves a `watching` show back to the watchlist, since nothing is watched any
+ * more. Paused, stopped and watchlist shows keep their status, and an untracked
+ * show simply has no row to update, so this works whether or not it is tracked.
+ *
+ * Three Prisma statements in ONE array-form `$transaction`. Unlike the restart,
+ * nothing needs to be conditional in SQL: deletes are idempotent, so a double
+ * submit or a race is harmless (the second call finds nothing and is refused).
+ * The read above is only for that friendly refusal. Every statement carries
+ * `user.id`, because the Show and Episode rows are shared between accounts and
+ * another account's marks, runs and archive on the same show must survive.
+ */
+export async function resetShowHistory(showId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // `regex.test` coerces a number to a string, so the type is checked first.
+  if (typeof showId !== "string" || !isTmdbShowId(showId)) {
+    return { ok: false, error: "Missing show id." };
+  }
+
+  try {
+    const [watched, runs] = await Promise.all([
+      prisma.watchedEpisode.count({
+        where: { userId: user.id, episode: { showId } },
+      }),
+      prisma.showRun.count({ where: { userId: user.id, showId } }),
+    ]);
+    if (watched === 0 && runs === 0) return RESET_NOTHING;
+
+    await prisma.$transaction([
+      prisma.showRun.deleteMany({ where: { userId: user.id, showId } }),
+      prisma.watchedEpisode.deleteMany({
+        where: { userId: user.id, episode: { showId } },
+      }),
+      prisma.trackedShow.updateMany({
+        where: { userId: user.id, showId, status: "watching" },
+        data: { status: "watchlist" },
+      }),
+    ]);
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateRewatchViews();
+  return { ok: true };
+}
+
+/**
+ * Permanently deletes the caller's whole history of one movie: every past
+ * watch, and, when the movie is currently `watched`, the current watch too —
+ * the row goes back to the watchlist with no date and no rating. Other statuses
+ * are left as they are, and an untracked movie with past watches only loses
+ * them. Same shape and reasoning as `resetShowHistory`: ONE array-form
+ * `$transaction`, idempotent, every statement scoped by `user.id`.
+ */
+export async function resetMovieHistory(movieId: string): Promise<ActionResult> {
+  const { user } = await requireOnboardedSession();
+
+  // `regex.test` coerces a number to a string, so the type is checked first.
+  if (typeof movieId !== "string" || !isTmdbMovieId(movieId)) {
+    return { ok: false, error: "Missing movie id." };
+  }
+
+  try {
+    const [tracked, past] = await Promise.all([
+      prisma.trackedMovie.findUnique({
+        where: { userId_movieId: { userId: user.id, movieId } },
+        select: { status: true },
+      }),
+      prisma.pastMovieWatch.count({ where: { userId: user.id, movieId } }),
+    ]);
+    if (tracked?.status !== "watched" && past === 0) return RESET_NOTHING;
+
+    await prisma.$transaction([
+      prisma.pastMovieWatch.deleteMany({ where: { userId: user.id, movieId } }),
+      prisma.trackedMovie.updateMany({
+        where: { userId: user.id, movieId, status: "watched" },
+        data: { status: "watchlist", watchedAt: null, rating: null },
+      }),
+    ]);
+  } catch (error) {
+    return toResult(error);
+  }
+
+  revalidateRewatchViews();
+  return { ok: true };
+}
