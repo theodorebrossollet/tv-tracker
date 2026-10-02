@@ -149,6 +149,17 @@ export default async function ShowPage({
   // rules a directory away from the one the lists use — see the note there.
   const { airedCount, watchedCount, finished } = show;
 
+  // Only a show with watched episodes has anything to start over; the run
+  // number is withheld when the history couldn't be read.
+  const startOver =
+    watchedCount > 0
+      ? {
+          watched: watchedCount,
+          aired: airedCount,
+          runNumber: show.pastRuns === null ? null : show.runNumber,
+        }
+      : null;
+
   const allEpisodes = show.seasons.flatMap((entry) => entry.episodes);
 
   // Seasons are sorted and episodes ordered within them, so the first unaired
@@ -382,6 +393,8 @@ export default async function ShowPage({
         airedCount={airedCount}
         status={show.status}
         finished={finished}
+        runNumber={show.pastRuns === null ? null : show.runNumber}
+        startOver={startOver}
         lists={lists}
         rating={
           show.ratingAverage !== null
@@ -526,6 +539,7 @@ export default async function ShowPage({
                 status={show.status}
                 finished={finished}
                 variant="pill"
+                startOver={startOver}
               />
             </div>
           </dl>

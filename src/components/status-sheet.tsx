@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { startShowOver } from "@/app/rewatch-actions";
 import { Sheet } from "@/components/sheet";
 import { STATUS_ACTIONS } from "@/components/status-actions";
 import {
@@ -27,6 +28,17 @@ interface StatusMenuProps {
    * header and at the foot of About, and both read the same value.
    */
   variant?: "menu" | "pill";
+  /**
+   * Adds a "Start over" row. Only the show page passes it, and only when the
+   * show has watched episodes; Library rows never do. `runNumber` is the run
+   * being archived, or null when the past-run history couldn't be read — the
+   * confirmation then says "a past run" rather than guess a number.
+   */
+  startOver?: {
+    watched: number;
+    aired: number;
+    runNumber: number | null;
+  } | null;
 }
 
 const ROWS: Record<StatusTarget, { label: string; hint: string }> = {
@@ -86,8 +98,10 @@ export function StatusMenu({
   status,
   finished = false,
   variant = "menu",
+  startOver = null,
 }: StatusMenuProps) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -109,6 +123,25 @@ export function StatusMenu({
       // has to appear, and the row underneath still shows the old status with
       // no hint that anything went wrong.
       if (result.ok) setOpen(false);
+      else setError(result.error ?? "Something went wrong. Please try again.");
+    });
+  }
+
+  function close() {
+    setOpen(false);
+    setConfirming(false);
+    setError(null);
+  }
+
+  function confirmStartOver() {
+    setError(null);
+
+    startTransition(async () => {
+      const result = await startShowOver(showId);
+
+      // Kept open on failure, like `apply`. The message is plain state so it is
+      // still there once the transition settles.
+      if (result.ok) close();
       else setError(result.error ?? "Something went wrong. Please try again.");
     });
   }
@@ -145,7 +178,49 @@ export function StatusMenu({
         </button>
       )}
 
-      {open ? (
+      {open && confirming && startOver ? (
+        <Sheet title="Start this show over?" onClose={close}>
+          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+            Your current progress ({startOver.watched} of {startOver.aired}{" "}
+            episodes) is kept as{" "}
+            {startOver.runNumber === null
+              ? "a past run"
+              : `Run ${startOver.runNumber}`}
+            . This show goes back to the start. This can&apos;t be undone in
+            this version.
+          </p>
+
+          {error ? (
+            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setError(null);
+              }}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmStartOver}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
+            >
+              Start over
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+
+      {open && !(confirming && startOver) ? (
         <Sheet
           title={`Track ${name} as`}
           caption={
@@ -153,7 +228,7 @@ export function StatusMenu({
               ? "A show moves to Watching when you mark an episode watched."
               : undefined
           }
-          onClose={() => setOpen(false)}
+          onClose={close}
         >
           <div className="flex flex-col gap-0.5">
             <Row {...current} icon={statusIcon} checked />
@@ -177,6 +252,28 @@ export function StatusMenu({
                   disabled={pending}
                   onSelect={() => apply("remove")}
                 />
+              </>
+            ) : null}
+
+            {startOver ? (
+              <>
+                <hr className="my-1.5 border-border-faint" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setConfirming(true);
+                  }}
+                  disabled={pending}
+                  className="flex min-h-14 flex-col justify-center rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+                >
+                  <span className="block text-[15px] font-medium">
+                    Start over
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] text-muted">
+                    Keep this run as a past run and begin again
+                  </span>
+                </button>
               </>
             ) : null}
           </div>
