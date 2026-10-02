@@ -85,7 +85,10 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   20261002152206_add_rewatch adds ShowRun,
                   ArchivedEpisodeWatch and PastMovieWatch — additive (three
                   new tables, no change to existing ones), so apply it BEFORE
-                  merging; unapplied, only the two rewatch actions fail
+                  merging; unapplied, the two rewatch actions AND
+                  Settings' "Clear all my data" (its transaction also
+                  deletes runs and past watches) fail, the title-page
+                  history reads degrade softly, everything else works
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -155,8 +158,7 @@ and `show-header`'s `runNumber`/`startOver` props. Rules:
 - Writes live in `src/app/rewatch-actions.ts`. Archive-and-clear is ONE
   array-form `$transaction` using `INSERT … SELECT` (not read-then-write). The
   `ShowRun`/`PastMovieWatch` insert is CONDITIONAL in SQL and guards the
-  statements after it, so a concurrent double submit never creates an empty run
-  (a real review finding).
+  statements after it, so a concurrent double submit never creates an empty run.
 - Limits: 20 past runs per show, 20 past watches per movie (`lib/rewatch.ts`).
 - The title-page reads (`pastRuns` in `getShowDetail`, `pastWatches` in
   `getMovieDetail`; types `PastRun`, `PastWatch`) fail softly: `null` means

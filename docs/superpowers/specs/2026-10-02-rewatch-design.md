@@ -106,13 +106,13 @@ Reads in `queries.ts`, all filtered by `userId`:
 confirmation step inside the sheet: current progress is kept as Run N (as "a
 past run" when the history is unavailable), the show goes back to the start, and
 it cannot be undone in this version. Cancel and "Start over". `startOver` is
-passed to both status pills (header and the one below it). After success the page re-renders at zero progress with S1E1 next
-up. Once a show has past runs the header shows a quiet "Run N" by the progress.
+passed to both status pills (header and the one below it). After success the
+page re-renders at zero progress with S1E1 next up. Once a show has past runs the header shows a quiet "Run N" by the progress.
 
 **Past runs (show page).** A "Past runs" section under the episode list, only
-when there are past runs. One read-only line per run, for example "Run 1 · 3 Mar
-2026 – 19 Apr 2026 · 20 episodes · ★ 8.1"; dates are the first and last watch in that
-run, formatted in US Eastern like other watch dates; the "★" is left out when
+when there are past runs. One read-only line per run, for example "Run 1 ·
+3 Mar 2026 – 19 Apr 2026 · 20 episodes · ★ 8.1"; dates are the first and last
+watch in that run, formatted in US Eastern like other watch dates; the "★" is left out when
 the run had no ratings.
 
 **Watch again (movie page).** A watched movie gets a "Watch again" button by the
@@ -157,6 +157,7 @@ Real database, session gate and TMDB stubbed, as before.
   nothing may read the archive tables for progress or ratings of the current
   run.
 - If the migration is unapplied when this deploys, the title pages' history
-  reads fail softly, but the two actions fail until it is applied.
+  reads fail softly, but the two actions and "Clear all my data" (which now
+  deletes the new tables inside its transaction) fail until it is applied.
 - Not checked on a real phone before release; the confirmation sheets and the
   new sections need a look on the preview deploy.
