@@ -3,6 +3,7 @@
 import { useOptimistic, useState, useTransition } from "react";
 
 import { removeMovie, setMovieStatus } from "@/app/actions";
+import { resetMovieHistory } from "@/app/rewatch-actions";
 import { Sheet } from "@/components/sheet";
 import { CheckIcon } from "@/components/status-sheet";
 import { movieStatusTargets, type MovieStatusTarget } from "@/lib/movie-status";
@@ -14,6 +15,14 @@ interface MovieStatusMenuProps {
   status: MovieStatus | null;
   /** `menu` is the "..." in a list row; `pill` is the movie page's control. */
   variant?: "menu" | "pill";
+  /**
+   * Adds a red "Reset history" row that permanently deletes the movie's watch
+   * history and rating. The movie page passes it when there is something to
+   * delete; list rows never do. `watched` is whether the movie is currently
+   * watched (it then also returns to the watchlist); `pastWatches` is the
+   * archived count, null when it couldn't be read.
+   */
+  resetHistory?: { pastWatches: number | null; watched: boolean } | null;
 }
 
 const ROWS: Record<
@@ -50,8 +59,11 @@ export function MovieStatusMenu({
   title,
   status,
   variant = "menu",
+  resetHistory = null,
 }: MovieStatusMenuProps) {
   const [open, setOpen] = useState(false);
+  // Plain state, like `error`: the server can't change it.
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useOptimistic(status);
   const [pending, startTransition] = useTransition();
@@ -76,6 +88,28 @@ export function MovieStatusMenu({
       else setError(result.error ?? "Something went wrong. Please try again.");
     });
   }
+
+  function close() {
+    setOpen(false);
+    setConfirming(false);
+    setError(null);
+  }
+
+  function confirmReset() {
+    setError(null);
+
+    startTransition(async () => {
+      const result = await resetMovieHistory(movieId);
+
+      // Kept open on failure; the message is plain state so it is still there
+      // once the transition settles.
+      if (result.ok) close();
+      else setError(result.error ?? "Something went wrong. Please try again.");
+    });
+  }
+
+  // A prop that vanishes mid-confirmation falls back to the menu.
+  const showingReset = confirming && resetHistory !== null;
 
   return (
     <>
@@ -125,8 +159,46 @@ export function MovieStatusMenu({
         </button>
       )}
 
-      {open ? (
-        <Sheet title={`Track ${title} as`} onClose={() => setOpen(false)}>
+      {open && showingReset && resetHistory ? (
+        <Sheet title="Reset history?" onClose={close}>
+          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+            This permanently deletes your watch history and ratings for this
+            movie.
+            {resetHistory.watched ? " It goes back to your watchlist." : ""}
+          </p>
+
+          {error ? (
+            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setError(null);
+              }}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmReset}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
+            >
+              Reset history
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+
+      {open && !showingReset ? (
+        <Sheet title={`Track ${title} as`} onClose={close}>
           <div className="flex flex-col gap-0.5">
             <div className="flex min-h-14 items-center gap-3 rounded-[13px] bg-accent-tint px-2 py-2">
               <span className="min-w-0 flex-1 px-2 text-left">
@@ -159,6 +231,22 @@ export function MovieStatusMenu({
                 />
               </>
             ) : null}
+
+            {resetHistory ? (
+              <>
+                <hr className="my-1.5 border-border-faint" />
+                <Option
+                  label="Reset history"
+                  hint="Delete your watches and ratings"
+                  danger
+                  disabled={pending}
+                  onSelect={() => {
+                    setError(null);
+                    setConfirming(true);
+                  }}
+                />
+              </>
+            ) : null}
           </div>
 
           {error ? (
@@ -175,11 +263,14 @@ export function MovieStatusMenu({
 function Option({
   label,
   hint,
+  danger = false,
   disabled,
   onSelect,
 }: {
   label: string;
   hint: string;
+  /** Destructive: the label takes the danger colour. */
+  danger?: boolean;
   disabled: boolean;
   onSelect: () => void;
 }) {
@@ -188,7 +279,7 @@ function Option({
       type="button"
       onClick={onSelect}
       disabled={disabled}
-      className="flex min-h-14 items-center gap-3 rounded-[13px] px-4 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+      className={`flex min-h-14 items-center gap-3 rounded-[13px] px-4 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${danger ? "text-danger" : ""}`}
     >
       <span className="min-w-0 flex-1">
         <span className="block text-[15px] font-medium">{label}</span>
