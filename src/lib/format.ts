@@ -50,6 +50,29 @@ export function formatAirDate(iso: string | null | undefined): string {
   return DATE_FORMAT.format(date);
 }
 
+// Watch times are real instants (`new Date()` when you press the button), unlike
+// air dates, which are calendar dates stored as Eastern midnight. Formatting an
+// evening watch in UTC shows the next day, so the day is read in
+// `America/New_York` — the app's single-zone convention (see
+// EASTERN_TODAY_FORMAT above). Fixed zone, not the viewer's, so the server and
+// browser still agree.
+const WATCHED_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
+/** Instant → "1 Oct 2026" in app time (US Eastern). "TBA" if missing or invalid. */
+export function formatWatchedDate(iso: string | null | undefined): string {
+  if (!iso) return "TBA";
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "TBA";
+
+  return WATCHED_FORMAT.format(date);
+}
+
 /** Same, but drops the year for dates in the current year. */
 export function formatAirDateShort(iso: string | null | undefined): string {
   if (!iso) return "TBA";

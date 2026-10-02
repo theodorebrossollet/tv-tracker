@@ -73,4 +73,30 @@ describe("search suggestions", () => {
       { kind: "movie", id: "7", name: "Other", posterPath: null, year: null, status: null },
     ]);
   });
+
+  it("still returns show results, with null movie statuses, when the movie lookup fails", async () => {
+    // Defence in depth: if the Movie tables are missing (migration not yet
+    // applied), search must keep working for shows.
+    await seedShow({ showId: "603", offsets: [-1], status: "watching" });
+    vi.mocked(searchMulti).mockResolvedValueOnce([
+      { kind: "tv", id: 603, name: "Show", posterPath: null, overview: null, year: "2001" },
+      { kind: "movie", id: 603, name: "Movie", posterPath: null, overview: null, year: "1999" },
+    ]);
+    vi.spyOn(prisma.trackedMovie, "findMany").mockRejectedValueOnce(
+      new Error('relation "TrackedMovie" does not exist'),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { results } = await searchSuggestions("matrix");
+
+    expect(results).toEqual([
+      { kind: "tv", id: "603", name: "Show", posterPath: null, year: "2001", status: "watching" },
+      { kind: "movie", id: "603", name: "Movie", posterPath: null, year: "1999", status: null },
+    ]);
+    const logged = [...warn.mock.calls, ...error.mock.calls].flat().join(" ");
+    expect(logged).toContain("search.movie_status_failed");
+    warn.mockRestore();
+    error.mockRestore();
+  });
 });

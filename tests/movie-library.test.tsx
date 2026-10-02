@@ -20,7 +20,9 @@ vi.mock("@/components/search-icon-button", () => ({
   SearchIconButton: () => null,
 }));
 vi.mock("@/components/find-show-button", () => ({
-  FindShowButton: () => null,
+  FindShowButton: ({ label = "Find a show" }: { label?: string }) => (
+    <button type="button">{label}</button>
+  ),
 }));
 vi.mock("@/components/pull-to-refresh-page", () => ({
   PullToRefreshPage: () => null,
@@ -152,6 +154,38 @@ describe("movie lists", () => {
       .map((h) => h.textContent);
     expect(headings).toEqual(["Watched", "Not interested"]);
     expect(screen.getByText("1995 · 170 min")).toBeTruthy();
+  });
+
+  it("shows an evening watch on the day it happened in app time, not the UTC day", () => {
+    // 21:30 EDT on 1 Oct is 01:30Z on 2 Oct.
+    renderMovies("archive", {
+      watched: [
+        movie({
+          movieId: "4",
+          title: "Evening",
+          status: "watched",
+          watchedAt: new Date("2026-10-02T01:30:00Z"),
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Watched 1 Oct 2026")).toBeTruthy();
+  });
+
+  it("offers 'Find a movie' on the empty movies watchlist and 'Find a show' on the shows one", () => {
+    renderMovies("watchlist");
+    expect(screen.getByRole("button", { name: "Find a movie" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Find a show" })).toBeNull();
+    cleanup();
+
+    render(
+      <LibraryScreen
+        segment="watchlist"
+        searchParams={{}}
+        data={{ type: "shows", buckets: emptyShows }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Find a show" })).toBeTruthy();
   });
 
   it("renders empty states", () => {

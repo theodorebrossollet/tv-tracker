@@ -225,7 +225,7 @@ function MoviesView({
               title="Watchlist is empty"
               description="Add movies here when you want to remember to watch them later."
               icon="bookmark"
-              action={<FindShowButton />}
+              action={<FindShowButton label="Find a movie" />}
             />
           ) : (
             <MovieList

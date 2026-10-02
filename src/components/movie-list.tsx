@@ -4,7 +4,7 @@ import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
 import { ShowMoreLink } from "@/components/show-more-link";
-import { formatAirDate } from "@/lib/format";
+import { formatWatchedDate } from "@/lib/format";
 import type { MovieSummary } from "@/lib/queries";
 
 interface MovieListProps {
@@ -39,7 +39,7 @@ function releasedDetail(movie: MovieSummary): string {
 
 function detailOf(movie: MovieSummary, detail: MovieListProps["detail"]) {
   if (detail === "watched" && movie.watchedAt) {
-    return `Watched ${formatAirDate(movie.watchedAt.toISOString())}`;
+    return `Watched ${formatWatchedDate(movie.watchedAt.toISOString())}`;
   }
   return releasedDetail(movie);
 }

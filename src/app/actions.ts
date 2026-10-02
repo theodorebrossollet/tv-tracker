@@ -9,7 +9,7 @@ import {
 } from "@/lib/action-result";
 import { MAX_PROVIDERS } from "@/lib/alternate-countries";
 import { requireOnboardedSession } from "@/lib/auth";
-import { logger } from "@/lib/logger";
+import { describeError, logger } from "@/lib/logger";
 import { movieStatusTargets, watchedAtFor } from "@/lib/movie-status";
 import { cacheNewMovie, syncMovieFromTmdb } from "@/lib/movies";
 import { prisma } from "@/lib/prisma";
@@ -124,10 +124,17 @@ export async function searchSuggestions(
       where: { userId: user.id, showId: { in: idsOf("tv") } },
       select: { showId: true, status: true },
     }),
-    prisma.trackedMovie.findMany({
-      where: { userId: user.id, movieId: { in: idsOf("movie") } },
-      select: { movieId: true, status: true },
-    }),
+    // Search is app-wide, so a missing Movie table (migration not yet applied)
+    // must not take show search down with it: badges are cosmetic here.
+    prisma.trackedMovie
+      .findMany({
+        where: { userId: user.id, movieId: { in: idsOf("movie") } },
+        select: { movieId: true, status: true },
+      })
+      .catch((error: unknown) => {
+        logger.warn("search.movie_status_failed", describeError(error));
+        return [];
+      }),
   ]);
   const statusByShow = new Map(trackedShows.map((r) => [r.showId, r.status]));
   const statusByMovie = new Map(
