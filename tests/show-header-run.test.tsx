@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/actions", () => ({}));
-vi.mock("@/app/rewatch-actions", () => ({ startShowOver: vi.fn() }));
+vi.mock("@/app/rewatch-actions", () => ({
+  startShowOver: vi.fn(),
+  resetShowHistory: vi.fn(),
+}));
 vi.mock("@/app/list-actions", () => ({
   addToList: vi.fn(),
   removeFromList: vi.fn(),
@@ -85,6 +88,39 @@ describe("ShowHeader run label", () => {
       withStartOver(undefined);
       expect(screen.getByText("Track Severance as")).toBeTruthy();
       expect(screen.queryByText(/Start over/)).toBeNull();
+    });
+  });
+
+  describe("reset history pass-through", () => {
+    function withReset(resetHistory?: { watched: number; pastRuns: number | null }) {
+      render(
+        <ShowHeader
+          showId="1399"
+          name="Severance"
+          posterPath={null}
+          metaLine={null}
+          watchedCount={3}
+          airedCount={6}
+          status="watching"
+          finished={false}
+          nextAiring={null}
+          resetHistory={resetHistory}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Change status for Severance" }),
+      );
+    }
+
+    it("offers Reset history in the opened pill when resetHistory is passed", () => {
+      withReset({ watched: 3, pastRuns: 1 });
+      expect(screen.getByRole("button", { name: /Reset history/ })).toBeTruthy();
+    });
+
+    it("offers none without resetHistory", () => {
+      withReset(undefined);
+      expect(screen.getByText("Track Severance as")).toBeTruthy();
+      expect(screen.queryByText(/Reset history/)).toBeNull();
     });
   });
 });

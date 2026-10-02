@@ -36,6 +36,8 @@ interface ShowHeaderProps {
   runNumber?: number | null;
   /** Passed straight to the pill's `StatusMenu`. */
   startOver?: ComponentProps<typeof StatusMenu>["startOver"];
+  /** Passed straight to the pill's `StatusMenu`. */
+  resetHistory?: ComponentProps<typeof StatusMenu>["resetHistory"];
 }
 
 /**
@@ -63,6 +65,7 @@ export function ShowHeader({
   rating,
   runNumber,
   startOver,
+  resetHistory,
 }: ShowHeaderProps) {
   const percent = progressPercent(watchedCount, airedCount);
   const backdrop = posterUrl(posterPath, "w500");
@@ -122,6 +125,7 @@ export function ShowHeader({
               finished={finished}
               variant="pill"
               startOver={startOver}
+              resetHistory={resetHistory}
             />
           </div>
         </div>

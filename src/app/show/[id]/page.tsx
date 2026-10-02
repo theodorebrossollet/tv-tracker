@@ -39,6 +39,7 @@ import { getListsForTitle, getShowDetail } from "@/lib/queries";
 import { pickCountry } from "@/lib/pick-country";
 import { seasonFrom, tabFrom } from "@/lib/show-tabs";
 import { NEXT_UP_QUEUE, currentSeason, upNextState } from "@/lib/up-next";
+import { showResetHistory } from "@/lib/rewatch";
 import { isTmdbShowId } from "@/lib/show-id";
 import { describeError, logger } from "@/lib/logger";
 // STALE_AFTER_MS is imported rather than restated: it is the threshold
@@ -160,6 +161,10 @@ export default async function ShowPage({
           runNumber: show.pastRuns === null ? null : show.runNumber,
         }
       : null;
+
+  // Anything to delete: current watches or past runs. Both menus get the same
+  // value; no new read, it is built from what the page already has.
+  const resetHistory = showResetHistory(watchedCount, show.pastRuns);
 
   const allEpisodes = show.seasons.flatMap((entry) => entry.episodes);
 
@@ -396,6 +401,7 @@ export default async function ShowPage({
         finished={finished}
         runNumber={show.pastRuns === null ? null : show.runNumber}
         startOver={startOver}
+        resetHistory={resetHistory}
         lists={lists}
         rating={
           show.ratingAverage !== null
@@ -543,6 +549,7 @@ export default async function ShowPage({
                 finished={finished}
                 variant="pill"
                 startOver={startOver}
+                resetHistory={resetHistory}
               />
             </div>
           </dl>
