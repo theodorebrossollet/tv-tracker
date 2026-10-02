@@ -46,8 +46,9 @@ it has happened. Treat the check as a gate anyway: don't merge on red.
 
 ```
 src/app/          routes; actions.ts holds the Library writes, account-actions.ts
-                  the account ones and list-actions.ts the list ones (the third
-                  module) — the rules in actions.ts's header govern all three
+                  the account ones, list-actions.ts the list ones and
+                  rating-actions.ts the rating ones (the fourth module) — the
+                  rules in actions.ts's header govern all four
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
@@ -60,13 +61,18 @@ src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logg
                   (movie status transitions), library-type (Library's `type`),
                   lists (list limits, name validation, isListItemWatched; the
                   list reads — getLists, getListDetail, getListsForTitle — are
-                  in queries.ts)
+                  in queries.ts),
+                  ratings (rating rules: isRating, seasonAverage, showAverage,
+                  formatRating, formatAverage, coverageText; pure, client-safe)
 src/app/movie/    movie page, /movie/[id]
 src/app/lists/    Lists index, /lists, and /lists/[id] (each with a loading.tsx)
 prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   TrackedMovie — additive, so apply it BEFORE merging;
                   20261002042557_add_lists adds List and ListItem — also
-                  additive (two new tables), also apply BEFORE merging
+                  additive (two new tables), also apply BEFORE merging;
+                  20261002142452_add_ratings adds WatchedEpisode.rating and
+                  TrackedMovie.rating — additive (two `ALTER TABLE ... ADD
+                  COLUMN`), also apply BEFORE merging
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -103,6 +109,26 @@ tab stays active for `/lists/...`. Rules:
 - A show counts as watched on a personal list only when finished by the
   Library's derived rule (`fullyWatched && hasSeriesEnded`, from
   `getTrackedShows`). `getListDetail` reuses it; never re-derive it.
+
+Ratings, in short: 1–10 whole numbers on `TrackedMovie.rating` and
+`WatchedEpisode.rating`. Components: `rating-strip` (ten steps; tap the chosen
+one to clear), `rating-value` ("★ 8", averages "★ 7.4"), `season-rating-line`,
+the rating UI in `episode-row`, and `show-header`'s `rating` prop. Rules:
+
+- Writes live in `src/app/rating-actions.ts` (`rateMovie`, `rateEpisode`);
+  rules are those in `actions.ts`'s header. Never creates a record: only
+  something already watched can be rated.
+- Season and show ratings are DERIVED, never stored. A show's rating is the
+  mean of its season averages (each season counts equally; seasons with no
+  rated episode are left out).
+- That rule exists twice: SQL in `loadShowRatings` (`queries.ts`, many shows)
+  and TypeScript in `getShowDetail` (one show page). Held together by the
+  parity test in `tests/rating-queries.test.ts` — change both together.
+- Show/Episode rows are shared between accounts, so every join to
+  `WatchedEpisode` for ratings must carry `userId`.
+- Un-watching clears the rating: a movie leaving `watched` writes
+  `rating: null` in the same update; un-marking an episode deletes the
+  `WatchedEpisode` row.
 
 ## Rules that will bite you
 

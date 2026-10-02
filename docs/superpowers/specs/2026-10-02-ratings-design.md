@@ -106,16 +106,20 @@ Prisma call scoped by user); AGENTS.md gets a line for it.
   the id (`isTmdbMovieId`) and rating; finds the caller's `TrackedMovie`; refuses
   unless its status is `watched`; never creates a record.
 - `rateEpisode(episodeId, rating)`: the same against the caller's
-  `WatchedEpisode`; refuses an episode that is not watched; never creates one.
+  `WatchedEpisode`; the episode id is an opaque TMDB id, so it is validated by
+  type and length (non-empty string, at most 64 characters), not as digits;
+  refuses an episode that is not watched; never creates one.
 - `setMovieStatus` writes `rating: null` on any move away from `watched`, in the
   same update.
 
 Reads in `queries.ts`, all filtered by `userId`:
 - `getShowDetail`: per-episode `rating`; per-season average with rated and
-  watched counts; the show average and its coverage (TypeScript, using
-  `ratings.ts`).
+  watched counts; the show average and the show-level `ratedCount` and
+  `watchedEpisodeCount` (TypeScript, using `ratings.ts`; the page passes them to
+  the coverage text).
 - `getTrackedShows` summaries gain `ratingAverage`, computed in SQL for all the
-  account's tracked shows (mean of per-season means) in one extra query.
+  account's tracked shows (mean of per-season means) in one extra query
+  (`loadShowRatings`).
 - `getMovieBuckets`, `getMovieDetail` and `getListDetail` items carry `rating`
   (a movie's own rating, a show's SQL average).
 
