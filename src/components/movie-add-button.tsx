@@ -11,6 +11,12 @@ interface MovieAddButtonProps {
   status: MovieStatus | null;
   /** `icon` is the bare circular +, for dense lists. */
   variant?: "icon" | "full";
+  /**
+   * Called once a save succeeds, with the status the title now has. For hosts
+   * that hold a snapshot of `status` (search results) and would otherwise hand
+   * the old one back when the optimistic value is dropped.
+   */
+  onStatusChange?: (status: MovieStatus | null) => void;
 }
 
 const LABELS: Record<MovieStatus, string> = {
@@ -27,6 +33,7 @@ export function MovieAddButton({
   movieId,
   status,
   variant = "full",
+  onStatusChange,
 }: MovieAddButtonProps) {
   // Derived from the prop via useOptimistic, not copied into useState: the
   // status can change on the movie page for reasons this button never sees.
@@ -54,7 +61,9 @@ export function MovieAddButton({
 
       // No manual rollback: when the transition ends the optimistic value is
       // dropped and the prop wins either way.
-      if (!result.ok) {
+      if (result.ok) {
+        onStatusChange?.(tracked ? null : "watchlist");
+      } else {
         setError(result.error ?? "Something went wrong.");
       }
     });
