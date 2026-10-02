@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { startShowOver } from "@/app/rewatch-actions";
+import { resetShowHistory, startShowOver } from "@/app/rewatch-actions";
 import { Sheet } from "@/components/sheet";
 import { STATUS_ACTIONS } from "@/components/status-actions";
 import {
@@ -39,6 +39,14 @@ interface StatusMenuProps {
     aired: number;
     runNumber: number | null;
   } | null;
+  /**
+   * Adds a red "Reset history" row that permanently deletes the show's current
+   * and archived watches. The show page passes it when there is anything to
+   * delete: `watched` is the current count, `pastRuns` the archived runs, or
+   * null when that history couldn't be read (the confirmation then promises no
+   * count). Library rows never pass it.
+   */
+  resetHistory?: { watched: number; pastRuns: number | null } | null;
 }
 
 const ROWS: Record<StatusTarget, { label: string; hint: string }> = {
@@ -86,6 +94,34 @@ function currentRow(status: TrackStatus | null, finished: boolean) {
   return status ? ROWS[status] : ROWS.remove;
 }
 
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** "a, b and c" — what the reset confirmation says will be deleted. */
+function resetConfirmation({
+  watched,
+  pastRuns,
+}: {
+  watched: number;
+  pastRuns: number | null;
+}) {
+  const items: string[] = [];
+  if (watched > 0) {
+    items.push(plural(watched, "watched episode", "watched episodes"));
+    items.push("their ratings");
+  }
+  // null means the history couldn't be read, so no number is promised.
+  if (pastRuns === null) items.push("any past runs");
+  else if (pastRuns > 0) items.push(plural(pastRuns, "past run", "past runs"));
+
+  const list =
+    items.length > 1
+      ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`
+      : items[0];
+
+  return `This permanently deletes your ${list} for this show. This can't be undone.`;
+}
+
 /**
  * The per-row "..." control and the status sheet it opens.
  *
@@ -99,9 +135,14 @@ export function StatusMenu({
   finished = false,
   variant = "menu",
   startOver = null,
+  resetHistory = null,
 }: StatusMenuProps) {
   const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  // One confirmation at a time, so the two can never show together or leak
+  // into each other. Like `error`, plain state: the server can't change it.
+  const [confirming, setConfirming] = useState<"startOver" | "reset" | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -129,7 +170,7 @@ export function StatusMenu({
 
   function close() {
     setOpen(false);
-    setConfirming(false);
+    setConfirming(null);
     setError(null);
   }
 
@@ -145,6 +186,34 @@ export function StatusMenu({
       else setError(result.error ?? "Something went wrong. Please try again.");
     });
   }
+
+  function confirmReset() {
+    setError(null);
+
+    startTransition(async () => {
+      const result = await resetShowHistory(showId);
+
+      // Same shape as `confirmStartOver`: the message lives in `error`, which
+      // outlasts the transition.
+      if (result.ok) close();
+      else setError(result.error ?? "Something went wrong. Please try again.");
+    });
+  }
+
+  function cancelConfirmation() {
+    setConfirming(null);
+    setError(null);
+  }
+
+  function ask(which: "startOver" | "reset") {
+    setError(null);
+    setConfirming(which);
+  }
+
+  // A prop that vanishes mid-confirmation (the page revalidated) falls back to
+  // the menu rather than rendering a confirmation with nothing to say.
+  const showingStartOver = confirming === "startOver" && startOver !== null;
+  const showingReset = confirming === "reset" && resetHistory !== null;
 
   return (
     <>
@@ -178,7 +247,7 @@ export function StatusMenu({
         </button>
       )}
 
-      {open && confirming && startOver ? (
+      {open && showingStartOver && startOver ? (
         <Sheet title="Start this show over?" onClose={close}>
           <p className="px-1.5 text-[13px] leading-relaxed text-muted">
             Your current progress ({startOver.watched} of {startOver.aired}{" "}
@@ -199,10 +268,7 @@ export function StatusMenu({
           <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
             <button
               type="button"
-              onClick={() => {
-                setConfirming(false);
-                setError(null);
-              }}
+              onClick={cancelConfirmation}
               disabled={pending}
               className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
             >
@@ -220,7 +286,40 @@ export function StatusMenu({
         </Sheet>
       ) : null}
 
-      {open && !(confirming && startOver) ? (
+      {open && showingReset && resetHistory ? (
+        <Sheet title="Reset history?" onClose={close}>
+          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+            {resetConfirmation(resetHistory)}
+          </p>
+
+          {error ? (
+            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
+
+          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
+            <button
+              type="button"
+              onClick={cancelConfirmation}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={confirmReset}
+              disabled={pending}
+              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
+            >
+              Reset history
+            </button>
+          </div>
+        </Sheet>
+      ) : null}
+
+      {open && !showingStartOver && !showingReset ? (
         <Sheet
           title={`Track ${name} as`}
           caption={
@@ -256,24 +355,26 @@ export function StatusMenu({
             ) : null}
 
             {startOver ? (
+              <Row
+                label="Start over"
+                hint="Keep this run as a past run and begin again"
+                icon="restart"
+                disabled={pending}
+                onSelect={() => ask("startOver")}
+              />
+            ) : null}
+
+            {resetHistory ? (
               <>
                 <hr className="my-1.5 border-border-faint" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    setConfirming(true);
-                  }}
+                <Row
+                  label="Reset history"
+                  hint="Delete watched episodes, ratings and past runs"
+                  icon="trash"
+                  danger
                   disabled={pending}
-                  className="flex min-h-14 flex-col justify-center rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
-                >
-                  <span className="block text-[15px] font-medium">
-                    Start over
-                  </span>
-                  <span className="mt-0.5 block text-[11.5px] text-muted">
-                    Keep this run as a past run and begin again
-                  </span>
-                </button>
+                  onSelect={() => ask("reset")}
+                />
               </>
             ) : null}
           </div>
@@ -292,13 +393,23 @@ export function StatusMenu({
 interface RowProps {
   label: string;
   hint: string;
-  icon: StatusTarget;
+  icon: StatusGlyph;
   checked?: boolean;
+  /** Destructive: the label and the icon tile take the danger colour. */
+  danger?: boolean;
   disabled?: boolean;
   onSelect?: () => void;
 }
 
-function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
+function Row({
+  label,
+  hint,
+  icon,
+  checked,
+  danger,
+  disabled,
+  onSelect,
+}: RowProps) {
   const body = (
     <>
       {/* Inset against the raised panel, rather than trying to sit proud of it.
@@ -311,13 +422,19 @@ function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
         className={`flex size-[34px] shrink-0 items-center justify-center rounded-[11px] border ${
           checked
             ? "border-transparent bg-accent text-on-accent"
-            : "border-border bg-surface text-muted"
+            : danger
+              ? "border-border bg-surface text-danger"
+              : "border-border bg-surface text-muted"
         }`}
       >
         <StatusIcon status={icon} className="size-[15px]" />
       </span>
       <span className="min-w-0 flex-1 text-left">
-        <span className="block text-[15px] font-medium">{label}</span>
+        <span
+          className={`block text-[15px] font-medium ${danger ? "text-danger" : ""}`}
+        >
+          {label}
+        </span>
         <span className="mt-0.5 block text-[11.5px] text-muted">{hint}</span>
       </span>
       {checked ? <CheckIcon className="size-4 shrink-0 text-accent" /> : null}
@@ -340,19 +457,22 @@ function Row({ label, hint, icon, checked, disabled, onSelect }: RowProps) {
       type="button"
       onClick={onSelect}
       disabled={disabled}
-      className="flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+      className={`flex min-h-14 items-center gap-3 rounded-[13px] px-2 py-2 text-left transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${danger ? "text-danger" : ""}`}
     >
       {body}
     </button>
   );
 }
 
+/** The glyphs: one per status, plus the two actions the show sheet carries. */
+type StatusGlyph = StatusTarget | "restart" | "trash";
+
 /** One glyph per status, shared by the pill and the sheet rows it opens. */
 export function StatusIcon({
   status,
   className = "",
 }: {
-  status: StatusTarget;
+  status: StatusGlyph;
   className?: string;
 }) {
   const stroke = status === "watching" ? "3" : "2.4";
@@ -389,6 +509,19 @@ export function StatusIcon({
         <>
           <path d="M12 5v14" />
           <path d="M5 12h14" />
+        </>
+      ) : null}
+      {status === "restart" ? (
+        <>
+          <path d="M3 12a9 9 0 1 0 3-6.7" />
+          <path d="M3 4v5h5" />
+        </>
+      ) : null}
+      {status === "trash" ? (
+        <>
+          <path d="M3 6h18" />
+          <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+          <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
         </>
       ) : null}
     </svg>
