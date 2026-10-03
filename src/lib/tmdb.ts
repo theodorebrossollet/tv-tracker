@@ -667,18 +667,18 @@ function httpsLinkOrNull(link: string | null | undefined): string | null {
 }
 
 /**
- * Where a show can be streamed, keyed by country code. TMDB returns every
+ * Where a title can be streamed, keyed by country code. TMDB returns every
  * country it has data for in one response, so a country switcher costs no
- * extra requests.
+ * extra requests. Shows and movies share one response shape, so one mapper.
  */
-export async function getWatchProviders(
-  tmdbShowId: string | number,
+async function fetchAvailability(
+  kind: "tv" | "movie",
+  id: string | number,
 ): Promise<CountryAvailability[]> {
   const data = await cached(
-    `providers:${tmdbShowId}`,
+    `providers:${kind === "tv" ? "" : "movie:"}${id}`,
     PROVIDER_CACHE_SECONDS,
-    () =>
-      tmdbFetch<RawProvidersResponse>(`/tv/${tmdbShowId}/watch/providers`),
+    () => tmdbFetch<RawProvidersResponse>(`/${kind}/${id}/watch/providers`),
   );
 
   return Object.entries(data.results ?? {})
@@ -700,6 +700,23 @@ export async function getWatchProviders(
         0,
     )
     .sort((a, b) => a.code.localeCompare(b.code));
+}
+
+/** Where a show can be streamed, keyed by country code. */
+export async function getWatchProviders(
+  tmdbShowId: string | number,
+): Promise<CountryAvailability[]> {
+  return fetchAvailability("tv", tmdbShowId);
+}
+
+/**
+ * Where a movie can be streamed, keyed by country code. The cache key is
+ * namespaced: TMDB movie and TV ids overlap numerically.
+ */
+export async function getMovieWatchProviders(
+  tmdbMovieId: string | number,
+): Promise<CountryAvailability[]> {
+  return fetchAvailability("movie", tmdbMovieId);
 }
 
 export interface WatchRegion {
@@ -732,8 +749,16 @@ interface RawProviderListResponse {
 }
 
 /**
- * Every TV streaming provider TMDB knows about for a region — for the
- * settings page's "which services do you have" picker.
+ * Every streaming provider TMDB knows about for a region — TV and movie
+ * catalogues merged — for the settings page's "which services do you have"
+ * picker.
+ *
+ * Merged because the two lists are not identical: a few services exist for one
+ * kind only, and a service you can only reach through movies would otherwise be
+ * unpickable (and never count towards "on your services"). Providers are
+ * de-duplicated by id, keeping the better (lower) display priority. The movie
+ * catalogue is a bonus: if it can't be fetched the TV list is returned alone,
+ * so the picker never gets worse than it was. A failing TV list still throws.
  *
  * Ranked by `display_priority`, same as `mapProviders`, and that ordering is
  * load-bearing rather than cosmetic: TMDB lists several hundred providers per
@@ -743,20 +768,37 @@ interface RawProviderListResponse {
  * decides *which* services appear, name order makes them scannable once they
  * do. Ties fall back to the name so the ranking is stable across requests.
  *
- * Cached for a day, same as `getWatchRegions` — provider catalogues change
- * about as often as the country list does.
+ * Each catalogue is cached for a day, same as `getWatchRegions` — provider
+ * catalogues change about as often as the country list does.
  */
 export async function getWatchProviderList(
   region: string,
 ): Promise<WatchProvider[]> {
-  const data = await cached(`provider-list:${region}`, 60 * 60 * 24, () =>
-    tmdbFetch<RawProviderListResponse>("/watch/providers/tv", {
-      watch_region: region,
-      language: "en-US",
-    }),
-  );
+  const load = (kind: "tv" | "movie") =>
+    cached(`provider-list:${kind}:${region}`, 60 * 60 * 24, () =>
+      tmdbFetch<RawProviderListResponse>(`/watch/providers/${kind}`, {
+        watch_region: region,
+        language: "en-US",
+      }),
+    );
 
-  return [...(data.results ?? [])]
+  const [tv, movie] = await Promise.all([
+    load("tv"),
+    load("movie").catch(() => ({ results: [] }) as RawProviderListResponse),
+  ]);
+
+  const byId = new Map<number, RawProvider>();
+  for (const provider of [...(tv.results ?? []), ...(movie.results ?? [])]) {
+    const seen = byId.get(provider.provider_id);
+    if (
+      !seen ||
+      (provider.display_priority ?? 999) < (seen.display_priority ?? 999)
+    ) {
+      byId.set(provider.provider_id, provider);
+    }
+  }
+
+  return [...byId.values()]
     .sort(
       (a, b) =>
         (a.display_priority ?? 999) - (b.display_priority ?? 999) ||

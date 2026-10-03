@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AddToListButton } from "@/components/add-to-list-button";
+import { AlternateAvailability } from "@/components/alternate-availability";
+import { Availability } from "@/components/availability";
 import { CastRow } from "@/components/cast-row";
 import { MarkMovieWatchedButton } from "@/components/mark-movie-watched-button";
 import { MovieAddButton } from "@/components/movie-add-button";
@@ -11,21 +13,43 @@ import { Poster } from "@/components/poster";
 import { RatingStrip } from "@/components/rating-strip";
 import { Trailer } from "@/components/trailer";
 import { WatchAgainButton } from "@/components/watch-again-button";
+import { limitFrom } from "@/components/show-more-link";
+import {
+  coveredAtHome,
+  findAlternateCountries,
+  parseProviderIds,
+} from "@/lib/alternate-countries";
 import { requireOnboardedSession } from "@/lib/auth";
 import { formatRuntime } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
+import { pickCountry } from "@/lib/pick-country";
 import { getListsForTitle, getMovieDetail } from "@/lib/queries";
 import { movieResetHistory } from "@/lib/rewatch";
 import { isTmdbMovieId } from "@/lib/show-id";
-import { getMovieExtras, type TmdbMovieExtras } from "@/lib/tmdb";
+import { getSettings } from "@/lib/shows";
+import {
+  getMovieExtras,
+  getMovieWatchProviders,
+  getWatchRegions,
+  TmdbError,
+  type TmdbMovieExtras,
+} from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
+/** Search param the alternate-countries list reveals itself with. */
+const ALT_COUNTRY_PARAM = "altCountries";
+/** Rows shown before "show more" in the alternate-countries list. */
+const ALT_COUNTRY_PAGE_SIZE = 6;
+
 interface MoviePageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export async function generateMetadata({ params }: MoviePageProps) {
+export async function generateMetadata({
+  params,
+}: Pick<MoviePageProps, "params">) {
   const { id } = await params;
   // Also gated: metadata runs before the component and would otherwise read a
   // movie's tracked state without a session. `getMovieDetail` is memoized per
@@ -36,8 +60,12 @@ export async function generateMetadata({ params }: MoviePageProps) {
   return { title: movie ? `${movie.title} · TV Tracker` : "Movie · TV Tracker" };
 }
 
-export default async function MoviePage({ params }: MoviePageProps) {
+export default async function MoviePage({
+  params,
+  searchParams,
+}: MoviePageProps) {
   const { id } = await params;
+  const params_ = await searchParams;
   const { user } = await requireOnboardedSession();
 
   // Untrusted: the id flows into a TMDB request path and the Movie cache key.
@@ -64,6 +92,54 @@ export default async function MoviePage({ params }: MoviePageProps) {
       return null;
     },
   );
+
+  // Where to watch. Like the extras above, a nice-to-have: TMDB being down or
+  // rate-limiting drops the section, not the page. The settings country and
+  // services decide which country is shown first and what counts as "yours".
+  const settings = await getSettings(user.id);
+  let countries: Awaited<ReturnType<typeof getMovieWatchProviders>> = [];
+  let regions: Awaited<ReturnType<typeof getWatchRegions>> = [];
+  try {
+    [countries, regions] = await Promise.all([
+      getMovieWatchProviders(id),
+      getWatchRegions(),
+    ]);
+  } catch (error) {
+    if (!(error instanceof TmdbError)) throw error;
+    logger.warn("movie.availability_unavailable", describeError(error));
+  }
+  const availabilityKnown = countries.length > 0 || regions.length > 0;
+
+  const nameFor = (code: string) =>
+    regions.find((region) => region.code === code)?.name ?? code;
+  const hasSettingsCountry = countries.some(
+    (country) => country.code === settings.country,
+  );
+  const selectedCountry = pickCountry(
+    countries,
+    params_.country,
+    settings.country,
+  );
+  const countryOptions = countries.map((country) => ({
+    code: country.code,
+    name: nameFor(country.code),
+  }));
+
+  // Measured against the settings country, not the one being browsed: see the
+  // show page, which this mirrors.
+  const homeCountry = settings.country ?? undefined;
+  const providerIds = parseProviderIds(settings.providerIds);
+  const alternateCountries = coveredAtHome(countries, providerIds, homeCountry)
+    ? []
+    : findAlternateCountries(countries, providerIds, homeCountry);
+  const altCountryLimit = limitFrom(
+    params_,
+    ALT_COUNTRY_PARAM,
+    ALT_COUNTRY_PAGE_SIZE,
+  );
+  const shownAlternateCountries = alternateCountries
+    .slice(0, altCountryLimit)
+    .map((country) => ({ ...country, name: nameFor(country.code) }));
 
   // Built from what the page already read. Offered whenever there is something
   // to delete, which includes an untracked movie that only has past watches.
@@ -203,6 +279,39 @@ export default async function MoviePage({ params }: MoviePageProps) {
             showName={movie.title}
           />
         </div>
+      ) : null}
+
+      {availabilityKnown ? (
+        <>
+          {selectedCountry ? (
+            <Availability
+              selected={selectedCountry}
+              options={countryOptions}
+              selectedName={nameFor(selectedCountry.code)}
+              settingsCountryUnavailable={
+                settings.country && !hasSettingsCountry
+                  ? { code: settings.country, name: nameFor(settings.country) }
+                  : null
+              }
+            />
+          ) : (
+            <p className="mt-8 rounded-2xl border border-dashed border-border px-5 py-8 text-center text-sm text-muted">
+              No streaming, rental or purchase option listed for this movie.
+            </p>
+          )}
+
+          {shownAlternateCountries.length > 0 ? (
+            <AlternateAvailability
+              shown={shownAlternateCountries}
+              remaining={
+                alternateCountries.length - shownAlternateCountries.length
+              }
+              param={ALT_COUNTRY_PARAM}
+              current={params_}
+              step={ALT_COUNTRY_PAGE_SIZE}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {extras ? <CastRow cast={extras.cast} /> : null}

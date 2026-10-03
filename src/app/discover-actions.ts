@@ -12,10 +12,12 @@ import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 import {
   getMovieDetails,
   getMovieExtras,
+  getMovieWatchProviders,
   getShowCast,
   getShowDetails,
   getShowTrailer,
   getWatchProviders,
+  type CountryAvailability,
 } from "@/lib/tmdb";
 
 // Discover's writes. The same rules as `app/actions.ts` apply: the session gate
@@ -87,6 +89,20 @@ export async function resetDismissedSuggestions(): Promise<
 }
 
 /**
+ * A card's streaming line is a nicety: if TMDB can't answer it, the rest of the
+ * card's details still load, just without that line.
+ */
+async function streamingFor(
+  lookup: Promise<CountryAvailability[]>,
+): Promise<CountryAvailability[]> {
+  try {
+    return await lookup;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * The lazily loaded detail on a card: overview, genres, runtime, cast, trailer
  * and where it streams. Read-only, but still gated: it spends TMDB requests on
  * the caller's behalf. A TMDB failure is a result, never a throw.
@@ -109,10 +125,12 @@ export async function loadCardDetails(
     const { country } = await getSettings(user.id);
 
     if (kind === "movie") {
-      const [extras, movie] = await Promise.all([
+      const [extras, movie, availability] = await Promise.all([
         getMovieExtras(id),
         getMovieDetails(id),
+        country ? streamingFor(getMovieWatchProviders(id)) : [],
       ]);
+      const here = availability.find((entry) => entry.code === country);
       return {
         ok: true,
         details: {
@@ -125,8 +143,7 @@ export async function loadCardDetails(
             character,
           })),
           trailerKey: extras.trailer?.key ?? null,
-          // TMDB's provider lookup here is per show; movies have none yet.
-          providers: [],
+          providers: here?.flatrate.map((provider) => provider.name) ?? [],
         },
       };
     }
@@ -135,7 +152,7 @@ export async function loadCardDetails(
       getShowDetails(id),
       getShowCast(id),
       getShowTrailer(id),
-      country ? getWatchProviders(id) : Promise.resolve([]),
+      country ? streamingFor(getWatchProviders(id)) : [],
     ]);
     const here = availability.find((entry) => entry.code === country);
     return {

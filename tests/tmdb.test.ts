@@ -4,6 +4,7 @@ import {
   getAllEpisodes,
   getMovieDetails,
   getMovieExtras,
+  getMovieWatchProviders,
   getSeasonEpisodes,
   getShowTrailer,
   getWatchProviderList,
@@ -515,7 +516,123 @@ describe("provider list for the settings picker", () => {
       getWatchProviderList("region-stampede"),
     ]);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // One per catalogue (TV and movie), however many callers.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  /** A fetch that answers by URL, so the TV and movie catalogues can differ. */
+  function mockCatalogues(tv: unknown, movie: unknown | Error) {
+    const fetchMock = vi.fn(async (url: string) => {
+      const isMovie = String(url).includes("/watch/providers/movie");
+      const body = isMovie ? movie : tv;
+      if (body instanceof Error) throw body;
+      return { ok: true, status: 200, json: async () => body };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("includes services that exist only in the movie catalogue", async () => {
+    mockCatalogues(
+      { results: [{ provider_id: 1, provider_name: "Netflix", logo_path: null, display_priority: 1 }] },
+      { results: [{ provider_id: 99, provider_name: "Movie Only", logo_path: null, display_priority: 2 }] },
+    );
+
+    const providers = await getWatchProviderList("region-union");
+
+    expect(providers.map((provider) => provider.name)).toEqual([
+      "Netflix",
+      "Movie Only",
+    ]);
+  });
+
+  it("lists a service in both catalogues once, at its better priority", async () => {
+    mockCatalogues(
+      { results: [
+          { provider_id: 1, provider_name: "Netflix", logo_path: null, display_priority: 5 },
+          { provider_id: 2, provider_name: "Other", logo_path: null, display_priority: 3 },
+      ] },
+      { results: [{ provider_id: 1, provider_name: "Netflix", logo_path: null, display_priority: 0 }] },
+    );
+
+    const providers = await getWatchProviderList("region-dedupe");
+
+    expect(providers.map((provider) => provider.id)).toEqual([1, 2]);
+  });
+
+  it("falls back to the TV list when the movie catalogue fails", async () => {
+    mockCatalogues(
+      { results: [{ provider_id: 1, provider_name: "Netflix", logo_path: null }] },
+      new Error("ECONNREFUSED"),
+    );
+
+    const providers = await getWatchProviderList("region-movie-down");
+
+    expect(providers.map((provider) => provider.id)).toEqual([1]);
+  });
+
+  it("still throws when the TV catalogue fails", async () => {
+    mockCatalogues(new Error("ECONNREFUSED"), { results: [] });
+
+    await expect(getWatchProviderList("region-tv-down")).rejects.toBeInstanceOf(
+      TmdbError,
+    );
+  });
+});
+
+describe("movie watch providers", () => {
+  it("reads the movie endpoint and maps it like a show's", async () => {
+    const fetchMock = mockFetch({
+      results: {
+        FR: {
+          link: "https://example.test/fr",
+          flatrate: [{ provider_id: 8, provider_name: "Netflix", logo_path: "/n.jpg" }],
+          ads: [{ provider_id: 2, provider_name: "Pluto", logo_path: null }],
+        },
+        ZZ: { link: "https://example.test/zz" },
+      },
+    });
+
+    const countries = await getMovieWatchProviders("mp-1");
+
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain("/movie/mp-1/watch/providers");
+    expect(countries.map((country) => country.code)).toEqual(["FR"]);
+    expect(countries[0].flatrate[0].name).toBe("Netflix");
+    expect(countries[0].free[0].name).toBe("Pluto");
+  });
+
+  it("returns an empty list for a movie with no listing", async () => {
+    mockFetch({ results: {} });
+
+    expect(await getMovieWatchProviders("mp-empty")).toEqual([]);
+  });
+
+  it("keeps a movie and a show with the same id apart in the cache", async () => {
+    mockFetch({
+      results: { FR: { flatrate: [{ provider_id: 1, provider_name: "Show Service", logo_path: null }] } },
+    });
+    const show = await getWatchProviders("same-id-77");
+
+    mockFetch({
+      results: { FR: { flatrate: [{ provider_id: 2, provider_name: "Movie Service", logo_path: null }] } },
+    });
+    const movie = await getMovieWatchProviders("same-id-77");
+
+    expect(show[0].flatrate[0].name).toBe("Show Service");
+    expect(movie[0].flatrate[0].name).toBe("Movie Service");
+  });
+
+  it("drops a non-https link, as for shows", async () => {
+    mockFetch({
+      results: {
+        FR: {
+          link: "javascript:alert(1)",
+          flatrate: [{ provider_id: 1, provider_name: "Netflix", logo_path: null }],
+        },
+      },
+    });
+
+    expect((await getMovieWatchProviders("mp-link"))[0].link).toBeNull();
   });
 });
 

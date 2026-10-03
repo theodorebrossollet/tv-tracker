@@ -21,10 +21,13 @@ capture ideas as they come up, to revisit once the current phase is done.
 Recommendations and "Pick for tonight" shipped as the swipe deck at `/discover`
 (see AGENTS.md, "Discover, in short").
 
+Movies now have the same "Where to watch" section as shows (country, your
+services, "also on your services" in other countries), and the Settings services
+picker lists TV and movie services together; Discover's movie cards show their
+streaming line.
+
 Next:
 
-- **Streaming availability on Discover** — movie cards have no "where to
-  stream" line yet; shows do.
 - **Release tracking** — knowing when a title you want lands on a service or in
   cinemas.
 
