@@ -42,6 +42,7 @@ export async function resetDatabase() {
   await prisma.show.deleteMany();
   await prisma.settings.deleteMany();
   await prisma.session.deleteMany();
+  await prisma.dismissedSuggestion.deleteMany();
   await prisma.user.deleteMany();
 }
 

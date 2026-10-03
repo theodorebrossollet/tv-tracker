@@ -229,8 +229,11 @@ async function loadShowProgress(
  * As in `loadShowProgress`, `userId` is a join condition, so dropping
  * `w."userId" = ${userId}` would average the whole household's ratings.
  * AVG() erases the column type, hence `Number(...)`.
+ *
+ * Exported for Discover's seeds (`lib/discover.ts`), so the show-rating rule
+ * still exists only here and in `getShowDetail`. `showIds` must not be empty.
  */
-async function loadShowRatings(
+export async function loadShowRatings(
   userId: string,
   showIds: string[],
 ): Promise<Map<string, number>> {

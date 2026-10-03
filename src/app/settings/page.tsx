@@ -1,5 +1,6 @@
 import { ChangePasswordForm } from "./change-password-form";
 import { DangerZone } from "./danger-zone";
+import { HiddenSuggestions } from "./hidden-suggestions";
 import { SettingsClient } from "./settings-client";
 import { describeError, logger } from "@/lib/logger";
 import { SignOutButton } from "@/components/sign-out-button";
@@ -9,6 +10,7 @@ import {
   InfoRow,
 } from "@/components/settings-rows";
 import { requireOnboardedSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { parseProviderIds } from "@/lib/alternate-countries";
 import { limitFrom } from "@/components/show-more-link";
 import { getSettings } from "@/lib/shows";
@@ -88,6 +90,17 @@ export default async function SettingsPage({
     shownProviders = providerOptions
       .filter((provider) => chosen.has(provider.id))
       .sort(byName);
+  }
+
+  // Null when the table is missing (migration not applied yet): Settings
+  // must still render, with the row reading "Unavailable".
+  let hiddenCount: number | null = null;
+  try {
+    hiddenCount = await prisma.dismissedSuggestion.count({
+      where: { userId: user.id },
+    });
+  } catch (error) {
+    logger.warn("settings.hidden_suggestions_unavailable", describeError(error));
   }
 
   return (
@@ -186,6 +199,13 @@ export default async function SettingsPage({
         </DisclosureRow>
 
         <SignOutButton />
+      </Group>
+
+      <Group
+        label="Discover"
+        description="Suggestions you swiped away stay hidden until you show them again."
+      >
+        <HiddenSuggestions count={hiddenCount} />
       </Group>
 
       <DangerZone />

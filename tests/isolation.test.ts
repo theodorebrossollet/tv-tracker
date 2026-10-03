@@ -445,3 +445,35 @@ describe("rewatch history reads never cross accounts", () => {
     expect((await getMovieDetail(B, "311"))!.pastWatches).toHaveLength(1);
   });
 });
+
+describe("discover reads never cross accounts", () => {
+  it("builds A's seeds and own titles from A's rows only", async () => {
+    // B rated a shared show and a shared movie highly and has a watchlist.
+    await seedSeasonedShow({ showId: "320", seasons: [1], userId: A });
+    await seedSeasonedShow({ showId: "320", seasons: [1], userId: B });
+    await watchEpisode("320-s1e1", 10, B);
+    await prisma.movie.create({ data: { id: "321", title: "Shared" } });
+    await prisma.trackedMovie.create({
+      data: { userId: B, movieId: "321", status: "watched", rating: 10 },
+    });
+    await prisma.movie.create({ data: { id: "322", title: "B's pick" } });
+    await prisma.trackedMovie.create({
+      data: { userId: B, movieId: "322", status: "watchlist" },
+    });
+    const theirs = await prisma.list.create({ data: { userId: B, name: "T" } });
+    await prisma.listItem.create({ data: { listId: theirs.id, movieId: "322" } });
+
+    const { getDeck, getSeeds } = await import("@/lib/discover");
+    const any = { kind: "any", short: false, listId: null } as const;
+
+    expect(await getSeeds(A)).toEqual([]);
+    expect(await getDeck(A, any)).toEqual({
+      cards: [],
+      seedCount: 0,
+      recommendationsUnavailable: false,
+    });
+    expect((await getDeck(A, { ...any, listId: theirs.id })).cards).toEqual([]);
+
+    expect((await getSeeds(B)).map((s) => s.id).sort()).toEqual(["320", "321"]);
+  });
+});

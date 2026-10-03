@@ -1,6 +1,7 @@
 import "server-only";
 
 import { describeError, logger } from "@/lib/logger";
+import { isTmdbMovieId, isTmdbShowId } from "@/lib/show-id";
 
 // Thin wrapper around the TMDB API. Endpoints are listed in
 // docs/technical-design.md section 6.
@@ -985,4 +986,88 @@ export async function getMovieExtras(
       })),
     trailer: data.videos ? pickBestTrailer(data.videos) : null,
   };
+}
+
+export interface TmdbRecommendation {
+  kind: "movie" | "show";
+  id: string;
+  name: string;
+  posterPath: string | null;
+  overview: string | null;
+  year: string | null;
+  voteAverage: number;
+  voteCount: number;
+}
+
+interface RawRecommendationsResponse {
+  results?: Array<{
+    id: number;
+    title?: string;
+    name?: string;
+    poster_path?: string | null;
+    overview?: string | null;
+    release_date?: string | null;
+    first_air_date?: string | null;
+    vote_average?: number;
+    vote_count?: number;
+  }>;
+}
+
+/**
+ * TMDB's first page of recommendations for a movie or show. Image paths are
+ * not validated here, like the other functions in this file. The id is
+ * interpolated into the request path, so it is checked before any fetch.
+ */
+export async function getRecommendations(
+  kind: "movie" | "show",
+  id: string,
+): Promise<TmdbRecommendation[]> {
+  const valid = kind === "movie" ? isTmdbMovieId(id) : isTmdbShowId(id);
+  if (!valid) throw new TmdbError("Invalid TMDB id.");
+
+  const data = await cached(`recs:${kind}:${id}`, VIDEO_CACHE_SECONDS, () =>
+    tmdbFetch<RawRecommendationsResponse>(
+      `/${kind === "movie" ? "movie" : "tv"}/${id}/recommendations`,
+      { language: "en-US" },
+    ),
+  );
+
+  return (data.results ?? []).map((item) => {
+    const date = kind === "movie" ? item.release_date : item.first_air_date;
+    return {
+      kind,
+      id: String(item.id),
+      name: (kind === "movie" ? item.title : item.name) ?? "",
+      posterPath: item.poster_path || null,
+      overview: item.overview || null,
+      year: date ? date.slice(0, 4) : null,
+      voteAverage: item.vote_average ?? 0,
+      voteCount: item.vote_count ?? 0,
+    };
+  });
+}
+
+/** The top ten billed cast of a show, from `/tv/{id}/credits`. */
+export async function getShowCast(
+  tmdbShowId: string | number,
+): Promise<TmdbCastMember[]> {
+  const id = String(tmdbShowId);
+  if (!isTmdbShowId(id)) throw new TmdbError("Invalid TMDB id.");
+
+  const data = await cached(`show-cast:${id}`, VIDEO_CACHE_SECONDS, () =>
+    tmdbFetch<NonNullable<RawMovieExtrasResponse["credits"]>>(
+      `/tv/${id}/credits`,
+      { language: "en-US" },
+    ),
+  );
+
+  return [...(data.cast ?? [])]
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .slice(0, CAST_SHOWN)
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      character: person.character || null,
+      profilePath: person.profile_path,
+    }));
 }

@@ -937,6 +937,7 @@ export async function clearAllData(): Promise<ActionResult> {
       // Items go with their list (cascade); the titles themselves stay cached.
       prisma.list.deleteMany({ where: { userId: user.id } }),
       prisma.settings.deleteMany({ where: { userId: user.id } }),
+      prisma.dismissedSuggestion.deleteMany({ where: { userId: user.id } }),
     ]);
   } catch (error) {
     return toResult(error);

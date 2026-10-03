@@ -16,6 +16,18 @@ capture ideas as they come up, to revisit once the current phase is done.
 - **Export personal data as CSV** — download your own tracked shows/watched
   episodes from Settings
 
+## Shipped: Discover (Oct 2026)
+
+Recommendations and "Pick for tonight" shipped as the swipe deck at `/discover`
+(see AGENTS.md, "Discover, in short").
+
+Next:
+
+- **Streaming availability on Discover** — movie cards have no "where to
+  stream" line yet; shows do.
+- **Release tracking** — knowing when a title you want lands on a service or in
+  cinemas.
+
 ## Shipped from the phone redesign (Aug 2026)
 
 The redesign shipped as a presentation-layer change across seven pull requests,
