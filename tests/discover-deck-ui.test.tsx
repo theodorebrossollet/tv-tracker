@@ -434,6 +434,60 @@ describe("swiping", () => {
   });
 });
 
+describe("a committed swipe on a recommendation", () => {
+  it("holds the card off to the side while pending, then it is gone on success", async () => {
+    const gate = deferred<ActionResult>();
+    addToWatchlist.mockReturnValue(gate.promise);
+    deck();
+    drag(150, 0);
+
+    expect(card().style.transform).toContain("translateX(120%)");
+    expect(currentTitle()).toBe("Severance");
+
+    await act(async () => gate.resolve({ ok: true }));
+    await waitFor(() => expect(currentTitle()).toBe("The Matrix"));
+    expect(screen.queryByText("Severance")).toBeNull();
+    expect(card().style.transform).toBe("");
+  });
+
+  it("springs back to centre on failure, with the error shown", async () => {
+    const gate = deferred<ActionResult>();
+    dismissSuggestion.mockReturnValue(gate.promise);
+    deck();
+    drag(-150, 0);
+
+    expect(card().style.transform).toContain("translateX(-120%)");
+
+    await act(async () => gate.resolve({ ok: false, error: "Too many." }));
+    await waitFor(() => expect(card().style.transform).toBe(""));
+    expect(currentTitle()).toBe("Severance");
+    expect(screen.getByRole("alert").textContent).toBe("Too many.");
+  });
+});
+
+describe("stale errors", () => {
+  it("a filter change clears the last error", async () => {
+    addToWatchlist.mockResolvedValue({ ok: false, error: "Couldn't add it." });
+    deck();
+    fireEvent.click(addButton());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Movie" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("layout guards (classes only: jsdom does no layout)", () => {
+  it("keeps the buttons pinned above the tab bar and clips sideways drags", () => {
+    const { container } = deck();
+    expect((container.firstChild as HTMLElement).className).toContain(
+      "overflow-x-clip",
+    );
+    const row = notThisOne().parentElement!;
+    expect(row.className).toContain("sticky");
+  });
+});
+
 describe("details", () => {
   it("loads nothing until a card is opened", () => {
     deck();
@@ -521,18 +575,26 @@ describe("notices and empty states", () => {
     ).toBeTruthy();
   });
 
-  it("an empty deck offers a refresh", () => {
-    deck({ cards: [] });
-    expect(screen.getByText("You've seen them all")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(refresh).toHaveBeenCalledTimes(1);
+  it("a deck empty from the start says there is nothing yet", () => {
+    deck({ cards: [], seedCount: 0 });
+    expect(screen.getByText("Nothing to pick from yet")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Add titles to your watchlist or rate a few you've watched, and they'll show up here.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("You've seen them all")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
   });
 
-  it("an exhausted deck says so too", () => {
+  it("an exhausted deck says so and offers a refresh", () => {
     deck({ cards: [OWN_MOVIE] });
     fireEvent.click(notThisOne());
     expect(screen.getByText("You've seen them all")).toBeTruthy();
+    expect(screen.queryByText("Nothing to pick from yet")).toBeNull();
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });
 

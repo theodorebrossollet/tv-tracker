@@ -79,6 +79,9 @@ export function DiscoverDeck({
   const [seen, setSeen] = useState<string[]>([]);
   const [tonight, setTonight] = useState<DeckCard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Whether this visit has passed over anything yet, which is what tells an
+  // exhausted deck apart from one that never had a card.
+  const [chose, setChose] = useState(false);
   const [pending, startTransition] = useTransition();
   const [details, setDetails] = useState<Record<string, DetailsState>>({});
 
@@ -92,16 +95,20 @@ export function DiscoverDeck({
   const next = remaining[1];
 
   function setFilters(change: Partial<DeckFilters>) {
+    setError(null);
+    setChose(false);
     router.replace(filtersHref({ ...filters, ...change }), { scroll: false });
   }
 
   function markSeen(card: DeckCard) {
     const key = keyOf(card);
     setSeen((keys) => (keys.includes(key) ? keys : [...keys, key]));
+    setChose(true);
   }
 
-  function choose(direction: SwipeDirection) {
-    if (!current || inFlight.current) return;
+  /** Resolves true when the deck moved on (or Tonight opened). */
+  function choose(direction: SwipeDirection): Promise<boolean> {
+    if (!current || inFlight.current) return Promise.resolve(false);
     const card = current;
     setError(null);
 
@@ -110,29 +117,34 @@ export function DiscoverDeck({
     if (card.source === "own") {
       if (direction === "right") setTonight(card);
       else markSeen(card);
-      return;
+      return Promise.resolve(true);
     }
 
     inFlight.current = true;
-    startTransition(async () => {
-      try {
-        const result =
-          direction === "left"
-            ? await dismissSuggestion(card.kind, card.id)
-            : card.kind === "show"
-              ? await addToWatchlist(card.id)
-              : await addMovieToWatchlist(card.id);
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        let advanced = false;
+        try {
+          const result =
+            direction === "left"
+              ? await dismissSuggestion(card.kind, card.id)
+              : card.kind === "show"
+                ? await addToWatchlist(card.id)
+                : await addMovieToWatchlist(card.id);
 
-        if (!result.ok) {
-          setError(result.error ?? "Something went wrong. Please try again.");
-          return;
+          if (!result.ok) {
+            setError(result.error ?? "Something went wrong. Please try again.");
+            return;
+          }
+          markSeen(card);
+          advanced = true;
+        } catch {
+          setError("Something went wrong. Please try again.");
+        } finally {
+          inFlight.current = false;
+          resolve(advanced);
         }
-        markSeen(card);
-      } catch {
-        setError("Something went wrong. Please try again.");
-      } finally {
-        inFlight.current = false;
-      }
+      });
     });
   }
 
@@ -154,6 +166,7 @@ export function DiscoverDeck({
   }
 
   function pickAnother() {
+    setError(null);
     if (tonight) markSeen(tonight);
     setTonight(null);
   }
@@ -161,12 +174,16 @@ export function DiscoverDeck({
   function refresh() {
     // Starting over: skipped own cards come back. Added and dismissed ones
     // don't, because the server no longer deals them.
+    setError(null);
     setSeen([]);
     router.refresh();
   }
 
   return (
-    <div className="mx-auto max-w-md">
+    // `overflow-x-clip`, not `hidden`: a dragged card must not push the page
+    // sideways on iOS, and `hidden` would make this a scroll container and
+    // break the sticky button row below.
+    <div className="mx-auto max-w-md overflow-x-clip">
       <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
         Discover
       </h1>
@@ -241,7 +258,12 @@ export function DiscoverDeck({
               </p>
             ) : null}
 
-            <div className="mt-4 flex items-center justify-center gap-6">
+            {/* Sticky just above the fixed tab bar (its 3.5rem tabs, 0.5rem
+                top padding and the safe-area inset), so ✕ and ✓ stay
+                reachable on a short phone screen however tall the card is:
+                they are the fallback when iOS's edge back-gesture swallows a
+                swipe. */}
+            <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 mt-2 flex items-center justify-center gap-6 bg-background py-2">
               <button
                 type="button"
                 onClick={() => choose("left")}
@@ -256,7 +278,9 @@ export function DiscoverDeck({
                 onClick={() => choose("right")}
                 disabled={pending}
                 aria-label={
-                  current.source === "own" ? "Pick this one" : "Add to watchlist"
+                  current.source === "own"
+                    ? "Pick this one"
+                    : "Add to watchlist"
                 }
                 className="flex size-14 items-center justify-center rounded-full bg-accent text-on-accent disabled:opacity-50"
               >
@@ -264,6 +288,15 @@ export function DiscoverDeck({
               </button>
             </div>
           </>
+        ) : cards.length === 0 && !chose ? (
+          <div className="rounded-2xl border border-border px-6 py-10 text-center">
+            <p className="font-semibold">Nothing to pick from yet</p>
+            <p className="mt-2 text-[13px] text-muted">
+              {
+                "Add titles to your watchlist or rate a few you've watched, and they'll show up here."
+              }
+            </p>
+          </div>
         ) : (
           <div className="rounded-2xl border border-border px-6 py-10 text-center">
             <p className="font-semibold">{"You've seen them all"}</p>

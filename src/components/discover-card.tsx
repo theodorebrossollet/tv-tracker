@@ -29,15 +29,21 @@ export type DetailsState =
  *
  * The axis is locked once per gesture and never revisited, so a scroll that
  * drifts sideways can't turn into a swipe halfway through.
+ *
+ * A committed swipe holds the card off to the side (`flung`) until `onSwipe`
+ * settles: on success the deck moves on and this card unmounts; only a
+ * failure brings it back to centre. Resetting first made a successful swipe
+ * look as if it had bounced.
  */
 function useSwipe({
   onSwipe,
   disabled,
 }: {
-  onSwipe: (direction: SwipeDirection) => void;
+  onSwipe: (direction: SwipeDirection) => Promise<boolean>;
   disabled: boolean;
 }) {
   const [offset, setOffset] = useState(0);
+  const [flung, setFlung] = useState<SwipeDirection | null>(null);
   const [dragging, setDragging] = useState(false);
 
   // Refs: these change on every move event and must not wait for a render.
@@ -96,11 +102,16 @@ function useSwipe({
 
     if (!wasHorizontal || disabled) return;
     const outcome = swipeOutcome(dx);
-    if (outcome !== "none") onSwipe(outcome);
+    if (outcome === "none") return;
+    setFlung(outcome);
+    void onSwipe(outcome).then((advanced) => {
+      if (!advanced) setFlung(null);
+    });
   }
 
   return {
     offset,
+    flung,
     dragging,
     handlers: {
       onTouchStart,
@@ -117,7 +128,8 @@ interface DiscoverCardProps {
   tag: string;
   details: DetailsState | undefined;
   onOpenDetails: () => void;
-  onSwipe: (direction: SwipeDirection) => void;
+  /** Resolves true when the deck moved on, false when the card stays. */
+  onSwipe: (direction: SwipeDirection) => Promise<boolean>;
   /** A choice is pending: swipes are ignored until it settles. */
   disabled: boolean;
 }
@@ -130,7 +142,10 @@ export function DiscoverCard({
   onSwipe,
   disabled,
 }: DiscoverCardProps) {
-  const { offset, dragging, handlers } = useSwipe({ onSwipe, disabled });
+  const { offset, flung, dragging, handlers } = useSwipe({
+    onSwipe,
+    disabled,
+  });
   const [expanded, setExpanded] = useState(false);
 
   function toggle() {
@@ -147,12 +162,22 @@ export function DiscoverCard({
       data-testid="current-card"
       {...handlers}
       style={
-        offset !== 0
-          ? { transform: `translateX(${offset}px) rotate(${tilt(offset)}deg)` }
-          : undefined
+        flung
+          ? {
+              transform:
+                flung === "right"
+                  ? "translateX(120%) rotate(12deg)"
+                  : "translateX(-120%) rotate(-12deg)",
+              opacity: 0,
+            }
+          : offset !== 0
+            ? {
+                transform: `translateX(${offset}px) rotate(${tilt(offset)}deg)`,
+              }
+            : undefined
       }
       className={`relative z-10 touch-pan-y rounded-2xl border border-border bg-background p-3 shadow-sm ${
-        dragging ? "" : "transition-transform duration-200"
+        dragging ? "" : "transition-[transform,opacity] duration-200"
       }`}
     >
       <Poster
@@ -196,7 +221,9 @@ function DetailsPanel({
   }
   if (state.status === "error") {
     // Quiet on purpose: the card still works without its extras.
-    return <p className="pb-2 text-[13px] text-muted">{"Couldn't load details"}</p>;
+    return (
+      <p className="pb-2 text-[13px] text-muted">{"Couldn't load details"}</p>
+    );
   }
 
   const { overview, genres, runtime, cast, trailerKey, providers } =
@@ -211,7 +238,11 @@ function DetailsPanel({
       {facts ? <p className="text-muted">{facts}</p> : null}
       {cast.length > 0 ? (
         <p className="text-muted">
-          With {cast.slice(0, 6).map((person) => person.name).join(", ")}
+          With{" "}
+          {cast
+            .slice(0, 6)
+            .map((person) => person.name)
+            .join(", ")}
         </p>
       ) : null}
       {providers.length > 0 ? (
