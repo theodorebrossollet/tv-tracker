@@ -32,7 +32,10 @@ const { LibraryScreen } = await import("@/components/library-screen");
 
 import type { MovieBuckets, MovieSummary, ShowBuckets } from "@/lib/queries";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const emptyShows: ShowBuckets = {
   watching: [],
@@ -173,8 +176,12 @@ describe("movie lists", () => {
     expect(screen.getByText("1995 · 170 min")).toBeTruthy();
   });
 
-  it("shows an evening watch on the day it happened in app time, not the UTC day", () => {
-    // 21:30 EDT on 1 Oct is 01:30Z on 2 Oct.
+  it("shows an evening watch on the day it happened in the viewer's zone, not the UTC day", () => {
+    // 21:30 EDT on 1 Oct is 01:30Z on 2 Oct. Pin the viewer's zone so the
+    // result doesn't depend on the machine running the tests (CI is UTC).
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      timeZone: "America/New_York",
+    } as Intl.ResolvedDateTimeFormatOptions);
     renderMovies("archive", {
       watched: [
         movie({
