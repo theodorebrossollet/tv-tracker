@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { Poster } from "@/components/poster";
+import { PosterGrid } from "@/components/poster-grid";
 import { RatingValue } from "@/components/rating-value";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { CheckIcon, StatusMenu } from "@/components/status-sheet";
 import type { TrackedShowSummary } from "@/lib/queries";
+import type { ViewMode } from "@/lib/view-mode";
 
 interface LibraryListProps {
   shows: TrackedShowSummary[];
@@ -21,6 +23,8 @@ interface LibraryListProps {
   param: string;
   searchParams: Record<string, string | string[] | undefined>;
   limit: number;
+  /** Rows (the default) or a grid of posters. */
+  view?: ViewMode;
 }
 
 /**
@@ -44,12 +48,27 @@ export function LibraryList({
   param,
   searchParams,
   limit,
+  view = "rows",
 }: LibraryListProps) {
   const shown = shows.slice(0, limit);
   const remaining = shows.length - shown.length;
 
   return (
     <>
+      {view === "posters" ? (
+        <PosterGrid
+          items={shown.map((show) => ({
+            key: show.showId,
+            href: `/show/${show.showId}`,
+            title: show.name,
+            posterPath: show.posterPath,
+            seen: tick,
+            rating: show.ratingAverage,
+            ratingIsAverage: true,
+            quiet: tone === "sunken",
+          }))}
+        />
+      ) : (
       <ul className="flex flex-col gap-2">
         {shown.map((show) => (
           <li
@@ -101,6 +120,7 @@ export function LibraryList({
           </li>
         ))}
       </ul>
+      )}
 
       {remaining > 0 ? (
         <ShowMoreLink

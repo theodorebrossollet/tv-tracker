@@ -1,5 +1,6 @@
 import { LibraryScreen } from "@/components/library-screen";
 import { requireOnboardedSession } from "@/lib/auth";
+import { getViewMode } from "@/lib/get-view-mode";
 import { typeFrom } from "@/lib/library-type";
 import { getMovieBuckets, getShowBuckets } from "@/lib/queries";
 
@@ -29,6 +30,7 @@ export default async function WatchlistPage({
 }: WatchlistPageProps) {
   const { user } = await requireOnboardedSession();
   const params = await searchParams;
+  const view = await getViewMode();
 
   // Only the half being rendered is fetched.
   const data =
@@ -37,6 +39,11 @@ export default async function WatchlistPage({
       : { type: "shows" as const, buckets: await getShowBuckets(user.id) };
 
   return (
-    <LibraryScreen segment="watchlist" searchParams={params} data={data} />
+    <LibraryScreen
+      segment="watchlist"
+      searchParams={params}
+      data={data}
+      view={view}
+    />
   );
 }

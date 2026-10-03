@@ -6,10 +6,14 @@ import { EmptyState } from "@/components/empty-state";
 import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { ListItemRow } from "@/components/list-item-row";
 import { ListMenu } from "@/components/list-menu";
+import { PosterGrid } from "@/components/poster-grid";
 import { ShowMoreLink, limitFrom } from "@/components/show-more-link";
+import { ViewToggle } from "@/components/view-toggle";
 import { requireOnboardedSession } from "@/lib/auth";
+import { getViewMode } from "@/lib/get-view-mode";
 import { getListDetail, type ListItemView } from "@/lib/queries";
 import type { SearchParams } from "@/lib/search-params";
+import type { ViewMode } from "@/lib/view-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +48,7 @@ export default async function ListPage({
   // existed, which is what keeps the two indistinguishable.
   const list = await getListDetail(user.id, id);
   if (!list) notFound();
+  const view = await getViewMode();
 
   // `items` arrives sorted not-watched first; filtering keeps that order.
   const toWatch = list.items.filter((item) => !item.watched);
@@ -85,7 +90,10 @@ export default async function ListPage({
           {list.name}
         </h1>
         {list.items.length > 0 ? (
-          <AddTitlesButton listId={list.id} listName={list.name} />
+          <div className="flex shrink-0 items-center gap-2">
+            <ViewToggle view={view} />
+            <AddTitlesButton listId={list.id} listName={list.name} />
+          </div>
         ) : null}
       </div>
 
@@ -106,6 +114,7 @@ export default async function ListPage({
                 items={toWatch}
                 param="listToWatch"
                 searchParams={query}
+                view={view}
               />
             ) : null}
 
@@ -120,6 +129,7 @@ export default async function ListPage({
                   items={watched}
                   param="listWatched"
                   searchParams={query}
+                  view={view}
                 />
               </section>
             ) : null}
@@ -137,12 +147,14 @@ function ItemSection({
   items,
   param,
   searchParams,
+  view,
 }: {
   listId: string;
   trackSeparately: boolean;
   items: ListItemView[];
   param: string;
   searchParams: SearchParams;
+  view: ViewMode;
 }) {
   const limit = limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
   const shown = items.slice(0, limit);
@@ -150,16 +162,32 @@ function ItemSection({
 
   return (
     <>
-      <ul className="flex flex-col gap-2">
-        {shown.map((item) => (
-          <ListItemRow
-            key={item.itemId}
-            listId={listId}
-            trackSeparately={trackSeparately}
-            item={item}
-          />
-        ))}
-      </ul>
+      {view === "posters" ? (
+        <PosterGrid
+          items={shown.map((item) => ({
+            key: item.itemId,
+            href: `${item.kind === "movie" ? "/movie" : "/show"}/${item.titleId}`,
+            title: item.title,
+            posterPath: item.posterPath,
+            kind: item.kind === "movie" ? "movie" : "tv",
+            seen: item.watched,
+            rating: item.rating,
+            ratingIsAverage: item.kind === "show",
+            quiet: item.watched,
+          }))}
+        />
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {shown.map((item) => (
+            <ListItemRow
+              key={item.itemId}
+              listId={listId}
+              trackSeparately={trackSeparately}
+              item={item}
+            />
+          ))}
+        </ul>
+      )}
 
       {remaining > 0 ? (
         <ShowMoreLink

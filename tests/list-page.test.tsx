@@ -11,6 +11,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
 const openForList = vi.fn();
+// The visitor's `view` cookie. Rows unless a test sets it.
+let viewCookie: string | undefined;
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      name === "view" && viewCookie !== undefined
+        ? { name, value: viewCookie }
+        : undefined,
+  }),
+}));
+vi.mock("@/app/view-actions", () => ({
+  setViewMode: vi.fn(async () => ({ ok: true })),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push }),
@@ -99,6 +113,7 @@ async function renderPage(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  viewCookie = undefined;
 });
 afterEach(cleanup);
 
@@ -590,5 +605,98 @@ describe("list menu", () => {
     // Still open on failure, with the message and the buttons to retry.
     expect(screen.getByRole("alert").textContent).toBe("Could not delete.");
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+  });
+});
+
+describe("the posters view", () => {
+  const movie = (over: Partial<ListItemView> = {}) =>
+    item({ itemId: "m1", titleId: "603", title: "The Matrix", ...over });
+  const show = (over: Partial<ListItemView> = {}) =>
+    item({
+      itemId: "s1",
+      kind: "show",
+      titleId: "603",
+      title: "Dark",
+      posterPath: "/d.jpg",
+      ...over,
+    });
+
+  it("is rows by default and for a junk cookie", async () => {
+    await renderPage(list({ items: [movie()] }));
+    expect(screen.getByRole("button", { name: "Rows view" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /Options for/ })).toBeTruthy();
+    cleanup();
+
+    viewCookie = "banana";
+    await renderPage(list({ items: [movie()] }));
+    expect(screen.getByRole("button", { name: "Rows view" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /Options for/ })).toBeTruthy();
+  });
+
+  it("renders a grid of links to the right pages, with no row controls", async () => {
+    viewCookie = "posters";
+    await renderPage(list({ items: [movie(), show()] }));
+
+    expect(screen.getByRole("button", { name: "Posters view" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("link", { name: "The Matrix" }).getAttribute("href")).toBe("/movie/603");
+    expect(screen.getByRole("link", { name: "Dark" }).getAttribute("href")).toBe("/show/603");
+    expect(screen.queryByRole("button", { name: /Options for/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mark watched/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Watched together" })).toBeNull();
+  });
+
+  it("badges the kind, since a list mixes movies and shows", async () => {
+    viewCookie = "posters";
+    await renderPage(list({ items: [movie(), show()] }));
+
+    expect(screen.getByRole("img", { name: "Movie" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "TV show" })).toBeTruthy();
+  });
+
+  it("marks only seen titles, and rates only rated ones", async () => {
+    viewCookie = "posters";
+    await renderPage(
+      list({
+        items: [
+          movie({ watched: true, rating: 8 }),
+          movie({ itemId: "m2", titleId: "604", title: "Unseen", watched: false }),
+          show({ itemId: "s2", titleId: "700", title: "Rated show", rating: 7.4 }),
+        ],
+      }),
+    );
+
+    expect(screen.getAllByRole("img", { name: "Seen" })).toHaveLength(1);
+    expect(screen.getByRole("img", { name: "Rated 8 out of 10" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Average rating 7.4 out of 10" })).toBeTruthy();
+    expect(screen.getAllByRole("img", { name: /out of 10/ })).toHaveLength(2);
+  });
+
+  it("prints the title where a missing poster would be", async () => {
+    viewCookie = "posters";
+    await renderPage(list({ items: [movie({ posterPath: null, title: "No Poster Movie" })] }));
+
+    expect(
+      within(screen.getByRole("link", { name: "No Poster Movie" })).getByText("No Poster Movie"),
+    ).toBeTruthy();
+  });
+
+  it("keeps the sections, headings and show more", async () => {
+    viewCookie = "posters";
+    const many = Array.from({ length: 12 }, (_, i) =>
+      movie({ itemId: `i${i}`, titleId: String(100 + i), title: `T${i}` }),
+    );
+    await renderPage(
+      list({ items: [...many, movie({ itemId: "w", titleId: "900", title: "Done", watched: true })] }),
+    );
+
+    expect(screen.getByRole("heading", { name: "Watched" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /^T\d+$/ })).toHaveLength(10);
+    expect(screen.getByRole("link", { name: /^Show 2 more/ })).toBeTruthy();
+  });
+
+  it("never prints NaN or undefined", async () => {
+    viewCookie = "posters";
+    await renderPage(list({ items: [movie({ posterPath: null, rating: null })] }));
+    expect(document.body.textContent).not.toMatch(/NaN|undefined/);
   });
 });

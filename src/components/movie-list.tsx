@@ -4,10 +4,12 @@ import type { ReactNode } from "react";
 import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
+import { PosterGrid } from "@/components/poster-grid";
 import { RatingValue } from "@/components/rating-value";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { WatchedDate } from "@/components/watched-date";
 import type { MovieSummary } from "@/lib/queries";
+import type { ViewMode } from "@/lib/view-mode";
 
 interface MovieListProps {
   movies: MovieSummary[];
@@ -18,6 +20,8 @@ interface MovieListProps {
   param: string;
   searchParams: Record<string, string | string[] | undefined>;
   limit: number;
+  /** Rows (the default) or a grid of posters. */
+  view?: ViewMode;
 }
 
 /** "1995 · 170 min", skipping whichever part is absent. */
@@ -64,12 +68,26 @@ export function MovieList({
   param,
   searchParams,
   limit,
+  view = "rows",
 }: MovieListProps) {
   const shown = movies.slice(0, limit);
   const remaining = movies.length - shown.length;
 
   return (
     <>
+      {view === "posters" ? (
+        <PosterGrid
+          items={shown.map((movie) => ({
+            key: movie.movieId,
+            href: `/movie/${movie.movieId}`,
+            title: movie.title,
+            posterPath: movie.posterPath,
+            seen: movie.status === "watched",
+            rating: movie.rating,
+            quiet: tone === "sunken",
+          }))}
+        />
+      ) : (
       <ul className="flex flex-col gap-2">
         {shown.map((movie) => {
           const text = detailOf(movie, detail);
@@ -119,6 +137,7 @@ export function MovieList({
           );
         })}
       </ul>
+      )}
 
       {remaining > 0 ? (
         <ShowMoreLink
