@@ -27,8 +27,11 @@ of cards, one title at a time, swiped yes or no.
   fewer than 100 votes are dropped.
 - Left out of recommendations: any title the owner tracks in any status, any
   title on one of the owner's lists, and any dismissed suggestion.
-- The pool of "own titles": movies and shows whose status is `watchlist`,
-  optionally narrowed to one of the owner's lists.
+- The pool of "own titles": movies and shows whose status is `watchlist`. When
+  the owner picks a list, the pool is instead that list's unwatched titles
+  whatever their Library status (list items need not be on the watchlist),
+  except movies marked not interested and shows stopped for good; the card then
+  reads "On this list" instead of "On your watchlist".
 - Swipe right: a recommendation is added to the watchlist and the next card
   appears. A card already on the owner's list shows "Tonight: *X*" with an
   "Open" button, so the pick has an actual result.
