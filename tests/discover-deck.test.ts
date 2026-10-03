@@ -581,6 +581,32 @@ describe("getDeck filters", () => {
     expect(recMock).not.toHaveBeenCalled();
   });
 
+  it("a list leaves out the caller's not-interested movies and stopped shows", async () => {
+    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
+    await movie("53"); // untracked -> in
+    await trackMovie("55", "not_interested"); // -> out
+    await seedShow({ showId: "62", offsets: [-1], status: "watching" }); // -> in
+    await seedShow({ showId: "63", offsets: [-1], status: "stopped" }); // -> out
+    // B gave up on 56 and 64; A never tracked them, so they stay in for A.
+    await trackMovie("56", "not_interested", { userId: B });
+    await seedShow({ showId: "64", offsets: [-1], status: "stopped", userId: B });
+    for (const data of [
+      { movieId: "53" }, { movieId: "55" }, { movieId: "56" },
+      { showId: "62" }, { showId: "63" }, { showId: "64" },
+    ]) {
+      await prisma.listItem.create({ data: { listId: list.id, ...data } });
+    }
+
+    const deck = await getDeck(A, { ...ANY, listId: list.id });
+
+    expect(keys(deck.cards).sort()).toEqual([
+      "movie:53",
+      "movie:56",
+      "show:62",
+      "show:64",
+    ]);
+  });
+
   it("a together list uses its own ticks, not Library status", async () => {
     const list = await prisma.list.create({
       data: { userId: A, name: "Us", trackSeparately: true },

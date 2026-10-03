@@ -327,6 +327,11 @@ async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
  * `getListDetail` decides "watched" (through `isListItemWatched`, honouring
  * the list's `trackSeparately` and the Library's "finished" rule), and returns
  * null for a list that is not the caller's, which leaves the pool empty.
+ *
+ * Library status otherwise doesn't matter (a family list holds titles nobody
+ * put on a watchlist), except that a movie the caller marked not interested
+ * or a show they stopped is never offered. `status` is the caller's own: the
+ * list read joins tracking by `userId`.
  */
 async function loadListTitles(
   userId: string,
@@ -335,7 +340,11 @@ async function loadListTitles(
   const detail = await getListDetail(userId, listId);
   if (!detail) return [];
 
-  const unwatched = detail.items.filter((item) => !item.watched);
+  const unwatched = detail.items.filter(
+    (item) =>
+      !item.watched &&
+      item.status !== (item.kind === "movie" ? "not_interested" : "stopped"),
+  );
   const movieIds = unwatched
     .filter((item) => item.kind === "movie")
     .map((item) => item.titleId);
