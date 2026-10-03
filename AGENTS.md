@@ -204,7 +204,9 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
   (watchlist movies and shows) unless a list is picked. With a list picked it
   draws from that list's unwatched titles, minus movies set to
   `not_interested` and shows you've stopped, and recommendations are off.
-- Movie cards have no streaming line yet (shows do).
+- A card's streaming line is its flatrate services in the saved country, for
+  shows and movies alike (`loadCardDetails`); a failed lookup drops the line, not
+  the card.
 - Swipe logic lives in `lib/swipe.ts` and is unit-tested; the touch listeners
   that feed it are the one part with no automated coverage, so changes there
   need a device.

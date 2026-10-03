@@ -18,6 +18,7 @@ vi.mock("@/lib/tmdb", async (importOriginal) => ({
   getShowCast: vi.fn(),
   getShowTrailer: vi.fn(),
   getWatchProviders: vi.fn(),
+  getMovieWatchProviders: vi.fn(),
 }));
 
 const tmdb = await import("@/lib/tmdb");
@@ -83,6 +84,10 @@ beforeEach(async () => {
     availability("FR", ["Netflix"]),
     availability("US", ["Hulu", "Max"]),
   ]);
+  vi.mocked(tmdb.getMovieWatchProviders).mockResolvedValue([
+    availability("FR", ["Canal"]),
+    availability("US", ["Peacock"]),
+  ]);
 });
 
 async function setCountry(country: string | null) {
@@ -128,6 +133,46 @@ describe("loadCardDetails", () => {
     });
   });
 
+  it("maps a movie's flatrate providers for the saved country", async () => {
+    await setCountry("US");
+
+    const result = await loadCardDetails("movie", "603");
+
+    expect(result.details?.providers).toEqual(["Peacock"]);
+    expect(tmdb.getMovieWatchProviders).toHaveBeenCalledWith("603");
+    // A movie must not read the show lookup (TMDB movie and TV ids overlap).
+    expect(tmdb.getWatchProviders).not.toHaveBeenCalled();
+  });
+
+  it("has no movie providers without a saved country, or for an unlisted one", async () => {
+    expect((await loadCardDetails("movie", "603")).details?.providers).toEqual(
+      [],
+    );
+    await setCountry("JP");
+    expect((await loadCardDetails("movie", "603")).details?.providers).toEqual(
+      [],
+    );
+  });
+
+  it("keeps the rest of the details when the streaming lookup fails", async () => {
+    await setCountry("US");
+    vi.mocked(tmdb.getMovieWatchProviders).mockRejectedValue(
+      new tmdb.TmdbError("down"),
+    );
+    vi.mocked(tmdb.getWatchProviders).mockRejectedValue(
+      new tmdb.TmdbError("down"),
+    );
+
+    const movie = await loadCardDetails("movie", "603");
+    const show = await loadCardDetails("show", "1399");
+
+    expect(movie.ok).toBe(true);
+    expect(movie.details?.overview).toBe("A hacker learns.");
+    expect(movie.details?.providers).toEqual([]);
+    expect(show.ok).toBe(true);
+    expect(show.details?.providers).toEqual([]);
+  });
+
   it("limits providers to the saved country", async () => {
     await setCountry("FR");
 
@@ -163,6 +208,7 @@ describe("loadCardDetails", () => {
     expect(tmdb.getShowDetails).not.toHaveBeenCalled();
     expect(tmdb.getShowCast).not.toHaveBeenCalled();
     expect(tmdb.getWatchProviders).not.toHaveBeenCalled();
+    expect(tmdb.getMovieWatchProviders).not.toHaveBeenCalled();
   });
 
   it("returns a failure rather than throwing when TMDB fails", async () => {

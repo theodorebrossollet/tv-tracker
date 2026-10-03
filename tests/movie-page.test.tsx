@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/actions", () => ({
@@ -13,7 +13,9 @@ vi.mock("@/app/actions", () => ({
   removeMovie: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/movie/603",
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
@@ -50,7 +52,16 @@ vi.mock("@/lib/logger", () => ({
     errorMessage: e instanceof Error ? e.message : String(e),
   }),
 }));
+vi.mock("@/lib/shows", () => ({
+  getSettings: vi.fn(async () => ({
+    country: null,
+    providerIds: null,
+    notifyEnabled: false,
+  })),
+}));
 vi.mock("@/lib/tmdb", () => ({
+  getMovieWatchProviders: vi.fn(async () => []),
+  getWatchRegions: vi.fn(async () => []),
   getMovieDetails: vi.fn(),
   getMovieExtras: vi.fn(async () => ({
     tagline: null,
@@ -68,7 +79,9 @@ const { default: MoviePage, generateMetadata } = await import(
   "@/app/movie/[id]/page"
 );
 const { getMovieDetail, getListsForTitle } = await import("@/lib/queries");
-const { getMovieDetails, getMovieExtras } = await import("@/lib/tmdb");
+const { getMovieDetails, getMovieExtras, getMovieWatchProviders, getWatchRegions } =
+  await import("@/lib/tmdb");
+const { getSettings } = await import("@/lib/shows");
 const { requireOnboardedSession } = await import("@/lib/auth");
 const { logger } = await import("@/lib/logger");
 
@@ -93,8 +106,16 @@ function movie(over: Partial<MovieDetail> = {}): MovieDetail {
   };
 }
 
-async function renderPage(id = "603") {
-  render(await MoviePage({ params: Promise.resolve({ id }) }));
+async function renderPage(
+  id = "603",
+  query: Record<string, string | string[] | undefined> = {},
+) {
+  render(
+    await MoviePage({
+      params: Promise.resolve({ id }),
+      searchParams: Promise.resolve(query),
+    }),
+  );
 }
 
 beforeEach(() => {
@@ -493,5 +514,145 @@ describe("movie page extras", () => {
       "movie.extras_failed",
       expect.anything(),
     );
+  });
+});
+
+describe("movie page availability", () => {
+  const badge = (name: string) => ({
+    id: name.length,
+    name,
+    logoPath: null,
+  });
+  const country = (code: string, flatrate: string[]) => ({
+    code,
+    link: null,
+    flatrate: flatrate.map(badge),
+    free: [],
+    rent: [],
+    buy: [],
+  });
+  const regions = [
+    { code: "FR", name: "France" },
+    { code: "US", name: "United States" },
+  ];
+
+  beforeEach(() => {
+    detailMock.mockResolvedValue(movie());
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([]);
+    vi.mocked(getWatchRegions).mockResolvedValue([]);
+    vi.mocked(getSettings).mockResolvedValue({
+      country: null,
+      providerIds: null,
+      notifyEnabled: false,
+    } as Awaited<ReturnType<typeof getSettings>>);
+  });
+
+  const settings = (country: string | null, providerIds: string | null = null) =>
+    vi.mocked(getSettings).mockResolvedValue({
+      country,
+      providerIds,
+      notifyEnabled: false,
+    } as Awaited<ReturnType<typeof getSettings>>);
+
+  it("shows where to watch, in the settings country first", async () => {
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([
+      country("FR", ["Canal"]),
+      country("US", ["Max"]),
+    ]);
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    settings("US");
+    await renderPage();
+
+    expect(screen.getByText("Where to watch")).toBeTruthy();
+    expect(screen.getByText("Max")).toBeTruthy();
+    expect(screen.queryByText("Canal")).toBeNull();
+    expect(getMovieWatchProviders).toHaveBeenCalledWith("603");
+  });
+
+  it("shows the country asked for in the URL over the settings one", async () => {
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([
+      country("FR", ["Canal"]),
+      country("US", ["Max"]),
+    ]);
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    settings("US");
+    await renderPage("603", { country: "FR" });
+
+    expect(screen.getByText("Canal")).toBeTruthy();
+    expect(screen.queryByText("Max")).toBeNull();
+  });
+
+  it("says so when the settings country has no listing, and shows another", async () => {
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([
+      country("FR", ["Canal"]),
+    ]);
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    settings("US");
+    await renderPage();
+
+    expect(
+      screen.getByText(/Not available in United States \(your settings/),
+    ).toBeTruthy();
+    expect(screen.getByText("Canal")).toBeTruthy();
+  });
+
+  it("says nothing is listed for a movie with no streaming, rent or buy option", async () => {
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    await renderPage();
+
+    expect(
+      screen.getByText(
+        "No streaming, rental or purchase option listed for this movie.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers another country when it is on one of your services there", async () => {
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([
+      country("FR", ["Canal"]),
+      { ...country("US", []), flatrate: [{ id: 8, name: "Netflix", logoPath: null }] },
+    ]);
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    settings("FR", "8");
+    await renderPage();
+
+    const section = screen
+      .getByText("Also on your services")
+      .closest("section")!;
+    expect(within(section).getByText("United States")).toBeTruthy();
+    expect(within(section).getByText("Netflix")).toBeTruthy();
+  });
+
+  it("offers nothing extra when your home country already has your service", async () => {
+    vi.mocked(getMovieWatchProviders).mockResolvedValue([
+      { ...country("FR", []), flatrate: [{ id: 8, name: "Netflix", logoPath: null }] },
+      { ...country("US", []), flatrate: [{ id: 8, name: "Netflix", logoPath: null }] },
+    ]);
+    vi.mocked(getWatchRegions).mockResolvedValue(regions);
+    settings("FR", "8");
+    await renderPage();
+
+    expect(screen.queryByText("Also on your services")).toBeNull();
+  });
+
+  it("still renders the page, without the section, when TMDB fails", async () => {
+    const { TmdbError } = await import("@/lib/tmdb");
+    vi.mocked(getMovieWatchProviders).mockRejectedValue(new TmdbError("down"));
+    await renderPage();
+
+    expect(screen.getByRole("heading", { name: "The Matrix" })).toBeTruthy();
+    expect(screen.queryByText("Where to watch")).toBeNull();
+    expect(
+      screen.queryByText(/No streaming, rental or purchase option/),
+    ).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "movie.availability_unavailable",
+      expect.anything(),
+    );
+  });
+
+  it("does not swallow an unexpected error", async () => {
+    vi.mocked(getMovieWatchProviders).mockRejectedValue(new TypeError("bug"));
+    await expect(renderPage()).rejects.toThrow("bug");
   });
 });
