@@ -1,5 +1,5 @@
+import { WatchedDate } from "@/components/watched-date";
 import { RatingValue } from "@/components/rating-value";
-import { formatWatchedDate } from "@/lib/format";
 import type { PastWatch } from "@/lib/queries";
 
 /**
@@ -19,7 +19,7 @@ export function PastWatches({ watches }: { watches: PastWatch[] | null }) {
             key={watch.watchedAt.toISOString()}
             className="px-2 text-xs text-muted"
           >
-            {formatWatchedDate(watch.watchedAt.toISOString())}
+            <WatchedDate iso={watch.watchedAt.toISOString()} />
             {watch.rating !== null ? (
               <>
                 {" · "}

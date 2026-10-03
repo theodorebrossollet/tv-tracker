@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 
 import { watchMovieAgain } from "@/app/rewatch-actions";
 import { Sheet } from "@/components/sheet";
+import { useViewerTimeZone } from "@/components/watched-date";
 import { formatWatchedDate } from "@/lib/format";
 import { formatRating } from "@/lib/ratings";
 
@@ -54,7 +55,8 @@ export function WatchAgainButton({
     });
   }
 
-  const date = watchedAt ? formatWatchedDate(watchedAt) : null;
+  const zone = useViewerTimeZone();
+  const date = watchedAt ? formatWatchedDate(watchedAt, zone) : null;
   const kept =
     `Your ${date ? `${date} ` : ""}watch` +
     (rating !== null ? ` and its rating (${formatRating(rating)}) are` : " is");

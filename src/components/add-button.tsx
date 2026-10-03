@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 
 import { addToWatchlist, removeShow } from "@/app/actions";
 import type { TrackStatus } from "@/lib/types";
@@ -43,10 +43,9 @@ export function AddButton({
   // watchlist — and a useState copy would keep displaying whatever the status
   // was when the page first rendered.
   const [current, setCurrent] = useOptimistic(status);
-  const [error, setError] = useOptimistic<string | null, string | null>(
-    null,
-    (_, next) => next,
-  );
+  // Plain state, not useOptimistic: an optimistic value is dropped when the
+  // transition settles, which would erase the message the moment it appears.
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const tracked = current !== null;
@@ -56,6 +55,7 @@ export function AddButton({
     event.preventDefault();
     event.stopPropagation();
 
+    setError(null);
     startTransition(async () => {
       setCurrent(tracked ? null : "watchlist");
 

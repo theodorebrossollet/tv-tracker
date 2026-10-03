@@ -1,11 +1,12 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { MovieStatusMenu } from "@/components/movie-status-menu";
 import { Poster } from "@/components/poster";
 import { RatingValue } from "@/components/rating-value";
 import { ShowMoreLink } from "@/components/show-more-link";
-import { formatWatchedDate } from "@/lib/format";
+import { WatchedDate } from "@/components/watched-date";
 import type { MovieSummary } from "@/lib/queries";
 
 interface MovieListProps {
@@ -38,9 +39,16 @@ function releasedDetail(movie: MovieSummary): string {
   return parts.join(" · ");
 }
 
-function detailOf(movie: MovieSummary, detail: MovieListProps["detail"]) {
+function detailOf(
+  movie: MovieSummary,
+  detail: MovieListProps["detail"],
+): ReactNode {
   if (detail === "watched" && movie.watchedAt) {
-    return `Watched ${formatWatchedDate(movie.watchedAt.toISOString())}`;
+    return (
+      <>
+        Watched <WatchedDate iso={movie.watchedAt.toISOString()} />
+      </>
+    );
   }
   return releasedDetail(movie);
 }
