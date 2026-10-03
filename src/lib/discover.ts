@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { SuggestionKind } from "@/lib/discover-limits";
+import { MIN_SEEDS, type SuggestionKind } from "@/lib/discover-limits";
 import type { Deck, DeckCard, DeckFilters } from "@/lib/discover-types";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -19,8 +19,8 @@ export type {
 
 /** A title counts as a seed only when rated at least this high. */
 export const MIN_SEED_RATING = 8;
-/** Fewest qualifying seeds needed before suggestions are shown. */
-export const MIN_SEEDS = 3;
+// MIN_SEEDS lives in the client-safe limits module: the deck UI needs it too.
+export { MIN_SEEDS };
 /** Most seeds queried per refresh; bounds TMDB calls. */
 export const MAX_SEEDS = 10;
 /** Candidates with fewer TMDB votes are dropped as noise. */

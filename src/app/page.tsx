@@ -1,3 +1,4 @@
+import { DiscoverIconButton } from "@/components/discover-icon-button";
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
@@ -46,7 +47,10 @@ export default async function DashboardPage({
             <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
               Watching
             </h1>
-            <SearchIconButton />
+            <div className="flex items-center gap-1.5">
+              <DiscoverIconButton />
+              <SearchIconButton />
+            </div>
           </div>
 
           {watching.length === 0 ? (
