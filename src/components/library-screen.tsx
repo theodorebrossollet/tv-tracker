@@ -6,10 +6,12 @@ import { LIBRARY_PAGE_SIZE, LibraryList } from "@/components/library-list";
 import { MovieList } from "@/components/movie-list";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { SearchIconButton } from "@/components/search-icon-button";
+import { ViewToggle } from "@/components/view-toggle";
 import { limitFrom } from "@/components/show-more-link";
 import { splitByRelease } from "@/lib/movie-status";
 import type { LibraryType } from "@/lib/library-type";
 import type { MovieBuckets, ShowBuckets } from "@/lib/queries";
+import type { ViewMode } from "@/lib/view-mode";
 
 export type LibrarySegment = "watchlist" | "archive";
 
@@ -20,6 +22,8 @@ interface LibraryScreenProps {
   data:
     | { type: "shows"; buckets: ShowBuckets }
     | { type: "movies"; buckets: MovieBuckets };
+  /** Rows (the default) or posters, from the visitor's cookie. */
+  view?: ViewMode;
 }
 
 /**
@@ -38,6 +42,7 @@ export function LibraryScreen({
   segment,
   searchParams,
   data,
+  view = "rows",
 }: LibraryScreenProps) {
   return (
     <div>
@@ -46,8 +51,11 @@ export function LibraryScreen({
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
           Library
         </h1>
-        <div className="flex items-center gap-2">
+        {/* Wraps rather than overflows on a narrow phone: title, two switches
+            and the search button are close to the width of the screen. */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <TypeSwitch segment={segment} type={data.type} />
+          <ViewToggle view={view} />
           <SearchIconButton />
         </div>
       </div>
@@ -61,12 +69,14 @@ export function LibraryScreen({
           segment={segment}
           buckets={data.buckets}
           searchParams={searchParams}
+          view={view}
         />
       ) : (
         <ShowsView
           segment={segment}
           buckets={data.buckets}
           searchParams={searchParams}
+          view={view}
         />
       )}
     </div>
@@ -77,9 +87,15 @@ interface ViewProps<B> {
   segment: LibrarySegment;
   buckets: B;
   searchParams: Record<string, string | string[] | undefined>;
+  view: ViewMode;
 }
 
-function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
+function ShowsView({
+  segment,
+  buckets,
+  searchParams,
+  view,
+}: ViewProps<ShowBuckets>) {
   const { watchlist, paused, caughtUp, finished, stopped } = buckets;
 
   const limit = (param: string) =>
@@ -113,6 +129,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="watchlist"
                 searchParams={searchParams}
                 limit={limit("watchlist")}
+                view={view}
               />
             ) : (
               <p className="text-[12.5px] leading-relaxed text-muted">
@@ -133,6 +150,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="notOutYet"
                 searchParams={searchParams}
                 limit={limit("notOutYet")}
+                view={view}
               />
             </Section>
           ) : null}
@@ -149,6 +167,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="paused"
                 searchParams={searchParams}
                 limit={limit("paused")}
+                view={view}
               />
             </Section>
           ) : null}
@@ -184,6 +203,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="caughtUp"
                 searchParams={searchParams}
                 limit={limit("caughtUp")}
+                view={view}
               />
             </Section>
           ) : null}
@@ -201,6 +221,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="finished"
                 searchParams={searchParams}
                 limit={limit("finished")}
+                view={view}
               />
             </Section>
           ) : null}
@@ -218,6 +239,7 @@ function ShowsView({ segment, buckets, searchParams }: ViewProps<ShowBuckets>) {
                 param="stopped"
                 searchParams={searchParams}
                 limit={limit("stopped")}
+                view={view}
               />
             </Section>
           ) : null}
@@ -231,6 +253,7 @@ function MoviesView({
   segment,
   buckets,
   searchParams,
+  view,
 }: ViewProps<MovieBuckets>) {
   const { watchlist, watched, notInterested } = buckets;
 
@@ -261,6 +284,7 @@ function MoviesView({
               param="movieWatchlist"
               searchParams={searchParams}
               limit={limit("movieWatchlist")}
+              view={view}
             />
           ) : (
             <p className="text-[12.5px] leading-relaxed text-muted">
@@ -281,6 +305,7 @@ function MoviesView({
               param="movieUnreleased"
               searchParams={searchParams}
               limit={limit("movieUnreleased")}
+              view={view}
             />
           </Section>
         ) : null}
@@ -312,6 +337,7 @@ function MoviesView({
             param="movieWatched"
             searchParams={searchParams}
             limit={limit("movieWatched")}
+            view={view}
           />
         </Section>
       ) : null}
@@ -329,6 +355,7 @@ function MoviesView({
             param="movieNotInterested"
             searchParams={searchParams}
             limit={limit("movieNotInterested")}
+            view={view}
           />
         </Section>
       ) : null}

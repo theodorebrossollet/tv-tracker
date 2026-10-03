@@ -52,7 +52,9 @@ src/app/          routes; actions.ts holds the Library writes, account-actions.t
                   resetMovieHistory) the rewatch ones (the fifth
                   module) — the rules in actions.ts's header govern all five;
                   discover-actions.ts holds the Discover ones (dismiss,
-                  reset, card details) under the same rules
+                  reset, card details) under the same rules, and
+                  view-actions.ts sets the rows/posters cookie (see
+                  "Rows or posters, in short")
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
@@ -530,3 +532,17 @@ rule can only be broken at build time, that is the shape a test for it takes.
 - Log events are namespaced (`show.paused`, `cron.refresh.completed`) and emit
   one JSON object per line. Never log a TMDB URL — a v3 key rides in the query
   string.
+
+## Rows or posters, in short
+
+Every list of titles (a list's page, the Library's Shows and Movies sections)
+can be shown one per row or as a grid of posters. The choice is a cookie,
+`view` = `rows` | `posters` (`lib/view-mode.ts`; anything else means rows), set
+by `setViewMode` in `app/view-actions.ts` and read per request by
+`getViewMode()` (`lib/get-view-mode.ts`) in the three pages that need it. It is
+per browser on purpose: no column, no migration. `PosterGrid` renders a title
+as a link plus overlays (kind badge on lists, a corner check for seen, a
+rating); every row-only action (a together list's tick, "mark watched", status
+menus, "remove from list") lives on the title page instead. The components take
+an optional `view` prop that defaults to rows, so a new list of titles gets the
+grid by passing `view` and mapping its items to `PosterGridItem`.

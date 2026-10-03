@@ -1,5 +1,6 @@
 import { LibraryScreen } from "@/components/library-screen";
 import { requireOnboardedSession } from "@/lib/auth";
+import { getViewMode } from "@/lib/get-view-mode";
 import { typeFrom } from "@/lib/library-type";
 import { getMovieBuckets, getShowBuckets } from "@/lib/queries";
 
@@ -23,6 +24,7 @@ interface ArchivePageProps {
 export default async function ArchivePage({ searchParams }: ArchivePageProps) {
   const { user } = await requireOnboardedSession();
   const params = await searchParams;
+  const view = await getViewMode();
 
   // Only the half being rendered is fetched.
   const data =
@@ -30,5 +32,12 @@ export default async function ArchivePage({ searchParams }: ArchivePageProps) {
       ? { type: "movies" as const, buckets: await getMovieBuckets(user.id) }
       : { type: "shows" as const, buckets: await getShowBuckets(user.id) };
 
-  return <LibraryScreen segment="archive" searchParams={params} data={data} />;
+  return (
+    <LibraryScreen
+      segment="archive"
+      searchParams={params}
+      data={data}
+      view={view}
+    />
+  );
 }
