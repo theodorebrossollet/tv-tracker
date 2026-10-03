@@ -57,6 +57,9 @@ describe("ViewToggle", () => {
     render(<ViewToggle view="rows" />);
     fireEvent.click(screen.getByRole("button", { name: "Posters view" }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    // Wait for the optimistic press to be dropped, or the second click lands
+    // while "posters" still looks pressed and is (rightly) ignored.
+    await waitFor(() => expect(pressed("Rows view")).toBe("true"));
 
     fireEvent.click(screen.getByRole("button", { name: "Posters view" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
