@@ -52,25 +52,44 @@ export function formatAirDate(iso: string | null | undefined): string {
 
 // Watch times are real instants (`new Date()` when you press the button), unlike
 // air dates, which are calendar dates stored as Eastern midnight. Formatting an
-// evening watch in UTC shows the next day, so the day is read in
-// `America/New_York` — the app's single-zone convention (see
-// EASTERN_TODAY_FORMAT above). Fixed zone, not the viewer's, so the server and
-// browser still agree.
-const WATCHED_FORMAT = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  timeZone: "America/New_York",
-});
+// evening watch in UTC shows the next day, so the day is read in a real zone.
+// The server doesn't know the viewer's zone, so it renders `APP_TIME_ZONE` and
+// `<WatchedDate>` (components/watched-date.tsx) switches to the browser's zone
+// after hydration.
+export const APP_TIME_ZONE = "America/New_York";
 
-/** Instant → "1 Oct 2026" in app time (US Eastern). "TBA" if missing or invalid. */
-export function formatWatchedDate(iso: string | null | undefined): string {
+const watchedFormats = new Map<string, Intl.DateTimeFormat>();
+
+function watchedFormat(timeZone: string): Intl.DateTimeFormat {
+  let format = watchedFormats.get(timeZone);
+  if (!format) {
+    try {
+      format = new Intl.DateTimeFormat("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone,
+      });
+    } catch {
+      // An unknown zone name: fall back rather than throw while rendering.
+      return watchedFormat(APP_TIME_ZONE);
+    }
+    watchedFormats.set(timeZone, format);
+  }
+  return format;
+}
+
+/** Instant → "1 Oct 2026" in `timeZone` (default US Eastern). "TBA" if missing or invalid. */
+export function formatWatchedDate(
+  iso: string | null | undefined,
+  timeZone: string = APP_TIME_ZONE,
+): string {
   if (!iso) return "TBA";
 
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "TBA";
 
-  return WATCHED_FORMAT.format(date);
+  return watchedFormat(timeZone).format(date);
 }
 
 /** Same, but drops the year for dates in the current year. */
