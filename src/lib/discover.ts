@@ -115,8 +115,13 @@ export const MAX_RECOMMENDED_CARDS = 20;
 export const MAX_OWN_CARDS = 10;
 /** "Under 2h": a movie qualifies when its runtime is below this. */
 export const SHORT_RUNTIME_MINUTES = 120;
-/** Deck loads per account per minute that may query TMDB. */
-export const DECK_LOADS_PER_MINUTE = 6;
+/**
+ * Deck loads per account per minute that may query TMDB. Generous on purpose:
+ * every add or dismiss revalidates `/discover`, so each swipe on a
+ * recommendation is a load, and at 6 a normal run of swipes emptied the deck
+ * mid-session. Per-seed answers are cached for 24h, so repeat loads are cheap.
+ */
+export const DECK_LOADS_PER_MINUTE = 30;
 
 const MINUTE_MS = 60_000;
 const LIST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;

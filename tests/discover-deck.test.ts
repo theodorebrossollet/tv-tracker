@@ -653,8 +653,21 @@ describe("getDeck filters", () => {
 });
 
 describe("deck-load throttle", () => {
-  it("skips recommendations on the 7th load within a minute, per user", async () => {
-    expect(DECK_LOADS_PER_MINUTE).toBe(6);
+  it("survives a run of swipes: ten loads in a row keep recommendations", async () => {
+    // Every add or dismiss revalidates the page, so each swipe on a
+    // recommendation is a deck load. A limit tight enough to trip on a normal
+    // run of swipes empties the deck mid-session.
+    await threeSeeds();
+    recs.byKey.set("movie:11", [rec("901")]);
+
+    for (let i = 0; i < 10; i++) {
+      const deck = await getDeck(A, ANY);
+      expect(deck.recommendationsUnavailable).toBe(false);
+      expect(recommended(deck.cards)).toEqual(["movie:901"]);
+    }
+  });
+
+  it("skips recommendations on the load past the limit within a minute, per user", async () => {
     await threeSeeds();
     await trackMovie("51", "watchlist");
     recs.byKey.set("movie:11", [rec("901")]);
@@ -665,10 +678,10 @@ describe("deck-load throttle", () => {
     }
     expect(recMock).toHaveBeenCalledTimes(3 * DECK_LOADS_PER_MINUTE);
 
-    const seventh = await getDeck(A, ANY);
+    const over = await getDeck(A, ANY);
     expect(recMock).toHaveBeenCalledTimes(3 * DECK_LOADS_PER_MINUTE);
-    expect(keys(seventh.cards)).toEqual(["movie:51"]);
-    expect(seventh.recommendationsUnavailable).toBe(true);
+    expect(keys(over.cards)).toEqual(["movie:51"]);
+    expect(over.recommendationsUnavailable).toBe(true);
 
     // Another account has its own allowance.
     await ratedMovie("11", 9, 1, B);

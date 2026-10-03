@@ -195,13 +195,15 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
 `lib/discover.ts` (deck building), `lib/discover-types.ts`, `lib/swipe.ts`,
 `components/discover-*.tsx`, writes in `src/app/discover-actions.ts`. Rules:
 
-- Seeds: titles you rated >= 8, the newest 10 by `watchedAt`, and at least 3
-  of them or there is no deck yet.
+- Seeds: titles you rated >= 8, the newest 10 by `watchedAt`. With fewer than
+  3 there are no recommendations, but the deck still deals your own titles.
 - `DismissedSuggestion` (a swipe-away) is separate from the movie
   `not_interested` status; the two never read each other. The only way to undo
   dismissals is "Show them again" in Settings (`resetDismissedSuggestions`).
-- "Pick for tonight" draws from the list pool: a list's unwatched titles,
-  minus movies set to `not_interested` and shows you've stopped.
+- "Pick for tonight" (✓ on one of your own cards) draws from your watchlist
+  (watchlist movies and shows) unless a list is picked. With a list picked it
+  draws from that list's unwatched titles, minus movies set to
+  `not_interested` and shows you've stopped, and recommendations are off.
 - Movie cards have no streaming line yet (shows do).
 - Swipe logic lives in `lib/swipe.ts` and is unit-tested; the touch listeners
   that feed it are the one part with no automated coverage, so changes there
