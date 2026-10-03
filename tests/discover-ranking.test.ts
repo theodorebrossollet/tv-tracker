@@ -51,18 +51,19 @@ describe("rankCandidates ordering", () => {
     {
       name: "two seeds outrank one seed",
       lists: [
-        { seed: seed("a", 10), candidates: [cand("1", { voteAverage: 9 })] },
-        { seed: seed("b", 8), candidates: [cand("2"), cand("1")] },
+        { seed: seed("x", 10), candidates: [cand("1", { voteAverage: 9 })] },
+        { seed: seed("a", 2), candidates: [cand("2")] },
+        { seed: seed("b", 2), candidates: [cand("2")] },
       ],
-      expected: ["show:1", "show:2"],
+      expected: ["show:2", "show:1"],
     },
     {
       name: "equal counts: higher summed seed rating wins",
       lists: [
-        { seed: seed("a", 10), candidates: [cand("1")] },
-        { seed: seed("b", 8), candidates: [cand("2")] },
+        { seed: seed("a", 8), candidates: [cand("1")] },
+        { seed: seed("b", 10), candidates: [cand("2")] },
       ],
-      expected: ["show:1", "show:2"],
+      expected: ["show:2", "show:1"],
     },
     {
       name: "then higher voteAverage",
@@ -108,10 +109,13 @@ describe("rankCandidates ordering", () => {
       name: "duplicates within one seed's list count once",
       lists: [
         { seed: seed("a", 8), candidates: [cand("1"), cand("1"), cand("1")] },
-        { seed: seed("b", 8), candidates: [cand("2"), cand("1")] },
-        { seed: seed("c", 8), candidates: [cand("2")] },
+        {
+          seed: seed("b", 8),
+          candidates: [cand("2", { voteAverage: 9 }), cand("1")],
+        },
+        { seed: seed("c", 8), candidates: [cand("2", { voteAverage: 9 })] },
       ],
-      expected: ["show:1", "show:2"],
+      expected: ["show:2", "show:1"],
     },
     { name: "empty input", lists: [], expected: [] },
   ];

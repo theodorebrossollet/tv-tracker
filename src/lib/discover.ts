@@ -42,6 +42,10 @@ function betterSeed(a: Seed, b: Seed): boolean {
   return seedKey(a) < seedKey(b);
 }
 
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /**
  * Ranks recommendation candidates: most distinct seeds first, then the
  * higher summed seed rating, then TMDB `voteAverage`, then kind and id so
@@ -79,16 +83,8 @@ export function rankCandidates(
         b.seedKeys.size - a.seedKeys.size ||
         b.ratingSum - a.ratingSum ||
         b.candidate.voteAverage - a.candidate.voteAverage ||
-        (a.candidate.kind < b.candidate.kind
-          ? -1
-          : a.candidate.kind > b.candidate.kind
-            ? 1
-            : 0) ||
-        (a.candidate.id < b.candidate.id
-          ? -1
-          : a.candidate.id > b.candidate.id
-            ? 1
-            : 0),
+        compare(a.candidate.kind, b.candidate.kind) ||
+        compare(a.candidate.id, b.candidate.id),
     )
     .map((e) => ({
       candidate: e.candidate,
