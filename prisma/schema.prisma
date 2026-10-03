@@ -65,14 +65,15 @@ model User {
 
   createdAt DateTime @default(now())
 
-  trackedShows     TrackedShow[]
-  trackedMovies    TrackedMovie[]
-  lists            List[]
-  watchedEpisodes  WatchedEpisode[]
-  showRuns         ShowRun[]
-  pastMovieWatches PastMovieWatch[]
-  settings         Settings?
-  sessions         Session[]
+  trackedShows         TrackedShow[]
+  trackedMovies        TrackedMovie[]
+  lists                List[]
+  watchedEpisodes      WatchedEpisode[]
+  showRuns             ShowRun[]
+  pastMovieWatches     PastMovieWatch[]
+  settings             Settings?
+  sessions             Session[]
+  dismissedSuggestions DismissedSuggestion[]
 }
 
 /// A logged-in session. Stored rather than signed into a stateless cookie so a
@@ -352,6 +353,24 @@ model PastMovieWatch {
   movie Movie @relation(fields: [movieId], references: [id], onDelete: Cascade)
 
   @@index([userId, movieId])
+}
+
+/// A Discover suggestion the user swiped away. A row means "never suggest this
+/// again" and nothing else: it never touches the title's real status (the
+/// movie `not_interested` status is a different thing and is not reused). The
+/// title may not be cached in Show/Movie, so `tmdbId` is a plain string, not a
+/// foreign key.
+model DismissedSuggestion {
+  id        String   @id @default(cuid())
+  userId    String
+  /// "movie" or "show"; the same TMDB number can exist as both.
+  kind      String
+  tmdbId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, tmdbId])
 }
 
 /// One row of preferences per account, keyed by the user it belongs to. Kept
