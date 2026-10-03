@@ -50,7 +50,9 @@ src/app/          routes; actions.ts holds the Library writes, account-actions.t
                   rating-actions.ts the rating ones and rewatch-actions.ts
                   (startShowOver, watchMovieAgain, resetShowHistory,
                   resetMovieHistory) the rewatch ones (the fifth
-                  module) — the rules in actions.ts's header govern all five
+                  module) — the rules in actions.ts's header govern all five;
+                  discover-actions.ts holds the Discover ones (dismiss,
+                  reset, card details) under the same rules
 src/components/   UI; search is an overlay here, NOT a route
 src/lib/          prisma, tmdb (server-only), auth, queries, shows, format, logger,
                   search-params (the URL params any screen is allowed to read),
@@ -91,7 +93,13 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   also deletes runs and past watches), and the TMDB show
                   resync (daily cron, stale-show refresh, adding a new
                   show), which now reads ArchivedEpisodeWatch. The
-                  title-page history reads still degrade softly
+                  title-page history reads still degrade softly;
+                  20261003010941_add_discover adds DismissedSuggestion —
+                  additive (one new table), apply it BEFORE merging;
+                  unapplied, Settings' "Clear all my data" breaks (its
+                  transaction also deletes dismissals), the Settings count
+                  shows "Unavailable", and the deck's read of dismissed rows
+                  fails
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -181,6 +189,23 @@ and `show-header`'s `runNumber`/`startOver` props. Rules:
 - The TMDB resync keeps any episode that has a watch, current or archived
   (`archivedWatches: { none: {} }` beside `watched`), so deleting a dropped
   episode never cascades past-run history away.
+
+Discover, in short: `/discover` (the sparkle icon in the dashboard header) is a
+swipe deck of suggestions seeded from what you've watched and rated. Code:
+`lib/discover.ts` (deck building), `lib/discover-types.ts`, `lib/swipe.ts`,
+`components/discover-*.tsx`, writes in `src/app/discover-actions.ts`. Rules:
+
+- Seeds: titles you rated >= 8, the newest 10 by `watchedAt`, and at least 3
+  of them or there is no deck yet.
+- `DismissedSuggestion` (a swipe-away) is separate from the movie
+  `not_interested` status; the two never read each other. The only way to undo
+  dismissals is "Show them again" in Settings (`resetDismissedSuggestions`).
+- "Pick for tonight" draws from the list pool: a list's unwatched titles,
+  minus movies set to `not_interested` and shows you've stopped.
+- Movie cards have no streaming line yet (shows do).
+- Swipe logic lives in `lib/swipe.ts` and is unit-tested; the touch listeners
+  that feed it are the one part with no automated coverage, so changes there
+  need a device.
 
 ## Rules that will bite you
 
