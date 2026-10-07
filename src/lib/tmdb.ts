@@ -719,6 +719,80 @@ export async function getMovieWatchProviders(
   return fetchAvailability("movie", tmdbMovieId);
 }
 
+// ---------------------------------------------------------------------------
+// Release dates
+// ---------------------------------------------------------------------------
+
+/** What a movie's release date means: in cinemas, or available to watch at home. */
+export type ReleaseKind = "cinema" | "digital";
+
+export interface MovieRelease {
+  kind: ReleaseKind;
+  /** Anchored like an episode's air date, so it counts down the same way. */
+  date: Date;
+}
+
+export interface CountryReleases {
+  /** ISO 3166-1 alpha-2, e.g. "FR". */
+  code: string;
+  releases: MovieRelease[];
+}
+
+interface RawReleaseDatesResponse {
+  results?: Array<{
+    iso_3166_1: string;
+    release_dates?: Array<{ release_date?: string; type?: number }>;
+  }>;
+}
+
+/**
+ * TMDB's release types: 1 premiere, 2 limited theatrical, 3 theatrical,
+ * 4 digital, 5 physical, 6 TV. Only the two that answer "when can I see it" are
+ * kept; premieres are festival screenings and TV airings are not the point.
+ */
+function releaseKindOf(type: number | undefined): ReleaseKind | null {
+  if (type === 2 || type === 3) return "cinema";
+  if (type === 4) return "digital";
+  return null;
+}
+
+/** Cinema and digital release dates of a movie, per country. */
+export async function getMovieReleaseDates(
+  tmdbMovieId: string | number,
+): Promise<CountryReleases[]> {
+  if (!isTmdbMovieId(String(tmdbMovieId))) {
+    throw new TmdbError("Invalid movie id.");
+  }
+
+  const data = await cached(
+    `release-dates:${tmdbMovieId}`,
+    PROVIDER_CACHE_SECONDS,
+    () =>
+      tmdbFetch<RawReleaseDatesResponse>(
+        `/movie/${tmdbMovieId}/release_dates`,
+      ),
+  );
+
+  const countries: CountryReleases[] = [];
+
+  for (const entry of data.results ?? []) {
+    const releases: MovieRelease[] = [];
+
+    for (const raw of entry.release_dates ?? []) {
+      const kind = releaseKindOf(raw.type);
+      // TMDB sends "2026-12-12T00:00:00.000Z"; the day is all that matters.
+      const date = parseAirDate(raw.release_date?.slice(0, 10));
+      if (kind && date) releases.push({ kind, date });
+    }
+
+    if (releases.length > 0) {
+      countries.push({ code: entry.iso_3166_1, releases });
+    }
+  }
+
+  return countries.sort((a, b) => a.code.localeCompare(b.code));
+}
+
 export interface WatchRegion {
   code: string;
   name: string;

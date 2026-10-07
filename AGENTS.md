@@ -546,3 +546,19 @@ rating); every row-only action (a together list's tick, "mark watched", status
 menus, "remove from list") lives on the title page instead. The components take
 an optional `view` prop that defaults to rows, so a new list of titles gets the
 grid by passing `view` and mapping its items to `PosterGridItem`.
+
+## Upcoming movies, in short
+
+The Watching screen's "Upcoming" list merges episodes and watchlist movies into
+one date-sorted run (`UpcomingList` takes `episodes` and `movies`). Movie dates
+come live from TMDB's `/movie/{id}/release_dates` (`getMovieReleaseDates`,
+cached 6h; only cinema and digital types are kept, anchored like air dates),
+not from the stored `Movie.releaseDate`, which is only used to pick candidates:
+the caller's `watchlist` movies not out yet, or out within
+`RECENT_RELEASE_DAYS` (so a film in cinemas can still show its digital date),
+at most `MAX_UPCOMING_MOVIES`, all in `lib/upcoming-movies.ts`. Dates are for
+the Settings country when it has one ahead; otherwise the earliest of each kind
+worldwide, tagged with its country. The lookups are soft by design: they race
+a short timeout (`MOVIE_LOOKUP_TIMEOUT_MS`), and a failure or timeout drops
+the movies for that render, never the page. No migration, no stored state.
+
