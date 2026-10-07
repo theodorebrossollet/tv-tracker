@@ -447,20 +447,63 @@ describe("getDeck own titles", () => {
     ]);
   });
 
-  it("orders own titles newest added first", async () => {
+  it("deals every own title when the watchlist is no bigger than the deck", async () => {
     await trackMovie("51", "watchlist", { addedAt: daysAgo(3) });
     await trackMovie("52", "watchlist", { addedAt: daysAgo(1) });
     await seedShow({ showId: "61", offsets: [-1], status: "watchlist" });
-    await prisma.trackedShow.update({
-      where: { userId_showId: { userId: A, showId: "61" } },
-      data: { addedAt: daysAgo(2) },
-    });
 
-    expect(keys((await getDeck(A, ANY)).cards)).toEqual([
+    expect(keys((await getDeck(A, ANY)).cards).sort()).toEqual([
+      "movie:51",
       "movie:52",
       "show:61",
-      "movie:51",
     ]);
+  });
+
+  it("draws own titles from the whole watchlist, not just the newest ten", async () => {
+    // Forty titles, all about a year old, so none has a head start.
+    for (let i = 1; i <= 40; i++) {
+      await trackMovie(String(900 + i), "watchlist", { addedAt: daysAgo(365 + i) });
+    }
+
+    const seen = new Set<string>();
+    for (let day = 0; day < 20; day++) {
+      const now = new Date(Date.UTC(2026, 9, 1 + day, 15));
+      const cards = (await getDeck(A, ANY, { now })).cards;
+      expect(cards).toHaveLength(10);
+      keys(cards).forEach((k) => seen.add(k));
+    }
+
+    // Ten at a time over twenty days: far more than the ten newest.
+    expect(seen.size).toBeGreaterThan(30);
+  });
+
+  it("deals the same own titles in the same order all day, and others the next day", async () => {
+    for (let i = 1; i <= 40; i++) {
+      await trackMovie(String(900 + i), "watchlist", { addedAt: daysAgo(365 + i) });
+    }
+    const morning = new Date("2026-10-07T13:00:00Z");
+    const evening = new Date("2026-10-08T01:00:00Z"); // still 7 Oct in New York
+    const nextDay = new Date("2026-10-09T13:00:00Z");
+
+    const a = keys((await getDeck(A, ANY, { now: morning })).cards);
+    const b = keys((await getDeck(A, ANY, { now: evening })).cards);
+    const c = keys((await getDeck(A, ANY, { now: nextDay })).cards);
+
+    expect(b).toEqual(a);
+    expect(c).not.toEqual(a);
+  });
+
+  it("changes at most one card when a title is added to the watchlist", async () => {
+    for (let i = 1; i <= 40; i++) {
+      await trackMovie(String(900 + i), "watchlist", { addedAt: daysAgo(365 + i) });
+    }
+    const now = new Date("2026-10-07T13:00:00Z");
+    const before = keys((await getDeck(A, ANY, { now })).cards);
+
+    await trackMovie("999", "watchlist", { addedAt: daysAgo(400) });
+    const after = keys((await getDeck(A, ANY, { now })).cards);
+
+    expect(before.filter((k) => !after.includes(k)).length).toBeLessThanOrEqual(1);
   });
 });
 
@@ -491,9 +534,14 @@ describe("getDeck interleaving", () => {
     expect(recommended(cards)).toEqual(
       rankedRecs(20).map((r) => `movie:${r.id}`),
     );
-    expect(own(cards)).toEqual(
-      Array.from({ length: 10 }, (_, i) => `movie:${501 + i}`),
-    );
+    // Ten of the twelve own movies, each at most once.
+    const dealt = own(cards);
+    expect(new Set(dealt).size).toBe(10);
+    dealt.forEach((k) => {
+      const id = Number(k.replace("movie:", ""));
+      expect(id).toBeGreaterThanOrEqual(501);
+      expect(id).toBeLessThanOrEqual(512);
+    });
   });
 
   it("appends leftover recommendations once own titles run out", async () => {
@@ -513,8 +561,10 @@ describe("getDeck interleaving", () => {
     recs.byKey.set("movie:11", rankedRecs(1));
 
     const cards = (await getDeck(A, ANY)).cards;
-    expect(keys(cards)).toEqual([
-      "movie:701", "movie:501", "movie:502", "movie:503", "movie:504",
+    // The one recommendation first, then all four own titles in some order.
+    expect(keys(cards)[0]).toBe("movie:701");
+    expect(keys(cards).slice(1).sort()).toEqual([
+      "movie:501", "movie:502", "movie:503", "movie:504",
     ]);
   });
 });

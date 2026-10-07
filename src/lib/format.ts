@@ -30,6 +30,11 @@ const EASTERN_TODAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+/** A date as "2026-10-07" on the `America/New_York` calendar. */
+export function easternDateKey(at: Date = new Date()): string {
+  return EASTERN_TODAY_FORMAT.format(at);
+}
+
 /** Today's date in `America/New_York`, as a day index comparable to `daysUntil`'s target. */
 function easternTodayDayIndex(): number {
   const parts = EASTERN_TODAY_FORMAT.formatToParts(new Date());

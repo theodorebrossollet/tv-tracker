@@ -1,7 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { MIN_SEEDS, type SuggestionKind } from "@/lib/discover-limits";
 import type { Deck, DeckCard, DeckFilters } from "@/lib/discover-types";
+import { easternDateKey } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getListDetail, loadShowRatings } from "@/lib/queries";
@@ -255,13 +258,13 @@ function utcYear(date: Date | null): string | null {
   return date ? String(date.getUTCFullYear()) : null;
 }
 
-interface OwnTitle {
+export interface OwnTitle {
   card: DeckCard & { source: "own" };
   runtime: number | null;
   addedAt: number;
 }
 
-/** The caller's watchlist movies and shows, newest added first. */
+/** The caller's watchlist movies and shows (the whole watchlist). */
 async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
   const [movies, shows] = await Promise.all([
     prisma.trackedMovie.findMany({
@@ -325,6 +328,57 @@ async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
         `${b.card.kind}:${b.card.id}`,
       ),
   );
+}
+
+/** How quickly the head start of a recently added title fades, in days. */
+const FAVOUR_HALF_LIFE_DAYS = 30;
+
+/**
+ * A repeatable number in (0, 1) for one title on one day: the hash of the two,
+ * so it depends on nothing else in the pool.
+ */
+function unitFor(seed: string, titleKey: string): number {
+  const bytes = createHash("sha256").update(`${seed}|${titleKey}`).digest();
+  // The first 6 bytes: 48 bits, exact in a double.
+  const n = bytes.readUIntBE(0, 6);
+  return (n + 0.5) / 2 ** 48;
+}
+
+/**
+ * Which of the caller's own titles go in today's deck: a weighted random pick
+ * of at most `max` from the whole pool, not the newest few.
+ *
+ * Every title has a chance, and a recently added one a better one: weight is 1
+ * for an old title, rising to 3 for one added just now and halving its head
+ * start every 30 days. The pick is Efraimidis-Spirakis sampling (each title gets
+ * the key `u^(1/weight)` and the largest keys win), with `u` a hash of the seed
+ * and the title. That makes it repeatable for a given seed, and, because a
+ * title's key does not depend on the others, stable: adding or removing a title
+ * changes at most one of the cards. The seed is the account plus the Eastern
+ * calendar day, so the deck is the same all day (every add or dismiss
+ * re-renders the page and rebuilds it) and different tomorrow.
+ *
+ * The result is in key order, which is the order the cards are dealt in.
+ */
+export function pickOwnTitles(
+  titles: OwnTitle[],
+  seed: string,
+  now: Date,
+  max: number = MAX_OWN_CARDS,
+): OwnTitle[] {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  return titles
+    .map((title) => {
+      const titleKey = `${title.card.kind}:${title.card.id}`;
+      const ageDays = Math.max(0, (now.getTime() - title.addedAt) / DAY_MS);
+      const weight = 1 + 2 * 0.5 ** (ageDays / FAVOUR_HALF_LIFE_DAYS);
+      // log(u^(1/w)) = log(u)/w, which orders the same and avoids underflow.
+      return { title, titleKey, key: Math.log(unitFor(seed, titleKey)) / weight };
+    })
+    .sort((a, b) => b.key - a.key || compare(a.titleKey, b.titleKey))
+    .slice(0, Math.max(0, max))
+    .map(({ title }) => title);
 }
 
 /**
@@ -466,7 +520,9 @@ function interleave(recommended: DeckCard[], own: DeckCard[]): DeckCard[] {
 export async function getDeck(
   userId: string,
   filters: DeckFilters,
+  options: { now?: Date } = {},
 ): Promise<Deck> {
+  const now = options.now ?? new Date();
   const [seeds, ownPool] = await Promise.all([
     getSeeds(userId),
     filters.listId
@@ -477,17 +533,18 @@ export async function getDeck(
   const matchesKind = (kind: SuggestionKind) =>
     filters.kind === "any" || filters.kind === kind;
 
-  const own = ownPool
-    .filter(
+  const own = pickOwnTitles(
+    ownPool.filter(
       (t) =>
         matchesKind(t.card.kind) &&
         (!filters.short ||
           (t.card.kind === "movie" &&
             t.runtime !== null &&
             t.runtime < SHORT_RUNTIME_MINUTES)),
-    )
-    .slice(0, MAX_OWN_CARDS)
-    .map((t) => t.card);
+    ),
+    `${userId}:${easternDateKey(now)}`,
+    now,
+  ).map((t) => t.card);
 
   const wantsRecommendations =
     !filters.short && !filters.listId && seeds.length >= MIN_SEEDS;
