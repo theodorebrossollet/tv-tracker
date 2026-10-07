@@ -4,6 +4,7 @@ import {
   getAllEpisodes,
   getMovieDetails,
   getMovieExtras,
+  getMovieReleaseDates,
   getMovieWatchProviders,
   getSeasonEpisodes,
   getShowTrailer,
@@ -1025,5 +1026,70 @@ describe("movie extras", () => {
       cast: [],
       trailer: null,
     });
+  });
+});
+
+describe("movie release dates", () => {
+  const response = {
+    results: [
+      {
+        iso_3166_1: "US",
+        release_dates: [
+          { type: 1, release_date: "2026-09-01T00:00:00.000Z" },
+          { type: 3, release_date: "2026-12-12T00:00:00.000Z" },
+          { type: 4, release_date: "2027-01-09T00:00:00.000Z" },
+          { type: 5, release_date: "2027-02-01T00:00:00.000Z" },
+          { type: 6, release_date: "2027-03-01T00:00:00.000Z" },
+        ],
+      },
+      {
+        iso_3166_1: "FR",
+        release_dates: [{ type: 2, release_date: "2026-12-10T00:00:00.000Z" }],
+      },
+      { iso_3166_1: "ZZ", release_dates: [{ type: 1, release_date: "2026-01-01T00:00:00.000Z" }] },
+      { iso_3166_1: "JP", release_dates: [{ type: 3, release_date: "" }, { type: 3 }] },
+    ],
+  };
+
+  it("keeps only cinema and digital dates, grouped by country, and drops empty ones", async () => {
+    const fetchMock = mockFetch(response);
+
+    const countries = await getMovieReleaseDates("9101");
+
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain(
+      "/movie/9101/release_dates",
+    );
+    expect(countries.map((country) => country.code)).toEqual(["FR", "US"]);
+    expect(countries[1].releases.map((r) => r.kind)).toEqual(["cinema", "digital"]);
+    expect(countries[0].releases.map((r) => r.kind)).toEqual(["cinema"]);
+  });
+
+  it("anchors a date to midnight US Eastern, like an air date", async () => {
+    mockFetch(response);
+
+    const us = (await getMovieReleaseDates("9102")).find((c) => c.code === "US")!;
+
+    expect(us.releases[0].date.toISOString()).toBe("2026-12-12T05:00:00.000Z");
+  });
+
+  it("rejects a malformed id before any request", async () => {
+    const fetchMock = mockFetch(response);
+
+    await expect(getMovieReleaseDates("12; drop")).rejects.toBeInstanceOf(TmdbError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shares one request across concurrent callers and caches it", async () => {
+    const fetchMock = mockFetch({ results: [] });
+
+    await Promise.all([getMovieReleaseDates("9103"), getMovieReleaseDates("9103")]);
+    await getMovieReleaseDates("9103");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an empty list for a movie TMDB has no dates for", async () => {
+    mockFetch({});
+    expect(await getMovieReleaseDates("9104")).toEqual([]);
   });
 });

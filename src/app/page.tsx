@@ -12,6 +12,8 @@ import {
 } from "@/components/upcoming-list";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
+import { getSettings } from "@/lib/shows";
+import { getUpcomingMovies } from "@/lib/upcoming-movies";
 
 // Everything on this page comes from the database and changes as soon as you
 // mark an episode watched, so there's nothing worth prerendering at build time.
@@ -28,12 +30,16 @@ export default async function DashboardPage({
   const params = await searchParams;
   const upcomingLimit = limitFrom(params, UPCOMING_PARAM, UPCOMING_PAGE_SIZE);
 
-  const [{ watching }, upcoming] = await Promise.all([
+  const [{ watching }, upcoming, upcomingMovies] = await Promise.all([
     getShowBuckets(user.id),
     // Still fetched well past the first page: this is how far ahead the list
     // looks, and it's what makes the "(N left)" count on the expand link
     // honest. Only `upcomingLimit` of them are rendered.
     getUpcomingEpisodes(user.id, 90),
+    // Soft: a slow or failing TMDB drops the movies, never the page.
+    getSettings(user.id).then((settings) =>
+      getUpcomingMovies(user.id, settings.country),
+    ),
   ]);
 
   return (
@@ -69,24 +75,26 @@ export default async function DashboardPage({
 
         <section>
           <h2 className="text-lg font-semibold tracking-[-0.015em]">
-            Upcoming episodes
+            Upcoming
           </h2>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-            Across everything you&rsquo;re watching and on your watchlist. Air
-            dates refresh once a day.
+            Episodes across everything you&rsquo;re watching and on your
+            watchlist, and movies on your watchlist heading to cinemas or
+            streaming. Air dates refresh once a day.
           </p>
 
-          {upcoming.length === 0 ? (
+          {upcoming.length === 0 && upcomingMovies.length === 0 ? (
             <div className="mt-4">
               <EmptyState
                 title="Nothing scheduled"
-                description="None of your tracked shows have an announced air date coming up."
+                description="None of your tracked shows or watchlist movies have an announced date coming up."
                 variant="inline"
               />
             </div>
           ) : (
             <UpcomingList
               episodes={upcoming}
+              movies={upcomingMovies}
               searchParams={params}
               limit={upcomingLimit}
             />

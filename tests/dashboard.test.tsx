@@ -10,6 +10,7 @@ const { ShowGrid } = await import("@/components/show-grid");
 const { UpcomingList } = await import("@/components/upcoming-list");
 
 import type { TrackedShowSummary, UpcomingEpisode } from "@/lib/queries";
+import type { UpcomingMovie } from "@/lib/upcoming-movies";
 
 afterEach(() => {
   cleanup();
@@ -160,5 +161,76 @@ describe("how soon an upcoming episode airs", () => {
     );
 
     expect(screen.getAllByText("Watchlist")).toHaveLength(1);
+  });
+});
+
+describe("movies in the upcoming list", () => {
+  const movie = (over: Partial<UpcomingMovie> = {}): UpcomingMovie => ({
+    movieId: "603",
+    title: "The Matrix",
+    posterPath: null,
+    next: { kind: "cinema", date: new Date(Date.now() + 10 * DAY_MS) },
+    later: null,
+    region: null,
+    ...over,
+  });
+
+  const renderList = (episodes: UpcomingEpisode[], movies: UpcomingMovie[], limit = 15) =>
+    render(<UpcomingList episodes={episodes} movies={movies} searchParams={{}} limit={limit} />);
+
+  it("links a movie row to the movie page and says what the date is", () => {
+    renderList([], [movie()]);
+
+    expect(screen.getByRole("link", { name: /The Matrix/ }).getAttribute("href")).toBe("/movie/603");
+    expect(screen.getByRole("img", { name: "Movie" })).toBeTruthy();
+    expect(screen.getByText("In cinemas")).toBeTruthy();
+  });
+
+  it("names the later release when there is one, and a foreign region", () => {
+    renderList(
+      [],
+      [
+        movie({
+          next: { kind: "cinema", date: new Date(Date.now() + 10 * DAY_MS) },
+          later: { kind: "digital", date: new Date(Date.now() + 40 * DAY_MS) },
+          region: "US",
+        }),
+      ],
+    );
+
+    const line = screen.getByText(/^In cinemas · Digital /);
+    expect(line.textContent).toMatch(/^In cinemas · Digital \d{1,2} \w{3} · US$/);
+  });
+
+  it("merges movies and episodes into one run, soonest first", () => {
+    renderList(
+      [
+        episode({ episodeId: "a", showName: "Late show", airDate: new Date(Date.now() + 20 * DAY_MS) }),
+        episode({ episodeId: "b", showName: "Early show", airDate: new Date(Date.now() + 2 * DAY_MS) }),
+      ],
+      [movie({ title: "Middle movie", next: { kind: "digital", date: new Date(Date.now() + 9 * DAY_MS) } })],
+    );
+
+    const names = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
+    expect(names[0]).toContain("Early show");
+    expect(names[1]).toContain("Middle movie");
+    expect(names[2]).toContain("Late show");
+  });
+
+  it("counts movies in the limit and the 'load more' link", () => {
+    renderList(
+      [episode({ episodeId: "a", airDate: new Date(Date.now() + 2 * DAY_MS) })],
+      [movie({ movieId: "1", title: "M1" }), movie({ movieId: "2", title: "M2" })],
+      2,
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText(/1 left/)).toBeTruthy();
+  });
+
+  it("renders as before with no movies, and never prints NaN or undefined", () => {
+    const { container } = renderList([episode()], []);
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(container.textContent).not.toMatch(/NaN|undefined/);
   });
 });
