@@ -98,17 +98,9 @@ function list(over: Partial<ListDetail> = {}): ListDetail {
   };
 }
 
-async function renderPage(
-  detail: ListDetail | null,
-  searchParams: Record<string, string | string[] | undefined> = {},
-) {
+async function renderPage(detail: ListDetail | null) {
   detailMock.mockResolvedValue(detail);
-  render(
-    await ListPage({
-      params: Promise.resolve({ id: "L1" }),
-      searchParams: Promise.resolve(searchParams),
-    }),
-  );
+  render(await ListPage({ params: Promise.resolve({ id: "L1" }) }));
 }
 
 beforeEach(() => {
@@ -124,7 +116,6 @@ describe("the list page route", () => {
     await expect(
       ListPage({
         params: Promise.resolve({ id: "other" }),
-        searchParams: Promise.resolve({}),
       }),
     ).rejects.toThrow("NEXT_NOT_FOUND");
     expect(detailMock).toHaveBeenCalledWith("u1", "other");
@@ -141,7 +132,6 @@ describe("the list page route", () => {
     await expect(
       ListPage({
         params: Promise.resolve({ id: "L1" }),
-        searchParams: Promise.resolve({}),
       }),
     ).rejects.toThrow("NEXT_REDIRECT");
     expect(detailMock).not.toHaveBeenCalled();
@@ -231,11 +221,11 @@ describe("sections", () => {
     expect(screen.getByRole("img", { name: "TV show" })).toBeTruthy();
   });
 
-  it("paginates each section on its own param and carries the known ones", async () => {
-    const toWatch = Array.from({ length: 12 }, (_, n) =>
+  it("shows every title in both sections, with no 'show more'", async () => {
+    const toWatch = Array.from({ length: 40 }, (_, n) =>
       item({ itemId: `t${n}`, titleId: `${n}`, title: `Todo ${n}` }),
     );
-    const done = Array.from({ length: 12 }, (_, n) =>
+    const done = Array.from({ length: 25 }, (_, n) =>
       item({
         itemId: `w${n}`,
         titleId: `${100 + n}`,
@@ -243,28 +233,12 @@ describe("sections", () => {
         watched: true,
       }),
     );
-    await renderPage(list({ items: [...toWatch, ...done] }), {
-      type: "movies",
-      evil: "x",
-    });
+    await renderPage(list({ items: [...toWatch, ...done] }));
 
-    const more = screen
-      .getAllByRole("link")
-      .filter((l) => /^Show \d+ more/.test(l.textContent ?? ""));
-    expect(more).toHaveLength(2);
-    const hrefs = more.map((l) => l.getAttribute("href"));
-    expect(hrefs).toContain("?type=movies&listToWatch=20");
-    expect(hrefs).toContain("?type=movies&listWatched=20");
-    expect(hrefs.join()).not.toContain("evil");
-    expect(screen.queryByText("Todo 11")).toBeNull();
-  });
-
-  it("honours a limit from the URL", async () => {
-    const toWatch = Array.from({ length: 12 }, (_, n) =>
-      item({ itemId: `t${n}`, titleId: `${n}`, title: `Todo ${n}` }),
-    );
-    await renderPage(list({ items: toWatch }), { listToWatch: "12" });
-    expect(screen.getByText("Todo 11")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /^Todo \d+$/ })).toHaveLength(40);
+    expect(screen.getAllByRole("link", { name: /^Done \d+$/ })).toHaveLength(25);
+    expect(screen.getByText("Todo 39")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /more/i })).toBeNull();
   });
 });
 
@@ -680,7 +654,7 @@ describe("the posters view", () => {
     ).toBeTruthy();
   });
 
-  it("keeps the sections, headings and show more", async () => {
+  it("shows every poster in both sections, with the headings and no 'show more'", async () => {
     viewCookie = "posters";
     const many = Array.from({ length: 12 }, (_, i) =>
       movie({ itemId: `i${i}`, titleId: String(100 + i), title: `T${i}` }),
@@ -690,8 +664,9 @@ describe("the posters view", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Watched" })).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: /^T\d+$/ })).toHaveLength(10);
-    expect(screen.getByRole("link", { name: /^Show 2 more/ })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /^T\d+$/ })).toHaveLength(12);
+    expect(screen.getByRole("link", { name: "Done" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /more/i })).toBeNull();
   });
 
   it("never prints NaN or undefined", async () => {

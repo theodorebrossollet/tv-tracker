@@ -22,10 +22,13 @@ const loadCardDetails =
   >();
 const replace = vi.fn();
 const refresh = vi.fn();
+const setMovieStatus =
+  vi.fn<(id: string, status: string) => Promise<ActionResult>>();
 
 vi.mock("@/app/actions", () => ({
   addToWatchlist: (id: string) => addToWatchlist(id),
   addMovieToWatchlist: (id: string) => addMovieToWatchlist(id),
+  setMovieStatus: (id: string, status: string) => setMovieStatus(id, status),
 }));
 vi.mock("@/app/discover-actions", () => ({
   dismissSuggestion: (kind: string, id: string) => dismissSuggestion(kind, id),
@@ -124,6 +127,24 @@ function drag(dx: number, dy: number) {
   fireEvent.touchEnd(el, { changedTouches: [{ clientX: 100 + dx, clientY: 100 + dy }] });
 }
 
+/**
+ * Clicks an element and reports whether the app swallowed the click before it
+ * reached the link (the card's capture handler stops it). jsdom cannot
+ * navigate, so a click that does reach the link is cancelled here to keep the
+ * output clean.
+ */
+function clickLink(element: HTMLElement): boolean {
+  let reached = false;
+  const listener = (event: Event) => {
+    reached = true;
+    event.preventDefault();
+  };
+  element.addEventListener("click", listener);
+  fireEvent.click(element);
+  element.removeEventListener("click", listener);
+  return !reached;
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => (resolve = r));
@@ -132,6 +153,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.sessionStorage.clear();
+  setMovieStatus.mockResolvedValue({ ok: true });
   addToWatchlist.mockResolvedValue({ ok: true });
   addMovieToWatchlist.mockResolvedValue({ ok: true });
   dismissSuggestion.mockResolvedValue({ ok: true });
@@ -616,5 +639,196 @@ describe("the dashboard header", () => {
     expect(source).toMatch(
       /<div className="flex[^"]*">\s*<DiscoverIconButton \/>\s*<SearchIconButton \/>\s*<\/div>/,
     );
+  });
+});
+
+describe("Already watched", () => {
+  const seenIt = () => screen.getByRole("button", { name: "Already watched" });
+
+  it("marks a recommended movie watched, then advances", async () => {
+    deck({ cards: [REC_MOVIE, OWN_SHOW] });
+    fireEvent.click(seenIt());
+
+    await waitFor(() => expect(currentTitle()).toBe("Breaking Bad"));
+    expect(setMovieStatus).toHaveBeenCalledWith("27205", "watched");
+    expect(addMovieToWatchlist).not.toHaveBeenCalled();
+    expect(dismissSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("marks one of your own watchlist movies watched too", async () => {
+    deck({ cards: [OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(seenIt());
+
+    await waitFor(() => expect(currentTitle()).toBe("Breaking Bad"));
+    expect(setMovieStatus).toHaveBeenCalledWith("603", "watched");
+  });
+
+  it("is not offered on a show, which has no single watched state", () => {
+    deck({ cards: [REC_SHOW, OWN_SHOW] });
+    expect(screen.queryByRole("button", { name: "Already watched" })).toBeNull();
+    expect(notThisOne()).toBeTruthy();
+    expect(addButton()).toBeTruthy();
+  });
+
+  it("does not advance on failure, and the error outlives the request", async () => {
+    setMovieStatus.mockResolvedValue({ ok: false, error: "Nope." });
+    deck({ cards: [REC_MOVIE, OWN_SHOW] });
+    fireEvent.click(seenIt());
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Nope."));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByRole("alert").textContent).toBe("Nope.");
+    expect(currentTitle()).toBe("Inception");
+  });
+
+  it("acts once on a double tap while pending", async () => {
+    const pending = deferred<ActionResult>();
+    setMovieStatus.mockReturnValue(pending.promise);
+    deck({ cards: [REC_MOVIE, OWN_SHOW] });
+
+    fireEvent.click(seenIt());
+    fireEvent.click(seenIt());
+    expect(setMovieStatus).toHaveBeenCalledTimes(1);
+
+    await act(async () => pending.resolve({ ok: true }));
+    await waitFor(() => expect(currentTitle()).toBe("Breaking Bad"));
+  });
+});
+
+describe("tapping a card opens the title's page", () => {
+  it("links the poster and title to the movie or show page", () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(
+      screen.getByRole("link", { name: "Open Severance" }).getAttribute("href"),
+    ).toBe("/show/95396");
+  });
+
+  it("links a movie to its movie page, not the show page with the same id", () => {
+    deck({ cards: [OWN_MOVIE] });
+    expect(
+      screen.getByRole("link", { name: "Open The Matrix" }).getAttribute("href"),
+    ).toBe("/movie/603");
+  });
+
+  it("keeps the Details button outside the link", () => {
+    deck({ cards: [REC_SHOW] });
+    const link = screen.getByRole("link", { name: "Open Severance" });
+    expect(link.contains(screen.getByRole("button", { name: "Details" }))).toBe(false);
+  });
+
+  it("does not follow the link after a horizontal drag, but does after a plain tap", () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    const link = screen.getByRole("link", { name: "Open Severance" });
+
+    // A short horizontal drag that springs back: the click that follows it on
+    // a real device must not navigate.
+    drag(30, 0);
+    expect(clickLink(link)).toBe(true); // the app cancelled it
+
+    // The next gesture is a tap: no movement, so the link works.
+    fireEvent.touchStart(card(), { touches: [{ clientX: 100, clientY: 100 }] });
+    fireEvent.touchEnd(card(), { changedTouches: [{ clientX: 100, clientY: 100 }] });
+    expect(clickLink(link)).toBe(false); // left alone, so it navigates
+  });
+
+  it("does not follow the link after a swipe that committed", async () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    const link = screen.getByRole("link", { name: "Open Severance" });
+    drag(-200, 0);
+    expect(clickLink(link)).toBe(true);
+    await waitFor(() => expect(dismissSuggestion).toHaveBeenCalled());
+  });
+});
+
+describe("remembering the deck position", () => {
+  const stored = () => window.sessionStorage.getItem("discover:seen");
+
+  it("saves the cards passed over", async () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(notThisOne());
+    await waitFor(() => expect(currentTitle()).toBe("The Matrix"));
+
+    const saved = JSON.parse(stored()!);
+    expect(saved.keys).toEqual(["show:95396"]);
+    expect(typeof saved.at).toBe("number");
+  });
+
+  it("comes back to the same card after a visit elsewhere", async () => {
+    const first = deck({ cards: [REC_SHOW, OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(notThisOne());
+    await waitFor(() => expect(currentTitle()).toBe("The Matrix"));
+    first.unmount();
+
+    // The page is re-rendered from the server with the same cards.
+    deck({ cards: [REC_SHOW, OWN_MOVIE, OWN_SHOW] });
+    expect(currentTitle()).toBe("The Matrix");
+  });
+
+  it("a card opened but not chosen is still there on return", async () => {
+    const first = deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    clickLink(screen.getByRole("link", { name: "Open Severance" }));
+    first.unmount();
+
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(currentTitle()).toBe("Severance");
+  });
+
+  it("starts from the top with nothing saved, junk saved, or an expired save", () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(currentTitle()).toBe("Severance");
+    cleanup();
+
+    window.sessionStorage.setItem("discover:seen", "{not json");
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(currentTitle()).toBe("Severance");
+    cleanup();
+
+    window.sessionStorage.setItem(
+      "discover:seen",
+      JSON.stringify({ at: Date.now() - 3 * 60 * 60 * 1000, keys: ["show:95396"] }),
+    );
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(currentTitle()).toBe("Severance");
+    cleanup();
+
+    window.sessionStorage.setItem(
+      "discover:seen",
+      JSON.stringify({ at: Date.now(), keys: [1, null, {}, "show:95396"] }),
+    );
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(currentTitle()).toBe("The Matrix");
+  });
+
+  it("an exhausted deck stays exhausted after a visit, and Refresh clears it", async () => {
+    const first = deck({ cards: [OWN_SHOW] });
+    fireEvent.click(notThisOne());
+    await waitFor(() => expect(screen.getByText("You've seen them all")).toBeTruthy());
+    first.unmount();
+
+    deck({ cards: [OWN_SHOW] });
+    expect(screen.getByText("You've seen them all")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(JSON.parse(stored()!).keys).toEqual([]));
+  });
+
+  it("works when storage is unavailable", async () => {
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    fireEvent.click(notThisOne());
+    await waitFor(() => expect(currentTitle()).toBe("The Matrix"));
+    spy.mockRestore();
+  });
+
+  it("marks the Tonight pick as seen when it is opened", () => {
+    const first = deck({ cards: [OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(pickButton());
+    clickLink(screen.getByRole("link", { name: "Open" }));
+    first.unmount();
+
+    deck({ cards: [OWN_MOVIE, OWN_SHOW] });
+    expect(currentTitle()).toBe("Breaking Bad");
   });
 });

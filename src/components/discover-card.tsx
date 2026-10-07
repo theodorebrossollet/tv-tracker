@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 
 import { Poster } from "@/components/poster";
@@ -50,6 +51,10 @@ function useSwipe({
   const start = useRef<{ x: number; y: number } | null>(null);
   const axis = useRef<SwipeAxis>("undecided");
   const latest = useRef(0);
+  // A drag that began on the poster or title must not also count as a tap on
+  // the link they sit in. Set once a gesture turns horizontal, cleared when the
+  // next one starts.
+  const suppressClick = useRef(false);
 
   function reset() {
     start.current = null;
@@ -69,6 +74,14 @@ function useSwipe({
     start.current = { x: touch.clientX, y: touch.clientY };
     axis.current = "undecided";
     latest.current = 0;
+    suppressClick.current = false;
+  }
+
+  function onClickCapture(event: React.MouseEvent) {
+    if (!suppressClick.current) return;
+    suppressClick.current = false;
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   function onTouchMove(event: React.TouchEvent) {
@@ -87,6 +100,7 @@ function useSwipe({
       if (axis.current !== "horizontal") return;
     }
 
+    suppressClick.current = true;
     latest.current = dx;
     setOffset(dx);
     setDragging(true);
@@ -118,6 +132,7 @@ function useSwipe({
       onTouchMove,
       onTouchEnd,
       onTouchCancel: reset,
+      onClickCapture,
     },
   };
 }
@@ -180,18 +195,29 @@ export function DiscoverCard({
         dragging ? "" : "transition-[transform,opacity] duration-200"
       }`}
     >
-      <Poster
-        path={card.posterPath}
-        name={card.title}
-        width={300}
-        className="mx-auto h-auto w-full max-w-[300px]"
-      />
+      {/* The poster and title open the title's page. The Details button below
+          is not part of the link, so each does its own thing. */}
+      <Link
+        href={`/${card.kind}/${card.id}`}
+        aria-label={`Open ${card.title}`}
+        className="block"
+      >
+        <Poster
+          path={card.posterPath}
+          name={card.title}
+          width={300}
+          className="mx-auto h-auto w-full max-w-[300px]"
+        />
 
-      <div className="mt-3 px-1">
-        <h2 className="text-xl font-semibold tracking-[-0.015em]">
-          {card.title}
-        </h2>
-        <p className="mt-0.5 text-[13px] text-muted">{meta}</p>
+        <div className="mt-3 px-1">
+          <h2 className="text-xl font-semibold tracking-[-0.015em]">
+            {card.title}
+          </h2>
+          <p className="mt-0.5 text-[13px] text-muted">{meta}</p>
+        </div>
+      </Link>
+
+      <div className="px-1">
         <p className="mt-2 text-[13px] text-muted">{tag}</p>
 
         <button

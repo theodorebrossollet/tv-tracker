@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
-import { addMovieToWatchlist, addToWatchlist } from "@/app/actions";
+import {
+  addMovieToWatchlist,
+  addToWatchlist,
+  setMovieStatus,
+} from "@/app/actions";
 import { dismissSuggestion, loadCardDetails } from "@/app/discover-actions";
 import {
   DiscoverCard,
@@ -13,6 +23,7 @@ import {
 } from "@/components/discover-card";
 import { Poster } from "@/components/poster";
 import { Select } from "@/components/select";
+import type { ActionResult } from "@/lib/action-result";
 import { MIN_SEEDS } from "@/lib/discover-limits";
 import type { DeckCard, DeckFilters } from "@/lib/discover-types";
 import { formatAverage, formatRating } from "@/lib/ratings";
@@ -30,6 +41,53 @@ const KINDS = [
   { value: "movie", label: "Movie" },
   { value: "show", label: "Show" },
 ] as const;
+
+// Where the cards passed over this visit are remembered while you look at a
+// title's page and come back. Per tab (`sessionStorage`), and it expires, so a
+// tab left open for days does not keep hiding cards.
+const SEEN_STORAGE_KEY = "discover:seen";
+const SEEN_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+const SEEN_MAX_KEYS = 300;
+
+function readSeen(): string[] {
+  try {
+    const raw = window.sessionStorage.getItem(SEEN_STORAGE_KEY);
+    if (!raw) return [];
+    const saved: unknown = JSON.parse(raw);
+    if (
+      !saved ||
+      typeof saved !== "object" ||
+      typeof (saved as { at?: unknown }).at !== "number" ||
+      Date.now() - (saved as { at: number }).at > SEEN_MAX_AGE_MS ||
+      !Array.isArray((saved as { keys?: unknown }).keys)
+    ) {
+      return [];
+    }
+    return (saved as { keys: unknown[] }).keys
+      .filter((key): key is string => typeof key === "string")
+      .slice(-SEEN_MAX_KEYS);
+  } catch {
+    // Storage blocked or the value is junk: start from the top.
+    return [];
+  }
+}
+
+function writeSeen(keys: string[]) {
+  try {
+    window.sessionStorage.setItem(
+      SEEN_STORAGE_KEY,
+      JSON.stringify({ at: Date.now(), keys: keys.slice(-SEEN_MAX_KEYS) }),
+    );
+  } catch {
+    // Remembering is a convenience; the deck works without it.
+  }
+}
+
+// Restoring has to happen before the first paint of a client-side visit, or the
+// first card flashes up and then jumps. There is nothing to restore on the
+// server.
+const useRestoreEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /** TMDB movie and show ids overlap, so a card is only unique with its kind. */
 const keyOf = (card: DeckCard) => `${card.kind}:${card.id}`;
@@ -90,6 +148,23 @@ export function DiscoverDeck({
   const inFlight = useRef(false);
   const detailsRequested = useRef(new Set<string>());
 
+  // Set once the saved list has been read back, so the first (empty) render
+  // can't overwrite it.
+  const restored = useRef(false);
+
+  useRestoreEffect(() => {
+    const saved = readSeen();
+    if (saved.length > 0) {
+      setSeen(saved);
+      setChose(true);
+    }
+    restored.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (restored.current) writeSeen(seen);
+  }, [seen]);
+
   const remaining = cards.filter((card) => !seen.includes(keyOf(card)));
   const current = remaining[0];
   const next = remaining[1];
@@ -120,17 +195,29 @@ export function DiscoverDeck({
       return Promise.resolve(true);
     }
 
+    return run(card, async () =>
+      direction === "left"
+        ? dismissSuggestion(card.kind, card.id)
+        : card.kind === "show"
+          ? addToWatchlist(card.id)
+          : addMovieToWatchlist(card.id),
+    );
+  }
+
+  /**
+   * Runs one server action for a card; the deck moves on only if it succeeds.
+   * Resolves true when it did.
+   */
+  function run(
+    card: DeckCard,
+    action: () => Promise<ActionResult>,
+  ): Promise<boolean> {
     inFlight.current = true;
     return new Promise((resolve) => {
       startTransition(async () => {
         let advanced = false;
         try {
-          const result =
-            direction === "left"
-              ? await dismissSuggestion(card.kind, card.id)
-              : card.kind === "show"
-                ? await addToWatchlist(card.id)
-                : await addMovieToWatchlist(card.id);
+          const result = await action();
 
           if (!result.ok) {
             setError(result.error ?? "Something went wrong. Please try again.");
@@ -146,6 +233,20 @@ export function DiscoverDeck({
         }
       });
     });
+  }
+
+  /**
+   * "Already watched", for movies: logs it in the Library (an untracked movie
+   * is cached and tracked as watched) and moves on. A show has no single
+   * watched state, so it has no such button.
+   */
+  function seenIt(): Promise<boolean> {
+    if (!current || current.kind !== "movie" || inFlight.current) {
+      return Promise.resolve(false);
+    }
+    const card = current;
+    setError(null);
+    return run(card, () => setMovieStatus(card.id, "watched"));
   }
 
   function openDetails(card: DeckCard) {
@@ -236,7 +337,12 @@ export function DiscoverDeck({
 
       <div className="mt-4">
         {tonight ? (
-          <Tonight card={tonight} onPickAnother={pickAnother} />
+          <Tonight
+            card={tonight}
+            onPickAnother={pickAnother}
+            // Opened, so it counts as chosen: it is not dealt again this visit.
+            onOpen={() => markSeen(tonight)}
+          />
         ) : current ? (
           <>
             <div className="relative pt-3">
@@ -273,6 +379,17 @@ export function DiscoverDeck({
               >
                 <CrossIcon />
               </button>
+              {current.kind === "movie" ? (
+                <button
+                  type="button"
+                  onClick={() => void seenIt()}
+                  disabled={pending}
+                  aria-label="Already watched"
+                  className="flex size-14 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
+                >
+                  <EyeIcon />
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => choose("right")}
@@ -360,9 +477,11 @@ function Peek({ card }: { card: DeckCard }) {
 function Tonight({
   card,
   onPickAnother,
+  onOpen,
 }: {
   card: DeckCard;
   onPickAnother: () => void;
+  onOpen: () => void;
 }) {
   return (
     <section className="flex flex-col items-center rounded-2xl border border-border px-6 py-8 text-center">
@@ -372,6 +491,7 @@ function Tonight({
       </h2>
       <Link
         href={`/${card.kind}/${card.id}`}
+        onClick={onOpen}
         className="mt-5 flex min-h-[46px] items-center rounded-full bg-accent px-[22px] text-[15px] font-semibold text-on-accent"
       >
         Open
@@ -399,6 +519,24 @@ function CrossIcon() {
       className="size-6"
     >
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="size-6"
+    >
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.75" />
     </svg>
   );
 }
