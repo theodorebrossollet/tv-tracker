@@ -1,12 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { Poster } from "@/components/poster";
 import { Trailer } from "@/components/trailer";
 import type { CardDetails, DeckCard } from "@/lib/discover-types";
 import { formatRuntime } from "@/lib/format";
+import { posterUrl } from "@/lib/images";
 import { lockAxis, swipeOutcome, tilt, type SwipeAxis } from "@/lib/swipe";
 
 export type SwipeDirection = "left" | "right";
@@ -191,7 +192,11 @@ export function DiscoverCard({
               }
             : undefined
       }
-      className={`relative z-10 touch-pan-y rounded-2xl border border-border bg-background p-3 shadow-sm ${
+      // A column that fills the height the deck gives it: the poster takes
+      // whatever is left after the text, so the whole card (and the buttons
+      // under it) fit one screen with no scrolling. Opened details replace the
+      // poster and scroll inside the card instead.
+      className={`relative z-10 flex min-h-0 flex-1 touch-pan-y flex-col rounded-2xl border border-border bg-background p-3 shadow-sm ${
         dragging ? "" : "transition-[transform,opacity] duration-200"
       }`}
     >
@@ -200,16 +205,11 @@ export function DiscoverCard({
       <Link
         href={`/${card.kind}/${card.id}`}
         aria-label={`Open ${card.title}`}
-        className="block"
+        className={`flex min-h-0 flex-col ${expanded ? "shrink-0" : "flex-1"}`}
       >
-        <Poster
-          path={card.posterPath}
-          name={card.title}
-          width={300}
-          className="mx-auto h-auto w-full max-w-[300px]"
-        />
+        {expanded ? null : <CardPoster path={card.posterPath} title={card.title} />}
 
-        <div className="mt-3 px-1">
+        <div className={`shrink-0 px-1 ${expanded ? "" : "mt-3"}`}>
           <h2 className="text-xl font-semibold tracking-[-0.015em]">
             {card.title}
           </h2>
@@ -217,7 +217,7 @@ export function DiscoverCard({
         </div>
       </Link>
 
-      <div className="px-1">
+      <div className="shrink-0 px-1">
         <p className="mt-2 text-[13px] text-muted">{tag}</p>
 
         <button
@@ -228,10 +228,44 @@ export function DiscoverCard({
         >
           Details
         </button>
-
-        {expanded ? <DetailsPanel state={details} title={card.title} /> : null}
       </div>
+
+      {expanded ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-1">
+          <DetailsPanel state={details} title={card.title} />
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+/**
+ * The poster, as large as the room allows. A 2:3 box that fills the height it
+ * is given and is as wide as that makes it (never wider than the card); a title
+ * with no poster gets an empty frame of the same shape so the card doesn't jump.
+ */
+function CardPoster({ path, title }: { path: string | null; title: string }) {
+  const url = posterUrl(path, "w342");
+
+  return (
+    <div className="min-h-0 flex-1">
+      <div className="relative mx-auto aspect-[2/3] h-full max-w-full overflow-hidden rounded-md border border-border bg-surface">
+        {url ? (
+          <Image
+            src={url}
+            alt={`Poster for ${title}`}
+            fill
+            sizes="(max-width: 448px) 70vw, 300px"
+            className="object-cover"
+            priority
+          />
+        ) : (
+          <span className="flex size-full items-center justify-center text-[11px] text-muted">
+            No poster
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

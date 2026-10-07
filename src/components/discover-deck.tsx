@@ -281,15 +281,18 @@ export function DiscoverDeck({
   }
 
   return (
-    // `overflow-x-clip`, not `hidden`: a dragged card must not push the page
-    // sideways on iOS, and `hidden` would make this a scroll container and
-    // break the sticky button row below.
-    <div className="mx-auto max-w-md overflow-x-clip">
-      <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
+    // One screen, no scrolling: exactly the height between the top of the page
+    // and the tab bar (the layout's `main` padding is 1.5rem on top, 5.25rem
+    // plus the home-indicator inset below; 2.5rem on top from `sm`). The poster
+    // gives up whatever the chips, text and buttons need. On a screen too short
+    // for that it falls back to scrolling the page, rather than squashing the
+    // card. `overflow-x-clip` so a dragged card can't push the page sideways.
+    <div className="mx-auto flex h-[calc(100dvh-6.75rem-env(safe-area-inset-bottom))] min-h-[28rem] max-w-md flex-col overflow-x-clip sm:h-[calc(100dvh-7.75rem-env(safe-area-inset-bottom))]">
+      <h1 className="shrink-0 text-[25px] font-semibold tracking-[-0.025em]">
         Discover
       </h1>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-1.5">
+      <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-1.5">
         {KINDS.map(({ value, label }) => (
           <Chip
             key={value}
@@ -325,17 +328,23 @@ export function DiscoverDeck({
       </div>
 
       {seedCount < MIN_SEEDS ? (
-        <p className="mt-3 text-[13px] text-muted">
+        <p className="shrink-0 text-[13px] text-muted">
           Rate a few more titles to get recommendations
         </p>
       ) : null}
       {recommendationsUnavailable ? (
-        <p className="mt-3 text-[13px] text-muted">
+        <p className="shrink-0 text-[13px] text-muted">
           Recommendations are unavailable right now.
         </p>
       ) : null}
 
-      <div className="mt-4">
+      <div
+        className={`mt-2 flex min-h-0 flex-1 flex-col ${
+          // The swipe deck sizes itself to fit; the other states (Tonight, an
+          // empty or finished deck) scroll if a very short screen needs it.
+          current && !tonight ? "" : "overflow-y-auto"
+        }`}
+      >
         {tonight ? (
           <Tonight
             card={tonight}
@@ -345,7 +354,7 @@ export function DiscoverDeck({
           />
         ) : current ? (
           <>
-            <div className="relative pt-3">
+            <div className="relative flex min-h-0 flex-1 flex-col pt-3">
               {next ? <Peek card={next} /> : null}
               <DiscoverCard
                 key={keyOf(current)}
@@ -359,17 +368,18 @@ export function DiscoverDeck({
             </div>
 
             {error ? (
-              <p role="alert" className="mt-3 text-center text-xs text-danger">
+              <p
+                role="alert"
+                className="mt-2 shrink-0 text-center text-xs text-danger"
+              >
                 {error}
               </p>
             ) : null}
 
-            {/* Sticky just above the fixed tab bar (its 3.5rem tabs, 0.5rem
-                top padding and the safe-area inset), so ✕ and ✓ stay
-                reachable on a short phone screen however tall the card is:
-                they are the fallback when iOS's edge back-gesture swallows a
-                swipe. */}
-            <div className="sticky bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 mt-2 flex items-center justify-center gap-6 bg-background py-2">
+            {/* Last in the column the page is sized to, so the buttons sit
+                right above the tab bar on any screen height: they are the
+                fallback when iOS's edge back-gesture swallows a swipe. */}
+            <div className="flex shrink-0 items-center justify-center gap-6 py-2">
               <button
                 type="button"
                 onClick={() => choose("left")}
