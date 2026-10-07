@@ -549,8 +549,9 @@ grid by passing `view` and mapping its items to `PosterGridItem`.
 
 ## Upcoming movies, in short
 
-The Watching screen's "Upcoming" list merges episodes and watchlist movies into
-one date-sorted run (`UpcomingList` takes `episodes` and `movies`). Movie dates
+The Watching screen has two sections: "Upcoming episodes" (`UpcomingList`) and,
+only when there is something to show, "Upcoming movies" (`UpcomingMoviesList`),
+each paged on its own URL param (`upcoming`, `upcomingMovies`). Movie dates
 come live from TMDB's `/movie/{id}/release_dates` (`getMovieReleaseDates`,
 cached 6h; only cinema and digital types are kept, anchored like air dates),
 not from the stored `Movie.releaseDate`, which is only used to pick candidates:

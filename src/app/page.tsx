@@ -10,6 +10,10 @@ import {
   UPCOMING_PARAM,
   UpcomingList,
 } from "@/components/upcoming-list";
+import {
+  UPCOMING_MOVIES_PARAM,
+  UpcomingMoviesList,
+} from "@/components/upcoming-movies-list";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 import { getSettings } from "@/lib/shows";
@@ -29,6 +33,11 @@ export default async function DashboardPage({
   const { user } = await requireOnboardedSession();
   const params = await searchParams;
   const upcomingLimit = limitFrom(params, UPCOMING_PARAM, UPCOMING_PAGE_SIZE);
+  const upcomingMoviesLimit = limitFrom(
+    params,
+    UPCOMING_MOVIES_PARAM,
+    UPCOMING_PAGE_SIZE,
+  );
 
   const [{ watching }, upcoming, upcomingMovies] = await Promise.all([
     getShowBuckets(user.id),
@@ -75,31 +84,49 @@ export default async function DashboardPage({
 
         <section>
           <h2 className="text-lg font-semibold tracking-[-0.015em]">
-            Upcoming
+            Upcoming episodes
           </h2>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-            Episodes across everything you&rsquo;re watching and on your
-            watchlist, and movies on your watchlist heading to cinemas or
-            streaming. Air dates refresh once a day.
+            Across everything you&rsquo;re watching and on your watchlist. Air
+            dates refresh once a day.
           </p>
 
-          {upcoming.length === 0 && upcomingMovies.length === 0 ? (
+          {upcoming.length === 0 ? (
             <div className="mt-4">
               <EmptyState
                 title="Nothing scheduled"
-                description="None of your tracked shows or watchlist movies have an announced date coming up."
+                description="None of your tracked shows have an announced air date coming up."
                 variant="inline"
               />
             </div>
           ) : (
             <UpcomingList
               episodes={upcoming}
-              movies={upcomingMovies}
               searchParams={params}
               limit={upcomingLimit}
             />
           )}
         </section>
+
+        {/* Only when there is something to say: movies are rare next to
+            episodes, and an empty section would just be noise. */}
+        {upcomingMovies.length > 0 ? (
+          <section>
+            <h2 className="text-lg font-semibold tracking-[-0.015em]">
+              Upcoming movies
+            </h2>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
+              Movies on your watchlist heading to cinemas or streaming, with
+              the dates for your country where TMDB has them.
+            </p>
+
+            <UpcomingMoviesList
+              movies={upcomingMovies}
+              searchParams={params}
+              limit={upcomingMoviesLimit}
+            />
+          </section>
+        ) : null}
       </div>
     </>
   );
