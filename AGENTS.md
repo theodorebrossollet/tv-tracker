@@ -209,6 +209,14 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
 - A card's streaming line is its flatrate services in the saved country, for
   shows and movies alike (`loadCardDetails`); a failed lookup drops the line, not
   the card.
+- Movie cards have a third button, "Already watched" (`setMovieStatus(id,
+  "watched")`, which also works for an untracked movie); shows have none, since
+  watched is per episode.
+- Tapping a card's poster or title opens the title's page. A drag that began on
+  it must not also count as that tap (`suppressClick` in `discover-card.tsx`).
+  The cards already passed over are kept in `sessionStorage` (`discover:seen`,
+  per tab, expires after two hours) so coming back from the page lands on the
+  same card; it is restored in a layout effect, before the first paint.
 - Swipe logic lives in `lib/swipe.ts` and is unit-tested; the touch listeners
   that feed it are the one part with no automated coverage, so changes there
   need a device.
@@ -332,6 +340,8 @@ it's what these were before, and it put every row of every list into the
 payload. Each list owns its own param and the expand link copies the others
 across, or expanding one section collapses its neighbour. Bound anything read
 off a param with `limitFrom`: it's as attacker-supplied as any other input.
+The one exception is a private list's own page, which shows every title: a list
+is capped at `MAX_ITEMS_PER_LIST`, so there is nothing to page.
 
 **Anything importing `server-only` must never reach a client component.** That's
 why poster URLs (`lib/images.ts`), shared types (`lib/types.ts`) and date

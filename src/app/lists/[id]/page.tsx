@@ -3,28 +3,24 @@ import { notFound } from "next/navigation";
 
 import { AddTitlesButton } from "@/components/add-titles-button";
 import { EmptyState } from "@/components/empty-state";
-import { LIBRARY_PAGE_SIZE } from "@/components/library-list";
 import { ListItemRow } from "@/components/list-item-row";
 import { ListMenu } from "@/components/list-menu";
 import { PosterGrid } from "@/components/poster-grid";
-import { ShowMoreLink, limitFrom } from "@/components/show-more-link";
 import { ViewToggle } from "@/components/view-toggle";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getViewMode } from "@/lib/get-view-mode";
 import { getListDetail, type ListItemView } from "@/lib/queries";
-import type { SearchParams } from "@/lib/search-params";
 import type { ViewMode } from "@/lib/view-mode";
 
 export const dynamic = "force-dynamic";
 
 interface ListPageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<SearchParams>;
 }
 
 export async function generateMetadata({
   params,
-}: Pick<ListPageProps, "params">) {
+}: ListPageProps) {
   const { id } = await params;
   // Gated before any read, like the movie page: metadata runs ahead of the
   // component and must not reveal a list's name without a session. A foreign
@@ -35,13 +31,9 @@ export async function generateMetadata({
   return { title: list ? `${list.name} · TV Tracker` : "List · TV Tracker" };
 }
 
-export default async function ListPage({
-  params,
-  searchParams,
-}: ListPageProps) {
+export default async function ListPage({ params }: ListPageProps) {
   const { id } = await params;
   const { user } = await requireOnboardedSession();
-  const query = await searchParams;
 
   // List ids are opaque, so there is nothing to validate up front. A list that
   // belongs to someone else comes back null exactly like one that never
@@ -112,8 +104,6 @@ export default async function ListPage({
                 listId={list.id}
                 trackSeparately={list.trackSeparately}
                 items={toWatch}
-                param="listToWatch"
-                searchParams={query}
                 view={view}
               />
             ) : null}
@@ -127,8 +117,6 @@ export default async function ListPage({
                   listId={list.id}
                   trackSeparately={list.trackSeparately}
                   items={watched}
-                  param="listWatched"
-                  searchParams={query}
                   view={view}
                 />
               </section>
@@ -140,65 +128,46 @@ export default async function ListPage({
   );
 }
 
-/** One paginated run of rows; "show more" is a URL, like the Library's. */
+/**
+ * One run of a list's titles, all of them: a list is something you scan, and
+ * `MAX_ITEMS_PER_LIST` keeps it bounded, so there is no "show more" here (the
+ * Library's sections, which have no such cap, still page).
+ */
 function ItemSection({
   listId,
   trackSeparately,
   items,
-  param,
-  searchParams,
   view,
 }: {
   listId: string;
   trackSeparately: boolean;
   items: ListItemView[];
-  param: string;
-  searchParams: SearchParams;
   view: ViewMode;
 }) {
-  const limit = limitFrom(searchParams, param, LIBRARY_PAGE_SIZE);
-  const shown = items.slice(0, limit);
-  const remaining = items.length - shown.length;
-
-  return (
-    <>
-      {view === "posters" ? (
-        <PosterGrid
-          items={shown.map((item) => ({
-            key: item.itemId,
-            href: `${item.kind === "movie" ? "/movie" : "/show"}/${item.titleId}`,
-            title: item.title,
-            posterPath: item.posterPath,
-            kind: item.kind === "movie" ? "movie" : "tv",
-            seen: item.watched,
-            rating: item.rating,
-            ratingIsAverage: item.kind === "show",
-            quiet: item.watched,
-          }))}
+  return view === "posters" ? (
+    <PosterGrid
+      items={items.map((item) => ({
+        key: item.itemId,
+        href: `${item.kind === "movie" ? "/movie" : "/show"}/${item.titleId}`,
+        title: item.title,
+        posterPath: item.posterPath,
+        kind: item.kind === "movie" ? "movie" : "tv",
+        seen: item.watched,
+        rating: item.rating,
+        ratingIsAverage: item.kind === "show",
+        quiet: item.watched,
+      }))}
+    />
+  ) : (
+    <ul className="flex flex-col gap-2">
+      {items.map((item) => (
+        <ListItemRow
+          key={item.itemId}
+          listId={listId}
+          trackSeparately={trackSeparately}
+          item={item}
         />
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {shown.map((item) => (
-            <ListItemRow
-              key={item.itemId}
-              listId={listId}
-              trackSeparately={trackSeparately}
-              item={item}
-            />
-          ))}
-        </ul>
-      )}
-
-      {remaining > 0 ? (
-        <ShowMoreLink
-          param={param}
-          current={searchParams}
-          step={LIBRARY_PAGE_SIZE}
-          shown={shown.length}
-          remaining={remaining}
-          label="Show"
-        />
-      ) : null}
-    </>
+      ))}
+    </ul>
   );
 }
