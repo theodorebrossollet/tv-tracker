@@ -8,6 +8,7 @@ vi.mock("@/app/actions", () => ({ markEpisodeWatched: vi.fn() }));
 
 const { ShowGrid } = await import("@/components/show-grid");
 const { UpcomingList } = await import("@/components/upcoming-list");
+const { UpcomingMoviesList } = await import("@/components/upcoming-movies-list");
 
 import type { TrackedShowSummary, UpcomingEpisode } from "@/lib/queries";
 import type { UpcomingMovie } from "@/lib/upcoming-movies";
@@ -164,7 +165,7 @@ describe("how soon an upcoming episode airs", () => {
   });
 });
 
-describe("movies in the upcoming list", () => {
+describe("the upcoming movies list", () => {
   const movie = (over: Partial<UpcomingMovie> = {}): UpcomingMovie => ({
     movieId: "603",
     title: "The Matrix",
@@ -175,62 +176,60 @@ describe("movies in the upcoming list", () => {
     ...over,
   });
 
-  const renderList = (episodes: UpcomingEpisode[], movies: UpcomingMovie[], limit = 15) =>
-    render(<UpcomingList episodes={episodes} movies={movies} searchParams={{}} limit={limit} />);
+  const renderList = (movies: UpcomingMovie[], limit = 15) =>
+    render(
+      <UpcomingMoviesList movies={movies} searchParams={{}} limit={limit} />,
+    );
 
   it("links a movie row to the movie page and says what the date is", () => {
-    renderList([], [movie()]);
+    renderList([movie()]);
 
-    expect(screen.getByRole("link", { name: /The Matrix/ }).getAttribute("href")).toBe("/movie/603");
+    expect(
+      screen.getByRole("link", { name: /The Matrix/ }).getAttribute("href"),
+    ).toBe("/movie/603");
     expect(screen.getByRole("img", { name: "Movie" })).toBeTruthy();
     expect(screen.getByText("In cinemas")).toBeTruthy();
   });
 
   it("names the later release when there is one, and a foreign region", () => {
-    renderList(
-      [],
-      [
-        movie({
-          next: { kind: "cinema", date: new Date(Date.now() + 10 * DAY_MS) },
-          later: { kind: "digital", date: new Date(Date.now() + 40 * DAY_MS) },
-          region: "US",
-        }),
-      ],
-    );
+    renderList([
+      movie({
+        later: { kind: "digital", date: new Date(Date.now() + 40 * DAY_MS) },
+        region: "US",
+      }),
+    ]);
 
     const line = screen.getByText(/^In cinemas · Digital /);
-    expect(line.textContent).toMatch(/^In cinemas · Digital \d{1,2} \w{3} · US$/);
-  });
-
-  it("merges movies and episodes into one run, soonest first", () => {
-    renderList(
-      [
-        episode({ episodeId: "a", showName: "Late show", airDate: new Date(Date.now() + 20 * DAY_MS) }),
-        episode({ episodeId: "b", showName: "Early show", airDate: new Date(Date.now() + 2 * DAY_MS) }),
-      ],
-      [movie({ title: "Middle movie", next: { kind: "digital", date: new Date(Date.now() + 9 * DAY_MS) } })],
+    expect(line.textContent).toMatch(
+      /^In cinemas · Digital \d{1,2} \w{3} · US$/,
     );
-
-    const names = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
-    expect(names[0]).toContain("Early show");
-    expect(names[1]).toContain("Middle movie");
-    expect(names[2]).toContain("Late show");
   });
 
-  it("counts movies in the limit and the 'load more' link", () => {
-    renderList(
-      [episode({ episodeId: "a", airDate: new Date(Date.now() + 2 * DAY_MS) })],
-      [movie({ movieId: "1", title: "M1" }), movie({ movieId: "2", title: "M2" })],
-      2,
+  it("shows a digital-only movie as Digital", () => {
+    renderList([
+      movie({ next: { kind: "digital", date: new Date(Date.now() + 9 * DAY_MS) } }),
+    ]);
+    expect(screen.getByText("Digital")).toBeTruthy();
+    expect(screen.queryByText(/In cinemas/)).toBeNull();
+  });
+
+  it("keeps the order it is given and pages on its own param", () => {
+    const many = Array.from({ length: 4 }, (_, i) =>
+      movie({ movieId: String(i + 1), title: `M${i + 1}` }),
     );
+    renderList(many, 2);
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByText(/1 left/)).toBeTruthy();
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("M1");
+    expect(rows[1].textContent).toContain("M2");
+    const more = screen.getByRole("link", { name: /Load 2 more/ });
+    expect(more.getAttribute("href")).toContain("upcomingMovies=");
+    expect(more.getAttribute("href")).not.toContain("upcoming=");
   });
 
-  it("renders as before with no movies, and never prints NaN or undefined", () => {
-    const { container } = renderList([episode()], []);
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  it("never prints NaN or undefined", () => {
+    const { container } = renderList([movie()]);
     expect(container.textContent).not.toMatch(/NaN|undefined/);
   });
 });

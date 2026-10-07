@@ -26,9 +26,9 @@ services, "also on your services" in other countries), and the Settings services
 picker lists TV and movie services together; Discover's movie cards show their
 streaming line.
 
-Release tracking shipped as dates you can see: the Watching screen's "Upcoming"
-list now also holds watchlist movies, with the next cinema or digital release in
-your country (see AGENTS.md, "Upcoming movies, in short"). Alerts (push
+Release tracking shipped as dates you can see: the Watching screen
+has an "Upcoming movies" section under "Upcoming episodes", listing watchlist
+movies with the next cinema or digital release in your country (see AGENTS.md, "Upcoming movies, in short"). Alerts (push
 notifications) and a "now on your services" mark are not built; the Settings
 notification toggle still sends nothing.
 
