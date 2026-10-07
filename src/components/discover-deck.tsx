@@ -109,6 +109,7 @@ function filtersHref(filters: DeckFilters): string {
   if (filters.kind !== "any") params.set("kind", filters.kind);
   if (filters.short) params.set("short", "1");
   if (filters.listId) params.set("list", filters.listId);
+  if (filters.shuffle > 0) params.set("shuffle", String(filters.shuffle));
   const query = params.toString();
   return query ? `/discover?${query}` : "/discover";
 }
@@ -272,12 +273,20 @@ export function DiscoverDeck({
     setTonight(null);
   }
 
-  function refresh() {
-    // Starting over: skipped own cards come back. Added and dismissed ones
-    // don't, because the server no longer deals them.
+  /**
+   * A fresh pick of your own titles, starting the deck over: the number is part
+   * of the server's seed, so the next render deals a different set, and the
+   * cards passed over so far are forgotten. Recommendations are unaffected
+   * (added and dismissed ones are gone for good either way).
+   */
+  function reshuffle() {
     setError(null);
     setSeen([]);
-    router.refresh();
+    setChose(false);
+    setTonight(null);
+    router.replace(filtersHref({ ...filters, shuffle: filters.shuffle + 1 }), {
+      scroll: false,
+    });
   }
 
   return (
@@ -288,9 +297,22 @@ export function DiscoverDeck({
     // for that it falls back to scrolling the page, rather than squashing the
     // card. `overflow-x-clip` so a dragged card can't push the page sideways.
     <div className="mx-auto flex h-[calc(100dvh-6.75rem-env(safe-area-inset-bottom))] min-h-[28rem] max-w-md flex-col overflow-x-clip sm:h-[calc(100dvh-7.75rem-env(safe-area-inset-bottom))]">
-      <h1 className="shrink-0 text-[25px] font-semibold tracking-[-0.025em]">
-        Discover
-      </h1>
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
+          Discover
+        </h1>
+        <button
+          type="button"
+          onClick={reshuffle}
+          aria-label="Reshuffle"
+          title="Reshuffle"
+          className="-my-1.5 flex size-11 items-center justify-center text-muted hover:text-foreground"
+        >
+          <span className="flex size-9 items-center justify-center rounded-full border border-border">
+            <ShuffleIcon />
+          </span>
+        </button>
+      </div>
 
       <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-1.5">
         {KINDS.map(({ value, label }) => (
@@ -429,7 +451,7 @@ export function DiscoverDeck({
             <p className="font-semibold">{"You've seen them all"}</p>
             <button
               type="button"
-              onClick={refresh}
+              onClick={reshuffle}
               className="mt-4 min-h-[46px] rounded-full border border-border px-[22px] text-[15px] font-medium transition-colors hover:bg-surface"
             >
               Refresh
@@ -529,6 +551,23 @@ function CrossIcon() {
       className="size-6"
     >
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function ShuffleIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="size-[18px]"
+    >
+      <path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
     </svg>
   );
 }

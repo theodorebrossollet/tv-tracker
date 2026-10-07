@@ -37,7 +37,7 @@ import type { DeckCard, DeckFilters } from "@/lib/discover-types";
 
 const B = "user-b";
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ANY: DeckFilters = { kind: "any", short: false, listId: null };
+const ANY: DeckFilters = { kind: "any", short: false, listId: null, shuffle: 0 };
 const recMock = vi.mocked(getRecommendations);
 
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
@@ -756,6 +756,49 @@ describe("deck-load throttle", () => {
   });
 });
 
+describe("the shuffle param", () => {
+  it("reads a small whole number", () => {
+    expect(parseDeckFilters({ shuffle: "3" }).shuffle).toBe(3);
+    expect(parseDeckFilters({ shuffle: "0" }).shuffle).toBe(0);
+    expect(parseDeckFilters({ shuffle: ["x", "7"] }).shuffle).toBe(7);
+  });
+
+  it("is 0 for anything else", () => {
+    for (const junk of ["", "-1", "1.5", "abc", "10000", "1e3", " 2", "0x1", undefined]) {
+      expect(parseDeckFilters({ shuffle: junk }).shuffle).toBe(0);
+    }
+  });
+});
+
+describe("getDeck shuffle", () => {
+  async function watchlist(n: number) {
+    for (let i = 1; i <= n; i++) {
+      await trackMovie(String(900 + i), "watchlist", { addedAt: daysAgo(365 + i) });
+    }
+  }
+  const now = new Date("2026-10-07T13:00:00Z");
+
+  it("deals a different set for a different shuffle, the same for the same", async () => {
+    await watchlist(40);
+    const base = keys((await getDeck(A, ANY, { now })).cards);
+    const one = keys((await getDeck(A, { ...ANY, shuffle: 1 }, { now })).cards);
+    const oneAgain = keys((await getDeck(A, { ...ANY, shuffle: 1 }, { now })).cards);
+    const two = keys((await getDeck(A, { ...ANY, shuffle: 2 }, { now })).cards);
+
+    expect(oneAgain).toEqual(one);
+    expect(one).not.toEqual(base);
+    expect(two).not.toEqual(one);
+    expect(one).toHaveLength(10);
+  });
+
+  it("treats shuffle 0 as no shuffle", async () => {
+    await watchlist(40);
+    const plain = keys((await getDeck(A, ANY, { now })).cards);
+    const zero = keys((await getDeck(A, { ...ANY, shuffle: 0 }, { now })).cards);
+    expect(zero).toEqual(plain);
+  });
+});
+
 describe("parseDeckFilters", () => {
   it("defaults to everything", () => {
     expect(parseDeckFilters({})).toEqual(ANY);
@@ -766,6 +809,7 @@ describe("parseDeckFilters", () => {
       kind: "movie",
       short: true,
       listId: "clist123",
+      shuffle: 0,
     });
     expect(parseDeckFilters({ kind: "show" }).kind).toBe("show");
     // A repeated param counts by its last value, as elsewhere in the app.
