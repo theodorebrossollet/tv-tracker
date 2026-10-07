@@ -212,6 +212,12 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
 - Movie cards have a third button, "Already watched" (`setMovieStatus(id,
   "watched")`, which also works for an untracked movie); shows have none, since
   watched is per episode.
+- The deck is exactly one screen tall (`h-[calc(100dvh-6.75rem-...)]`, the
+  layout's top padding plus the tab bar's room): the card's poster is the one
+  flexible part and shrinks to fit, the ✕, eye and ✓ row is last in the column, and
+  opened details replace the poster and scroll inside the card. If the layout's
+  `main` padding or the tab bar's height changes, that calc has to change with
+  it (checked against a standalone mock in a real browser, not in jsdom).
 - Tapping a card's poster or title opens the title's page. A drag that began on
   it must not also count as that tap (`suppressClick` in `discover-card.tsx`).
   The cards already passed over are kept in `sessionStorage` (`discover:seen`,

@@ -501,13 +501,73 @@ describe("stale errors", () => {
 });
 
 describe("layout guards (classes only: jsdom does no layout)", () => {
-  it("keeps the buttons pinned above the tab bar and clips sideways drags", () => {
+  it("is exactly one screen tall, so nothing needs scrolling to reach the buttons", () => {
     const { container } = deck();
-    expect((container.firstChild as HTMLElement).className).toContain(
-      "overflow-x-clip",
-    );
+    const root = container.firstChild as HTMLElement;
+
+    // Viewport height minus the layout's top padding and the tab bar's room.
+    expect(root.className).toContain("h-[calc(100dvh-6.75rem-env(safe-area-inset-bottom))]");
+    expect(root.className).toContain("flex-col");
+    // Clip, not hidden: a dragged card must not push the page sideways.
+    expect(root.className).toContain("overflow-x-clip");
+  });
+
+  it("puts the buttons last in that column, not pinned, and keeps their size", () => {
+    const { container } = deck();
     const row = notThisOne().parentElement!;
-    expect(row.className).toContain("sticky");
+
+    expect(row.className).not.toContain("sticky");
+    expect(row.className).toContain("shrink-0");
+    expect(notThisOne().className).toContain("size-14");
+    // The last thing in the column the deck is sized to.
+    expect(row.parentElement!.lastElementChild).toBe(row);
+    expect(container.firstChild).toBeTruthy();
+  });
+
+  it("lets the card fill the height the deck gives it", () => {
+    deck();
+    expect(card().className).toContain("flex-1");
+    expect(card().className).toContain("min-h-0");
+  });
+});
+
+describe("opening details on a fixed-height card", () => {
+  const posterFrame = () => card().querySelector("div[class*='aspect-[2/3]']");
+
+  it("swaps the poster for a scrolling details area, and brings it back", async () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    expect(posterFrame()).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    const overview = await screen.findByText(
+      "Office workers have their memories split.",
+    );
+
+    // The poster makes room, and the details scroll inside the card.
+    expect(posterFrame()).toBeNull();
+    expect(overview.closest("div[class*='overflow-y-auto']")).not.toBeNull();
+    // (The trailer adds a heading of its own, so look the title up by name.)
+    expect(screen.getByRole("heading", { name: "Severance" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    expect(posterFrame()).not.toBeNull();
+    expect(screen.queryByText("Office workers have their memories split.")).toBeNull();
+  });
+
+  it("keeps the title link and the buttons while details are open", async () => {
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    await screen.findByText("Office workers have their memories split.");
+
+    expect(screen.getByRole("link", { name: "Open Severance" })).toBeTruthy();
+    expect(notThisOne()).toBeTruthy();
+    expect(addButton()).toBeTruthy();
+  });
+
+  it("a card with no poster still has a frame, so it doesn't jump", () => {
+    deck({ cards: [OWN_SHOW] });
+    expect(posterFrame()).not.toBeNull();
+    expect(screen.getByText("No poster")).toBeTruthy();
   });
 });
 
