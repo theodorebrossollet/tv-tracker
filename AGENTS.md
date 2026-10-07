@@ -202,6 +202,14 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
 - `DismissedSuggestion` (a swipe-away) is separate from the movie
   `not_interested` status; the two never read each other. The only way to undo
   dismissals is "Show them again" in Settings (`resetDismissedSuggestions`).
+- The own cards in a deck are a weighted random pick of at most `MAX_OWN_CARDS`
+  from the WHOLE pool (`pickOwnTitles` in `lib/discover.ts`), not the newest
+  few: weight is 1 for an old title up to 3 for one added just now, fading with
+  a 30-day half-life. The pick is seeded by account + the Eastern calendar day
+  and each title's key is independent of the others, so the deck is the same
+  all day (every add or dismiss rebuilds it, and it must not reshuffle under
+  you) and changes by at most one card when the watchlist changes. Anything
+  that reads the pool must go through it, not `.slice`.
 - "Pick for tonight" (✓ on one of your own cards) draws from your watchlist
   (watchlist movies and shows) unless a list is picked. With a list picked it
   draws from that list's unwatched titles, minus movies set to
