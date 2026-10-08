@@ -217,7 +217,7 @@ export async function getSeeds(userId: string): Promise<Seed[]> {
 
 /**
  * Reads the deck filters off the URL: `?kind=movie|show`, `?short=1`,
- * `?list=<id>`. Anything else, including a mangled value, is the default, so
+ * `?list=<id>`, `?shuffle=<n>`. Anything else, including a mangled value, is the default, so
  * a bad link lands on the full deck rather than an error.
  */
 export function parseDeckFilters(params: SearchParams): DeckFilters {
@@ -227,7 +227,13 @@ export function parseDeckFilters(params: SearchParams): DeckFilters {
     kind: kind === "movie" || kind === "show" ? kind : "any",
     short: oneParam(params, "short") === "1",
     listId: list && LIST_ID_PATTERN.test(list) ? list : null,
+    shuffle: parseShuffle(oneParam(params, "shuffle")),
   };
+}
+
+/** A small non-negative whole number; anything else (junk, huge, negative) is 0. */
+function parseShuffle(value: string | undefined): number {
+  return value && /^\d{1,4}$/.test(value) ? Number(value) : 0;
 }
 
 // In-process, so it bounds TMDB use per server instance only. That is enough
@@ -542,7 +548,10 @@ export async function getDeck(
             t.runtime !== null &&
             t.runtime < SHORT_RUNTIME_MINUTES)),
     ),
-    `${userId}:${easternDateKey(now)}`,
+    // Day and shuffle count: the same cards all day, until the visitor asks.
+    `${userId}:${easternDateKey(now)}${
+      filters.shuffle > 0 ? `:${filters.shuffle}` : ""
+    }`,
     now,
   ).map((t) => t.card);
 

@@ -80,7 +80,7 @@ const REC_MOVIE: DeckCard = {
   becauseRating: 9,
 };
 
-const ANY: DeckFilters = { kind: "any", short: false, listId: null };
+const ANY: DeckFilters = { kind: "any", short: false, listId: null, shuffle: 0 };
 const LISTS = [
   { id: "list-a", name: "Weekend" },
   { id: "list-b", name: "With Sam" },
@@ -177,7 +177,7 @@ afterEach(cleanup);
 
 describe("filters", () => {
   it("reflects the current filters", () => {
-    deck({ filters: { kind: "movie", short: true, listId: "list-b" } });
+    deck({ filters: { kind: "movie", short: true, listId: "list-b", shuffle: 0 } });
     expect(
       screen.getByRole("button", { name: "Movie" }).getAttribute("aria-pressed"),
     ).toBe("true");
@@ -196,7 +196,7 @@ describe("filters", () => {
   });
 
   it("chips replace the URL with kind, keeping the other params", () => {
-    deck({ filters: { kind: "any", short: true, listId: "list-a" } });
+    deck({ filters: { kind: "any", short: true, listId: "list-a", shuffle: 0 } });
     fireEvent.click(screen.getByRole("button", { name: "Show" }));
     expect(replace).toHaveBeenCalledWith(
       "/discover?kind=show&short=1&list=list-a",
@@ -205,7 +205,7 @@ describe("filters", () => {
   });
 
   it("omits defaults: Any drops kind", () => {
-    deck({ filters: { kind: "movie", short: false, listId: null } });
+    deck({ filters: { kind: "movie", short: false, listId: null, shuffle: 0 } });
     fireEvent.click(screen.getByRole("button", { name: "Any" }));
     expect(replace).toHaveBeenCalledWith("/discover", { scroll: false });
   });
@@ -219,7 +219,7 @@ describe("filters", () => {
   });
 
   it("the list select sets and clears list", () => {
-    deck({ filters: { kind: "show", short: false, listId: "list-a" } });
+    deck({ filters: { kind: "show", short: false, listId: "list-a", shuffle: 0 } });
     const select = screen.getByRole("combobox", { name: "List" });
     expect(
       Array.from((select as HTMLSelectElement).options).map((o) => o.text),
@@ -677,7 +677,8 @@ describe("notices and empty states", () => {
     expect(screen.queryByText("Nothing to pick from yet")).toBeNull();
     expect(document.body.textContent).not.toMatch(/NaN|undefined/);
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(refresh).toHaveBeenCalledTimes(1);
+    // A refresh is a reshuffle: a new pick of your own titles, not the same set.
+    expect(replace).toHaveBeenCalledWith("/discover?shuffle=1", { scroll: false });
   });
 });
 
@@ -890,5 +891,68 @@ describe("remembering the deck position", () => {
 
     deck({ cards: [OWN_MOVIE, OWN_SHOW] });
     expect(currentTitle()).toBe("Breaking Bad");
+  });
+});
+
+describe("Reshuffle", () => {
+  const reshuffle = () => screen.getByRole("button", { name: "Reshuffle" });
+
+  it("asks for the next shuffle, keeping the filters", () => {
+    deck();
+    fireEvent.click(reshuffle());
+    expect(replace).toHaveBeenLastCalledWith("/discover?shuffle=1", { scroll: false });
+    cleanup();
+
+    deck({ filters: { kind: "movie", short: true, listId: "list-b", shuffle: 2 } });
+    fireEvent.click(reshuffle());
+    expect(replace).toHaveBeenLastCalledWith(
+      "/discover?kind=movie&short=1&list=list-b&shuffle=3",
+      { scroll: false },
+    );
+  });
+
+  it("keeps the shuffle number when a filter changes", () => {
+    deck({ filters: { ...ANY, shuffle: 4 } });
+    fireEvent.click(screen.getByRole("button", { name: "Movie" }));
+    expect(replace).toHaveBeenLastCalledWith("/discover?kind=movie&shuffle=4", {
+      scroll: false,
+    });
+  });
+
+  it("starts the deck over: skipped own cards are forgotten, and so is a Tonight pick", async () => {
+    const first = deck({ cards: [OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(notThisOne());
+    await waitFor(() => expect(currentTitle()).toBe("Breaking Bad"));
+    expect(JSON.parse(window.sessionStorage.getItem("discover:seen")!).keys).toEqual([
+      "movie:603",
+    ]);
+
+    fireEvent.click(reshuffle());
+    await waitFor(() => expect(currentTitle()).toBe("The Matrix"));
+    expect(JSON.parse(window.sessionStorage.getItem("discover:seen")!).keys).toEqual([]);
+    first.unmount();
+    cleanup();
+
+    deck({ cards: [OWN_MOVIE, OWN_SHOW] });
+    fireEvent.click(pickButton());
+    expect(screen.getByText("Tonight: The Matrix")).toBeTruthy();
+    fireEvent.click(reshuffle());
+    expect(screen.queryByText("Tonight: The Matrix")).toBeNull();
+    expect(currentTitle()).toBe("The Matrix");
+  });
+
+  it("clears an old error", async () => {
+    addToWatchlist.mockResolvedValue({ ok: false, error: "Nope." });
+    deck({ cards: [REC_SHOW, OWN_MOVIE] });
+    fireEvent.click(addButton());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+
+    fireEvent.click(reshuffle());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("has a 44px hit area and a name", () => {
+    deck();
+    expect(reshuffle().className).toContain("size-11");
   });
 });

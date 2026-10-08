@@ -464,7 +464,7 @@ describe("discover reads never cross accounts", () => {
     await prisma.listItem.create({ data: { listId: theirs.id, movieId: "322" } });
 
     const { getDeck, getSeeds } = await import("@/lib/discover");
-    const any = { kind: "any", short: false, listId: null } as const;
+    const any = { kind: "any", short: false, listId: null, shuffle: 0 } as const;
 
     expect(await getSeeds(A)).toEqual([]);
     expect(await getDeck(A, any)).toEqual({

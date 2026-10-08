@@ -11,6 +11,12 @@ export interface DeckFilters {
   short: boolean;
   /** One of the caller's lists; null means the whole watchlist. */
   listId: string | null;
+  /**
+   * How many times the visitor has asked for a fresh pick of their own titles
+   * today; 0 until they do. It is part of the pick's seed, so a new number is a
+   * new set of cards.
+   */
+  shuffle: number;
 }
 
 export type DeckCard =

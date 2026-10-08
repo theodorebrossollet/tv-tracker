@@ -208,7 +208,9 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
   a 30-day half-life. The pick is seeded by account + the Eastern calendar day
   and each title's key is independent of the others, so the deck is the same
   all day (every add or dismiss rebuilds it, and it must not reshuffle under
-  you) and changes by at most one card when the watchlist changes. Anything
+  you) and changes by at most one card when the watchlist changes. The
+  Reshuffle button (and "Refresh" on a finished deck) bumps `?shuffle=<n>`, which
+  is appended to the seed for a new set and starts the deck over. Anything
   that reads the pool must go through it, not `.slice`.
 - "Pick for tonight" (✓ on one of your own cards) draws from your watchlist
   (watchlist movies and shows) unless a list is picked. With a list picked it
