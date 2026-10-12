@@ -7,9 +7,15 @@ import type { Deck, DeckCard, DeckFilters } from "@/lib/discover-types";
 import { easternDateKey } from "@/lib/format";
 import { describeError, logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
-import { getListDetail, loadShowRatings } from "@/lib/queries";
+import { loadShowRatings } from "@/lib/queries";
 import { oneParam, type SearchParams } from "@/lib/search-params";
-import { getRecommendations, type TmdbRecommendation } from "@/lib/tmdb";
+import {
+  getMovieReleaseDates,
+  getRecommendations,
+  type CountryReleases,
+  type TmdbRecommendation,
+} from "@/lib/tmdb";
+import { RECENT_RELEASE_DAYS } from "@/lib/upcoming-movies";
 
 export type {
   CardDetails,
@@ -127,7 +133,6 @@ export const SHORT_RUNTIME_MINUTES = 120;
 export const DECK_LOADS_PER_MINUTE = 30;
 
 const MINUTE_MS = 60_000;
-const LIST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * The caller's tracked titles rated at least `MIN_SEED_RATING`, most recently
@@ -217,16 +222,14 @@ export async function getSeeds(userId: string): Promise<Seed[]> {
 
 /**
  * Reads the deck filters off the URL: `?kind=movie|show`, `?short=1`,
- * `?list=<id>`, `?shuffle=<n>`. Anything else, including a mangled value, is the default, so
+ * `?shuffle=<n>`. Anything else, including a mangled value, is the default, so
  * a bad link lands on the full deck rather than an error.
  */
 export function parseDeckFilters(params: SearchParams): DeckFilters {
   const kind = oneParam(params, "kind");
-  const list = oneParam(params, "list");
   return {
     kind: kind === "movie" || kind === "show" ? kind : "any",
     short: oneParam(params, "short") === "1",
-    listId: list && LIST_ID_PATTERN.test(list) ? list : null,
     shuffle: parseShuffle(oneParam(params, "shuffle")),
   };
 }
@@ -267,6 +270,8 @@ function utcYear(date: Date | null): string | null {
 export interface OwnTitle {
   card: DeckCard & { source: "own" };
   runtime: number | null;
+  /** A movie's release date or a show's first air date, when known. */
+  releaseDate: Date | null;
   addedAt: number;
 }
 
@@ -310,6 +315,7 @@ async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
         year: utcYear(movie.releaseDate),
       },
       runtime: movie.runtime,
+      releaseDate: movie.releaseDate,
       addedAt: addedAt.getTime(),
     })),
     ...shows.map(({ addedAt, show }) => ({
@@ -322,6 +328,7 @@ async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
         year: utcYear(show.firstAirDate),
       },
       runtime: null,
+      releaseDate: show.firstAirDate,
       addedAt: addedAt.getTime(),
     })),
   ];
@@ -334,6 +341,86 @@ async function loadWatchlist(userId: string): Promise<OwnTitle[]> {
         `${b.card.kind}:${b.card.id}`,
       ),
   );
+}
+
+// ---- Availability -------------------------------------------------------
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Titles looked up per round; a deck stops after this many rounds. */
+const MAX_AVAILABILITY_ROUNDS = 3;
+
+/**
+ * Whether a movie can be watched at home yet. The viewer's country decides:
+ * its digital release date has to have passed. A movie with no digital date
+ * there (older films mostly) counts once its release is more than
+ * `RECENT_RELEASE_DAYS` back, the same window the dashboard uses for a movie
+ * that may still be heading to streaming. An unknown release date never counts.
+ */
+export function movieIsOut(
+  countries: CountryReleases[] | null,
+  home: string | null,
+  released: Date | null,
+  now: Date,
+): boolean {
+  const digital =
+    (home && countries?.find((entry) => entry.code === home)?.releases) || [];
+  const dates = digital
+    .filter((release) => release.kind === "digital")
+    .map((release) => release.date.getTime());
+
+  if (dates.length > 0) return Math.min(...dates) <= now.getTime();
+
+  return (
+    released !== null &&
+    released.getTime() <= now.getTime() - RECENT_RELEASE_DAYS * DAY_MS
+  );
+}
+
+/** Whether a show has started airing. An unknown first air date never counts. */
+export function showHasAired(firstAired: Date | null, now: Date): boolean {
+  return firstAired !== null && firstAired.getTime() <= now.getTime();
+}
+
+/**
+ * The first `limit` items, in order, that can be watched now. Movies cost a
+ * (cached) TMDB lookup each, so items are checked a round of `limit` at a time
+ * and only a few rounds are tried; a failed lookup falls back to the release
+ * date alone rather than hiding the item.
+ */
+async function keepAvailable<T>(
+  items: T[],
+  describe: (item: T) => { kind: SuggestionKind; id: string; released: Date | null },
+  home: string | null,
+  now: Date,
+  limit: number,
+): Promise<T[]> {
+  const kept: T[] = [];
+  const end = Math.min(items.length, limit * MAX_AVAILABILITY_ROUNDS);
+
+  for (let start = 0; start < end && kept.length < limit; start += limit) {
+    const round = items.slice(start, Math.min(start + limit, end));
+    const out = await Promise.all(
+      round.map(async (item) => {
+        const { kind, id, released } = describe(item);
+        if (kind === "show") return showHasAired(released, now);
+
+        let countries: CountryReleases[] | null = null;
+        if (home) {
+          try {
+            countries = await getMovieReleaseDates(id);
+          } catch (error) {
+            logger.warn("discover.release_dates_failed", describeError(error));
+          }
+        }
+        return movieIsOut(countries, home, released, now);
+      }),
+    );
+    round.forEach((item, i) => {
+      if (out[i] && kept.length < limit) kept.push(item);
+    });
+  }
+
+  return kept;
 }
 
 /** How quickly the head start of a recently added title fades, in days. */
@@ -385,57 +472,6 @@ export function pickOwnTitles(
     .sort((a, b) => b.key - a.key || compare(a.titleKey, b.titleKey))
     .slice(0, Math.max(0, max))
     .map(({ title }) => title);
-}
-
-/**
- * One of the caller's lists, unwatched items only, in the list's own order.
- * `getListDetail` decides "watched" (through `isListItemWatched`, honouring
- * the list's `trackSeparately` and the Library's "finished" rule), and returns
- * null for a list that is not the caller's, which leaves the pool empty.
- *
- * Library status otherwise doesn't matter (a family list holds titles nobody
- * put on a watchlist), except that a movie the caller marked not interested
- * or a show they stopped is never offered. `status` is the caller's own: the
- * list read joins tracking by `userId`.
- */
-async function loadListTitles(
-  userId: string,
-  listId: string,
-): Promise<OwnTitle[]> {
-  const detail = await getListDetail(userId, listId);
-  if (!detail) return [];
-
-  const unwatched = detail.items.filter(
-    (item) =>
-      !item.watched &&
-      item.status !== (item.kind === "movie" ? "not_interested" : "stopped"),
-  );
-  const movieIds = unwatched
-    .filter((item) => item.kind === "movie")
-    .map((item) => item.titleId);
-  const runtimes = new Map(
-    movieIds.length > 0
-      ? (
-          await prisma.movie.findMany({
-            where: { id: { in: movieIds } },
-            select: { id: true, runtime: true },
-          })
-        ).map((m) => [m.id, m.runtime])
-      : [],
-  );
-
-  return unwatched.map((item) => ({
-    card: {
-      source: "own",
-      kind: item.kind,
-      id: item.titleId,
-      title: item.title,
-      posterPath: item.posterPath,
-      year: item.year,
-    },
-    runtime: item.kind === "movie" ? (runtimes.get(item.titleId) ?? null) : null,
-    addedAt: item.addedAt.getTime(),
-  }));
 }
 
 /**
@@ -520,26 +556,26 @@ function interleave(recommended: DeckCard[], own: DeckCard[]): DeckCard[] {
  *
  * Never throws on a TMDB failure: the deck falls back to own titles and says
  * `recommendationsUnavailable`. Recommendations are not attempted at all with
- * fewer than `MIN_SEEDS` seeds, with "Under 2h" on (a candidate carries no
- * runtime to check), or with a list chosen (the pool is that list).
+ * fewer than `MIN_SEEDS` seeds, or with "Under 2h" on (a candidate carries no
+ * runtime to check). Only titles that can be watched now are dealt: shows that
+ * have aired, movies whose digital release has passed in `options.country`.
  */
 export async function getDeck(
   userId: string,
   filters: DeckFilters,
-  options: { now?: Date } = {},
+  options: { now?: Date; country?: string | null } = {},
 ): Promise<Deck> {
   const now = options.now ?? new Date();
+  const home = options.country ?? null;
   const [seeds, ownPool] = await Promise.all([
     getSeeds(userId),
-    filters.listId
-      ? loadListTitles(userId, filters.listId)
-      : loadWatchlist(userId),
+    loadWatchlist(userId),
   ]);
 
   const matchesKind = (kind: SuggestionKind) =>
     filters.kind === "any" || filters.kind === kind;
 
-  const own = pickOwnTitles(
+  const picked = pickOwnTitles(
     ownPool.filter(
       (t) =>
         matchesKind(t.card.kind) &&
@@ -553,10 +589,20 @@ export async function getDeck(
       filters.shuffle > 0 ? `:${filters.shuffle}` : ""
     }`,
     now,
+    // The whole pool in pick order: titles not out yet are skipped below.
+    Infinity,
+  );
+  const own = (
+    await keepAvailable(
+      picked,
+      (t) => ({ kind: t.card.kind, id: t.card.id, released: t.releaseDate }),
+      home,
+      now,
+      MAX_OWN_CARDS,
+    )
   ).map((t) => t.card);
 
-  const wantsRecommendations =
-    !filters.short && !filters.listId && seeds.length >= MIN_SEEDS;
+  const wantsRecommendations = !filters.short && seeds.length >= MIN_SEEDS;
 
   let recommended: DeckCard[] = [];
   let recommendationsUnavailable = false;
@@ -572,15 +618,26 @@ export async function getDeck(
       if (lists === null) {
         recommendationsUnavailable = true;
       } else {
-        recommended = rankCandidates(
+        const ranked = rankCandidates(
           lists,
           (c) =>
             !c.name.trim() ||
             !matchesKind(c.kind) ||
             excluded.has(`${c.kind}:${c.id}`),
-        )
-          .slice(0, MAX_RECOMMENDED_CARDS)
-          .map(({ candidate, becauseTitle, becauseRating }) => ({
+        );
+        recommended = (
+          await keepAvailable(
+            ranked,
+            ({ candidate }) => ({
+              kind: candidate.kind,
+              id: candidate.id,
+              released: candidate.releaseDate,
+            }),
+            home,
+            now,
+            MAX_RECOMMENDED_CARDS,
+          )
+        ).map(({ candidate, becauseTitle, becauseRating }) => ({
             source: "recommended",
             kind: candidate.kind,
             id: candidate.id,

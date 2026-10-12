@@ -20,6 +20,7 @@ function cand(
     posterPath: null,
     overview: null,
     year: null,
+    releaseDate: null,
     voteAverage: 7,
     voteCount: 1000,
     ...over,

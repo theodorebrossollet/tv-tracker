@@ -45,6 +45,7 @@ describe("getRecommendations", () => {
         posterPath: "/m.jpg",
         overview: "Neo.",
         year: "1999",
+        releaseDate: expect.any(Date),
         voteAverage: 8.2,
         voteCount: 25000,
       },
@@ -55,6 +56,7 @@ describe("getRecommendations", () => {
         posterPath: null,
         overview: null,
         year: null,
+        releaseDate: null,
         voteAverage: 5,
         voteCount: 3,
       },
@@ -89,6 +91,7 @@ describe("getRecommendations", () => {
       posterPath: "/b.jpg",
       overview: null,
       year: "2008",
+      releaseDate: expect.any(Date),
       voteAverage: 8.9,
       voteCount: 12000,
     });

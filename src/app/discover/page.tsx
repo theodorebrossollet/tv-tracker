@@ -1,8 +1,8 @@
 import { DiscoverDeck } from "@/components/discover-deck";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getDeck, parseDeckFilters } from "@/lib/discover";
-import { getLists } from "@/lib/queries";
 import type { SearchParams } from "@/lib/search-params";
+import { getSettings } from "@/lib/shows";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +20,8 @@ export default async function DiscoverPage({
   const { user } = await requireOnboardedSession();
   const filters = parseDeckFilters(await searchParams);
 
-  const [deck, lists] = await Promise.all([
-    getDeck(user.id, filters),
-    getLists(user.id),
-  ]);
+  const { country } = await getSettings(user.id);
+  const deck = await getDeck(user.id, filters, { country });
 
   return (
     <DiscoverDeck
@@ -31,7 +29,6 @@ export default async function DiscoverPage({
       seedCount={deck.seedCount}
       recommendationsUnavailable={deck.recommendationsUnavailable}
       filters={filters}
-      lists={lists.map(({ id, name }) => ({ id, name }))}
     />
   );
 }

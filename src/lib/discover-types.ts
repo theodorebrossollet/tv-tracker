@@ -9,8 +9,6 @@ export interface DeckFilters {
   kind: "any" | "movie" | "show";
   /** Movies under two hours only; shows are left out while it is on. */
   short: boolean;
-  /** One of the caller's lists; null means the whole watchlist. */
-  listId: string | null;
   /**
    * How many times the visitor has asked for a fresh pick of their own titles
    * today; 0 until they do. It is part of the pick's seed, so a new number is a

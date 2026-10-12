@@ -22,7 +22,6 @@ import {
   type SwipeDirection,
 } from "@/components/discover-card";
 import { Poster } from "@/components/poster";
-import { Select } from "@/components/select";
 import type { ActionResult } from "@/lib/action-result";
 import { MIN_SEEDS } from "@/lib/discover-limits";
 import type { DeckCard, DeckFilters } from "@/lib/discover-types";
@@ -33,7 +32,6 @@ export interface DiscoverDeckProps {
   seedCount: number;
   recommendationsUnavailable: boolean;
   filters: DeckFilters;
-  lists: Array<{ id: string; name: string }>;
 }
 
 const KINDS = [
@@ -92,9 +90,9 @@ const useRestoreEffect =
 /** TMDB movie and show ids overlap, so a card is only unique with its kind. */
 const keyOf = (card: DeckCard) => `${card.kind}:${card.id}`;
 
-function tagFor(card: DeckCard, filters: DeckFilters): string {
+function tagFor(card: DeckCard): string {
   if (card.source === "own") {
-    return filters.listId ? "On this list" : "On your watchlist";
+    return "On your watchlist";
   }
   // A show seed's rating is its average, so it may be fractional.
   const rating = Number.isInteger(card.becauseRating)
@@ -108,7 +106,6 @@ function filtersHref(filters: DeckFilters): string {
   const params = new URLSearchParams();
   if (filters.kind !== "any") params.set("kind", filters.kind);
   if (filters.short) params.set("short", "1");
-  if (filters.listId) params.set("list", filters.listId);
   if (filters.shuffle > 0) params.set("shuffle", String(filters.shuffle));
   const query = params.toString();
   return query ? `/discover?${query}` : "/discover";
@@ -132,7 +129,6 @@ export function DiscoverDeck({
   seedCount,
   recommendationsUnavailable,
   filters,
-  lists,
 }: DiscoverDeckProps) {
   const router = useRouter();
   const [seen, setSeen] = useState<string[]>([]);
@@ -330,23 +326,6 @@ export function DiscoverDeck({
         >
           Under 2h
         </Chip>
-        {lists.length > 0 ? (
-          <Select
-            aria-label="List"
-            value={filters.listId ?? ""}
-            onChange={(event) =>
-              setFilters({ listId: event.target.value || null })
-            }
-            className="min-h-11"
-          >
-            <option value="">All to-watch</option>
-            {lists.map((list) => (
-              <option key={list.id} value={list.id}>
-                {list.name}
-              </option>
-            ))}
-          </Select>
-        ) : null}
       </div>
 
       {seedCount < MIN_SEEDS ? (
@@ -381,7 +360,7 @@ export function DiscoverDeck({
               <DiscoverCard
                 key={keyOf(current)}
                 card={current}
-                tag={tagFor(current, filters)}
+                tag={tagFor(current)}
                 details={details[keyOf(current)]}
                 onOpenDetails={() => openDetails(current)}
                 onSwipe={choose}
