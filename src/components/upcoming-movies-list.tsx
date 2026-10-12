@@ -79,7 +79,6 @@ function MovieRow({ movie }: { movie: UpcomingMovie }) {
                   movie.later.date.toISOString(),
                 )}`
               : ""}
-            {movie.region ? ` · ${movie.region}` : ""}
           </span>
         </div>
 

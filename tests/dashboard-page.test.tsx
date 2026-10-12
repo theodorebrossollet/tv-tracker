@@ -50,7 +50,6 @@ const movie = (over: Partial<UpcomingMovie> = {}): UpcomingMovie => ({
   posterPath: null,
   next: { kind: "cinema", date: new Date(Date.now() + 10 * DAY_MS) },
   later: null,
-  region: null,
   ...over,
 });
 

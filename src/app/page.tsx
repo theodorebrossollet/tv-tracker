@@ -117,7 +117,7 @@ export default async function DashboardPage({
             </h2>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
               Movies on your watchlist heading to cinemas or streaming, with
-              the dates for your country where TMDB has them.
+              the dates for your country.
             </p>
 
             <UpcomingMoviesList

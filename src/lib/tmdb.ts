@@ -1111,6 +1111,8 @@ export interface TmdbRecommendation {
   posterPath: string | null;
   overview: string | null;
   year: string | null;
+  /** The movie's first release or the show's first air date, when TMDB has one. */
+  releaseDate: Date | null;
   voteAverage: number;
   voteCount: number;
 }
@@ -1157,6 +1159,7 @@ export async function getRecommendations(
       posterPath: item.poster_path || null,
       overview: item.overview || null,
       year: date ? date.slice(0, 4) : null,
+      releaseDate: parseAirDate(date),
       voteAverage: item.vote_average ?? 0,
       voteCount: item.vote_count ?? 0,
     };

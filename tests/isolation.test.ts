@@ -460,11 +460,9 @@ describe("discover reads never cross accounts", () => {
     await prisma.trackedMovie.create({
       data: { userId: B, movieId: "322", status: "watchlist" },
     });
-    const theirs = await prisma.list.create({ data: { userId: B, name: "T" } });
-    await prisma.listItem.create({ data: { listId: theirs.id, movieId: "322" } });
 
     const { getDeck, getSeeds } = await import("@/lib/discover");
-    const any = { kind: "any", short: false, listId: null, shuffle: 0 } as const;
+    const any = { kind: "any", short: false, shuffle: 0 } as const;
 
     expect(await getSeeds(A)).toEqual([]);
     expect(await getDeck(A, any)).toEqual({
@@ -472,7 +470,6 @@ describe("discover reads never cross accounts", () => {
       seedCount: 0,
       recommendationsUnavailable: false,
     });
-    expect((await getDeck(A, { ...any, listId: theirs.id })).cards).toEqual([]);
 
     expect((await getSeeds(B)).map((s) => s.id).sort()).toEqual(["320", "321"]);
   });

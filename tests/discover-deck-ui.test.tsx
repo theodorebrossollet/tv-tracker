@@ -80,19 +80,13 @@ const REC_MOVIE: DeckCard = {
   becauseRating: 9,
 };
 
-const ANY: DeckFilters = { kind: "any", short: false, listId: null, shuffle: 0 };
-const LISTS = [
-  { id: "list-a", name: "Weekend" },
-  { id: "list-b", name: "With Sam" },
-];
-
+const ANY: DeckFilters = { kind: "any", short: false, shuffle: 0 };
 function deck(
   props: Partial<{
     cards: DeckCard[];
     seedCount: number;
     recommendationsUnavailable: boolean;
     filters: DeckFilters;
-    lists: Array<{ id: string; name: string }>;
   }> = {},
 ) {
   return render(
@@ -101,7 +95,6 @@ function deck(
       seedCount={props.seedCount ?? 5}
       recommendationsUnavailable={props.recommendationsUnavailable ?? false}
       filters={props.filters ?? ANY}
-      lists={props.lists ?? LISTS}
     />,
   );
 }
@@ -177,7 +170,7 @@ afterEach(cleanup);
 
 describe("filters", () => {
   it("reflects the current filters", () => {
-    deck({ filters: { kind: "movie", short: true, listId: "list-b", shuffle: 0 } });
+    deck({ filters: { kind: "movie", short: true, shuffle: 0 } });
     expect(
       screen.getByRole("button", { name: "Movie" }).getAttribute("aria-pressed"),
     ).toBe("true");
@@ -189,23 +182,20 @@ describe("filters", () => {
         .getByRole("button", { name: "Under 2h" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(
-      (screen.getByRole("combobox", { name: "List" }) as HTMLSelectElement)
-        .value,
-    ).toBe("list-b");
+    expect(screen.queryByRole("combobox", { name: "List" })).toBeNull();
   });
 
   it("chips replace the URL with kind, keeping the other params", () => {
-    deck({ filters: { kind: "any", short: true, listId: "list-a", shuffle: 0 } });
+    deck({ filters: { kind: "any", short: true, shuffle: 0 } });
     fireEvent.click(screen.getByRole("button", { name: "Show" }));
     expect(replace).toHaveBeenCalledWith(
-      "/discover?kind=show&short=1&list=list-a",
+      "/discover?kind=show&short=1",
       { scroll: false },
     );
   });
 
   it("omits defaults: Any drops kind", () => {
-    deck({ filters: { kind: "movie", short: false, listId: null, shuffle: 0 } });
+    deck({ filters: { kind: "movie", short: false, shuffle: 0 } });
     fireEvent.click(screen.getByRole("button", { name: "Any" }));
     expect(replace).toHaveBeenCalledWith("/discover", { scroll: false });
   });
@@ -218,26 +208,6 @@ describe("filters", () => {
     });
   });
 
-  it("the list select sets and clears list", () => {
-    deck({ filters: { kind: "show", short: false, listId: "list-a", shuffle: 0 } });
-    const select = screen.getByRole("combobox", { name: "List" });
-    expect(
-      Array.from((select as HTMLSelectElement).options).map((o) => o.text),
-    ).toEqual(["All to-watch", "Weekend", "With Sam"]);
-
-    fireEvent.change(select, { target: { value: "list-b" } });
-    expect(replace).toHaveBeenLastCalledWith("/discover?kind=show&list=list-b", {
-      scroll: false,
-    });
-
-    fireEvent.change(select, { target: { value: "" } });
-    expect(replace).toHaveBeenLastCalledWith("/discover?kind=show", {
-      scroll: false,
-    });
-  });
-});
-
-describe("the current card", () => {
   it("shows a recommendation with its reason and a peeking next card", () => {
     deck();
     expect(currentTitle()).toBe("Severance");
@@ -264,10 +234,6 @@ describe("the current card", () => {
     expect(card().textContent).toContain("On your watchlist");
     expect(pickButton()).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add to watchlist" })).toBeNull();
-    cleanup();
-
-    deck({ cards: [OWN_MOVIE], filters: { ...ANY, listId: "list-a" } });
-    expect(card().textContent).toContain("On this list");
   });
 
   it("never prints NaN or undefined", () => {
@@ -903,10 +869,10 @@ describe("Reshuffle", () => {
     expect(replace).toHaveBeenLastCalledWith("/discover?shuffle=1", { scroll: false });
     cleanup();
 
-    deck({ filters: { kind: "movie", short: true, listId: "list-b", shuffle: 2 } });
+    deck({ filters: { kind: "movie", short: true, shuffle: 2 } });
     fireEvent.click(reshuffle());
     expect(replace).toHaveBeenLastCalledWith(
-      "/discover?kind=movie&short=1&list=list-b&shuffle=3",
+      "/discover?kind=movie&short=1&shuffle=3",
       { scroll: false },
     );
   });

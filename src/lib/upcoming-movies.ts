@@ -33,52 +33,29 @@ export interface UpcomingMovie {
   next: MovieRelease;
   /** The other kind of release, when it is also still ahead. */
   later: MovieRelease | null;
-  /**
-   * The country the dates are for when it is not the viewer's own (no entry
-   * for their country, or none chosen); null when they are theirs.
-   */
-  region: string | null;
 }
 
 /**
- * The upcoming dates of one movie, for the viewer's country.
+ * The upcoming dates of one movie, for the viewer's country only.
  *
- * The country's own entry wins whenever it has anything still ahead. Without
- * one, the earliest date of each kind anywhere is used and tagged with the
- * country it comes from, so "Digital 9 Jan · US" is never mistaken for a local
- * date. Per kind, only the earliest date ahead counts; at most two come back,
- * soonest first. Null when nothing is ahead.
+ * Another country's date says nothing about when the movie reaches the viewer,
+ * so a movie with nothing ahead in their country (or no country chosen) is
+ * left out. Per kind, only the earliest date ahead counts; at most two come
+ * back, soonest first. Null when nothing is ahead.
  */
 export function nextReleases(
   countries: CountryReleases[],
   home: string | null,
   now: Date,
-): { next: MovieRelease; later: MovieRelease | null; region: string | null } | null {
-  const ahead = (entry: CountryReleases) =>
-    entry.releases.filter((release) => release.date.getTime() > now.getTime());
-
+): { next: MovieRelease; later: MovieRelease | null } | null {
   const own = home ? countries.find((entry) => entry.code === home) : undefined;
-  const ownAhead = own ? ahead(own) : [];
+  if (!own) return null;
 
-  let pool: Array<MovieRelease & { code: string }>;
-  if (ownAhead.length > 0) {
-    pool = ownAhead.map((release) => ({ ...release, code: own!.code }));
-  } else {
-    pool = countries.flatMap((entry) =>
-      ahead(entry).map((release) => ({ ...release, code: entry.code })),
-    );
-  }
-  if (pool.length === 0) return null;
-
-  const earliest = new Map<ReleaseKind, MovieRelease & { code: string }>();
-  for (const release of pool) {
+  const earliest = new Map<ReleaseKind, MovieRelease>();
+  for (const release of own.releases) {
+    if (release.date.getTime() <= now.getTime()) continue;
     const seen = earliest.get(release.kind);
-    if (
-      !seen ||
-      release.date.getTime() < seen.date.getTime() ||
-      (release.date.getTime() === seen.date.getTime() &&
-        release.code < seen.code)
-    ) {
+    if (!seen || release.date.getTime() < seen.date.getTime()) {
       earliest.set(release.kind, release);
     }
   }
@@ -89,12 +66,11 @@ export function nextReleases(
       // Cinema before digital on the same day, so the order is stable.
       (a.kind === "cinema" ? -1 : 1) - (b.kind === "cinema" ? -1 : 1),
   );
+  if (!first) return null;
 
-  const region = first.code === home ? null : first.code;
   return {
     next: { kind: first.kind, date: first.date },
     later: second ? { kind: second.kind, date: second.date } : null,
-    region,
   };
 }
 

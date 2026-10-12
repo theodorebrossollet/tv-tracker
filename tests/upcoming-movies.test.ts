@@ -45,15 +45,14 @@ describe("nextReleases", () => {
 
     expect(found).toEqual({
       next: rel("cinema", 10),
-      later: rel("digital", 40),
-      region: null,
+      later: rel("digital", 40)
     });
   });
 
   it("leaves out dates that have passed, and a movie with none ahead", () => {
     expect(
       nextReleases([country("FR", rel("cinema", -5), rel("digital", 20))], "FR", NOW),
-    ).toEqual({ next: rel("digital", 20), later: null, region: null });
+    ).toEqual({ next: rel("digital", 20), later: null });
 
     expect(nextReleases([country("FR", rel("cinema", -5))], "FR", NOW)).toBeNull();
     expect(nextReleases([], "FR", NOW)).toBeNull();
@@ -64,29 +63,19 @@ describe("nextReleases", () => {
     expect(nextReleases([{ code: "FR", releases: [earlier] }], "FR", NOW)).toBeNull();
   });
 
-  it("falls back to the earliest of each kind anywhere, tagged with its country", () => {
-    const found = nextReleases(
-      [
-        country("US", rel("cinema", 12), rel("digital", 50)),
-        country("GB", rel("cinema", 8)),
-        country("FR", rel("cinema", -3)),
-      ],
-      "FR",
-      NOW,
-    );
+  it("ignores other countries: a date elsewhere is not the viewer's date", () => {
+    const abroad = [
+      country("US", rel("cinema", 12), rel("digital", 50)),
+      country("RS", rel("digital", 8)),
+      country("FR", rel("cinema", -3)),
+    ];
 
-    // FR has nothing ahead, so the pool is worldwide: GB's cinema date beats
-    // US's, and the digital date exists only in the US.
-    expect(found).toEqual({
-      next: rel("cinema", 8),
-      later: rel("digital", 50),
-      region: "GB",
-    });
-  });
-
-  it("falls back worldwide when no country is chosen, and tags the region", () => {
-    const found = nextReleases([country("US", rel("digital", 9))], null, NOW);
-    expect(found).toEqual({ next: rel("digital", 9), later: null, region: "US" });
+    // Already out in FR, so nothing is ahead for the viewer.
+    expect(nextReleases(abroad, "FR", NOW)).toBeNull();
+    // No entry for the viewer's country at all.
+    expect(nextReleases(abroad, "CA", NOW)).toBeNull();
+    // No country chosen.
+    expect(nextReleases(abroad, null, NOW)).toBeNull();
   });
 
   it("breaks a same-day tie by showing cinema first", () => {
@@ -105,7 +94,7 @@ describe("nextReleases", () => {
       "FR",
       NOW,
     );
-    expect(found).toEqual({ next: rel("cinema", 10), later: null, region: null });
+    expect(found).toEqual({ next: rel("cinema", 10), later: null });
   });
 });
 

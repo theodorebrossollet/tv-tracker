@@ -16,6 +16,7 @@ function title(id: number, ageDays: number, kind: "movie" | "show" = "movie"): O
       year: null,
     },
     runtime: null,
+    releaseDate: null,
     addedAt: NOW.getTime() - ageDays * DAY_MS,
   };
 }

@@ -172,7 +172,6 @@ describe("the upcoming movies list", () => {
     posterPath: null,
     next: { kind: "cinema", date: new Date(Date.now() + 10 * DAY_MS) },
     later: null,
-    region: null,
     ...over,
   });
 
@@ -191,17 +190,16 @@ describe("the upcoming movies list", () => {
     expect(screen.getByText("In cinemas")).toBeTruthy();
   });
 
-  it("names the later release when there is one, and a foreign region", () => {
+  it("names the later release when there is one", () => {
     renderList([
       movie({
         later: { kind: "digital", date: new Date(Date.now() + 40 * DAY_MS) },
-        region: "US",
       }),
     ]);
 
     const line = screen.getByText(/^In cinemas · Digital /);
     expect(line.textContent).toMatch(
-      /^In cinemas · Digital \d{1,2} \w{3} · US$/,
+      /^In cinemas · Digital \d{1,2} \w{3}$/,
     );
   });
 

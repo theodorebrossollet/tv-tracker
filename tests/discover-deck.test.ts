@@ -1,16 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TmdbRecommendation } from "@/lib/tmdb";
+import type { CountryReleases, TmdbRecommendation } from "@/lib/tmdb";
 
 // TMDB is stubbed per seed: `recs.byKey` maps `${kind}:${id}` of a seed to the
 // candidates its recommendations call returns, or an Error to reject with.
 const recs = vi.hoisted(() => ({
   byKey: new Map<string, TmdbRecommendation[] | Error>(),
+  // Per movie id: the TMDB release dates by country, or an Error to reject.
+  dates: new Map<string, CountryReleases[] | Error>(),
 }));
 
 vi.mock("@/lib/tmdb", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/tmdb")>()),
   getRecommendations: vi.fn(async (kind: string, id: string) => {
     const value = recs.byKey.get(`${kind}:${id}`);
+    if (value instanceof Error) throw value;
+    return value ?? [];
+  }),
+  getMovieReleaseDates: vi.fn(async (id: string) => {
+    const value = recs.dates.get(id);
     if (value instanceof Error) throw value;
     return value ?? [];
   }),
@@ -29,7 +36,7 @@ const {
   TEST_USER_ID: A,
   resetDatabase,
   seedSeasonedShow,
-  seedShow,
+  seedShow: seedShowBase,
   seedUser,
   watchEpisode,
 } = await import("./helpers");
@@ -37,13 +44,14 @@ import type { DeckCard, DeckFilters } from "@/lib/discover-types";
 
 const B = "user-b";
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ANY: DeckFilters = { kind: "any", short: false, listId: null, shuffle: 0 };
+const ANY: DeckFilters = { kind: "any", short: false, shuffle: 0 };
 const recMock = vi.mocked(getRecommendations);
 
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
 
 beforeEach(async () => {
   recs.byKey.clear();
+  recs.dates.clear();
   recMock.mockClear();
   resetDeckThrottleForTests();
   await resetDatabase();
@@ -58,9 +66,24 @@ afterEach(() => {
 
 // ---- fixtures ----------------------------------------------------------
 
+/** `seedShow`, with the show's first air date set to its earliest episode. */
+async function seedShow(options: Parameters<typeof seedShowBase>[0]) {
+  const result = await seedShowBase(options);
+  await prisma.show.update({
+    where: { id: result.showId },
+    data: {
+      firstAirDate: new Date(Date.now() + Math.min(...options.offsets) * DAY_MS),
+    },
+  });
+  return result;
+}
+
 async function movie(
   id: string,
-  { runtime = null as number | null, releaseDate = null as Date | null } = {},
+  {
+    runtime = null as number | null,
+    releaseDate = new Date("2020-01-01") as Date | null,
+  } = {},
 ) {
   await prisma.movie.upsert({
     where: { id },
@@ -78,7 +101,7 @@ async function trackMovie(
     watchedAt = null as Date | null,
     addedAt = undefined as Date | undefined,
     runtime = null as number | null,
-    releaseDate = null as Date | null,
+    releaseDate = new Date("2020-01-01") as Date | null,
   } = {},
 ) {
   await movie(id, { runtime, releaseDate });
@@ -129,6 +152,7 @@ function rec(
     posterPath: `/p${id}.jpg`,
     overview: null,
     year: "2020",
+    releaseDate: new Date("2020-01-01"),
     voteAverage: 7,
     voteCount: 1000,
     ...over,
@@ -265,7 +289,7 @@ describe("getDeck recommendations", () => {
           id: "50",
           title: "Movie 50",
           posterPath: null,
-          year: null,
+          year: "2020",
         },
       ],
       seedCount: 2,
@@ -598,107 +622,77 @@ describe("getDeck filters", () => {
     expect(recMock).not.toHaveBeenCalled();
     expect(deck.recommendationsUnavailable).toBe(false);
   });
+});
 
-  it("a list narrows own titles to its unwatched items and drops recommendations", async () => {
-    await threeSeeds();
-    // Personal list: Library status decides watched.
-    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
-    await trackMovie("51", "watchlist"); // on list, unwatched -> in
-    await trackMovie("52", "watched"); // on list, watched -> out
-    await movie("53"); // on list, untracked -> in
-    await trackMovie("54", "watchlist"); // not on list -> out
-    // A finished show (ended, everything watched) is watched -> out; a show
-    // with an unwatched episode is not -> in.
-    await seedShow({
-      showId: "61",
-      offsets: [-1],
-      status: "watching",
-      watched: [0],
-      showStatus: "Ended",
-    });
-    await seedShow({ showId: "62", offsets: [-2, -1], status: "watching", watched: [0] });
-    for (const data of [
-      { movieId: "51" }, { movieId: "52" }, { movieId: "53" },
-      { showId: "61" }, { showId: "62" },
-    ]) {
-      await prisma.listItem.create({ data: { listId: list.id, ...data } });
-    }
-    recs.byKey.set("movie:11", [rec("901")]);
-
-    const deck = await getDeck(A, { ...ANY, listId: list.id });
-
-    expect(keys(deck.cards).sort()).toEqual(["movie:51", "movie:53", "show:62"]);
-    expect(recMock).not.toHaveBeenCalled();
+describe("getDeck availability", () => {
+  const digital = (code: string, days: number) => ({
+    code,
+    releases: [{ kind: "digital" as const, date: new Date(Date.now() + days * DAY_MS) }],
   });
 
-  it("a list leaves out the caller's not-interested movies and stopped shows", async () => {
-    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
-    await movie("53"); // untracked -> in
-    await trackMovie("55", "not_interested"); // -> out
-    await seedShow({ showId: "62", offsets: [-1], status: "watching" }); // -> in
-    await seedShow({ showId: "63", offsets: [-1], status: "stopped" }); // -> out
-    // B gave up on 56 and 64; A never tracked them, so they stay in for A.
-    await trackMovie("56", "not_interested", { userId: B });
-    await seedShow({ showId: "64", offsets: [-1], status: "stopped", userId: B });
-    for (const data of [
-      { movieId: "53" }, { movieId: "55" }, { movieId: "56" },
-      { showId: "62" }, { showId: "63" }, { showId: "64" },
-    ]) {
-      await prisma.listItem.create({ data: { listId: list.id, ...data } });
-    }
-
-    const deck = await getDeck(A, { ...ANY, listId: list.id });
-
-    expect(keys(deck.cards).sort()).toEqual([
-      "movie:53",
-      "movie:56",
-      "show:62",
-      "show:64",
+  it("leaves out shows that have not aired, own and recommended", async () => {
+    await threeSeeds();
+    await seedShow({ showId: "61", offsets: [-5], status: "watchlist" });
+    await seedShow({ showId: "62", offsets: [20], status: "watchlist" });
+    recs.byKey.set("movie:11", [
+      rec("910", { kind: "show" }),
+      rec("911", { kind: "show", releaseDate: new Date(Date.now() + 30 * DAY_MS) }),
+      rec("912", { kind: "show", releaseDate: null }),
     ]);
+
+    const deck = await getDeck(A, ANY, { country: "CA" });
+
+    expect(recommended(deck.cards)).toEqual(["show:910"]);
+    expect(own(deck.cards)).toEqual(["show:61"]);
   });
 
-  it("a together list uses its own ticks, not Library status", async () => {
-    const list = await prisma.list.create({
-      data: { userId: A, name: "Us", trackSeparately: true },
-    });
-    await trackMovie("51", "watched"); // Library-watched, unticked -> in
-    await trackMovie("52", "watchlist"); // ticked -> out
-    await prisma.listItem.create({ data: { listId: list.id, movieId: "51" } });
-    await prisma.listItem.create({
-      data: { listId: list.id, movieId: "52", watchedAt: new Date() },
-    });
-
-    const deck = await getDeck(A, { ...ANY, listId: list.id });
-    expect(keys(deck.cards)).toEqual(["movie:51"]);
-  });
-
-  it("another account's list gives an empty deck, never its items", async () => {
+  it("needs a digital release in the viewer's country that has passed", async () => {
     await threeSeeds();
-    await trackMovie("51", "watchlist");
-    const theirs = await prisma.list.create({ data: { userId: B, name: "T" } });
-    await movie("70");
-    await prisma.listItem.create({ data: { listId: theirs.id, movieId: "70" } });
-    recs.byKey.set("movie:11", [rec("901")]);
+    // In cinemas recently: no digital date in CA yet.
+    const recent = new Date(Date.now() - 30 * DAY_MS);
+    await trackMovie("71", "watchlist", { releaseDate: recent });
+    recs.dates.set("71", [digital("US", -3)]); // out in the US only
+    await trackMovie("72", "watchlist", { releaseDate: recent });
+    recs.dates.set("72", [digital("CA", -3)]); // out in CA
+    await trackMovie("73", "watchlist", { releaseDate: recent });
+    recs.dates.set("73", [digital("CA", 10)]); // CA digital still ahead
+    recs.byKey.set("movie:11", [rec("920"), rec("921")]);
+    recs.dates.set("920", [digital("CA", -40)]);
+    recs.dates.set("921", [digital("CA", 15)]);
 
-    const deck = await getDeck(A, { ...ANY, listId: theirs.id });
+    const deck = await getDeck(A, ANY, { country: "CA" });
 
-    expect(deck.cards).toEqual([]);
-    expect(recMock).not.toHaveBeenCalled();
+    expect(own(deck.cards)).toEqual(["movie:72"]);
+    expect(recommended(deck.cards)).toEqual(["movie:920"]);
   });
 
-  it("a list combines with kind and short", async () => {
-    const list = await prisma.list.create({ data: { userId: A, name: "L" } });
-    await trackMovie("51", "watchlist", { runtime: 100 });
-    await trackMovie("52", "watchlist", { runtime: 150 });
-    await seedShow({ showId: "61", offsets: [-1], status: "watchlist" });
-    for (const data of [{ movieId: "51" }, { movieId: "52" }, { showId: "61" }]) {
-      await prisma.listItem.create({ data: { listId: list.id, ...data } });
-    }
+  it("counts an older movie with no digital date in the country, not a recent or undated one", async () => {
+    await trackMovie("81", "watchlist", { releaseDate: new Date("2015-05-01") });
+    await trackMovie("82", "watchlist", { releaseDate: new Date(Date.now() - 20 * DAY_MS) });
+    await trackMovie("83", "watchlist", { releaseDate: null });
 
-    const short = await getDeck(A, { ...ANY, listId: list.id, short: true });
-    expect(keys(short.cards)).toEqual(["movie:51"]);
-    const shows = await getDeck(A, { ...ANY, listId: list.id, kind: "show" });
-    expect(keys(shows.cards)).toEqual(["show:61"]);
+    const deck = await getDeck(A, ANY, { country: "CA" });
+
+    expect(own(deck.cards)).toEqual(["movie:81"]);
+  });
+
+  it("falls back to the release date when TMDB fails or no country is set", async () => {
+    await trackMovie("84", "watchlist", { releaseDate: new Date("2015-05-01") });
+    recs.dates.set("84", new Error("tmdb down"));
+
+    expect(own((await getDeck(A, ANY, { country: "CA" })).cards)).toEqual(["movie:84"]);
+    expect(own((await getDeck(A, ANY)).cards)).toEqual(["movie:84"]);
+  });
+
+  it("skips past unreleased titles to fill the deck", async () => {
+    for (let i = 0; i < 12; i++) {
+      await seedShow({ showId: `9${i}0`, offsets: [30 + i], status: "watchlist" });
+    }
+    await seedShow({ showId: "999", offsets: [-1], status: "watchlist" });
+
+    const deck = await getDeck(A, ANY, { country: "CA" });
+
+    expect(own(deck.cards)).toEqual(["show:999"]);
   });
 });
 
@@ -804,11 +798,10 @@ describe("parseDeckFilters", () => {
     expect(parseDeckFilters({})).toEqual(ANY);
   });
 
-  it("reads kind, short and list", () => {
-    expect(parseDeckFilters({ kind: "movie", short: "1", list: "clist123" })).toEqual({
+  it("reads kind and short", () => {
+    expect(parseDeckFilters({ kind: "movie", short: "1" })).toEqual({
       kind: "movie",
       short: true,
-      listId: "clist123",
       shuffle: 0,
     });
     expect(parseDeckFilters({ kind: "show" }).kind).toBe("show");
@@ -821,10 +814,8 @@ describe("parseDeckFilters", () => {
       parseDeckFilters({
         kind: "tv",
         short: "yes",
-        list: "../../etc",
       }),
     ).toEqual(ANY);
-    expect(parseDeckFilters({ kind: "MOVIE", short: "0", list: "" })).toEqual(ANY);
-    expect(parseDeckFilters({ list: "x".repeat(200) }).listId).toBeNull();
+    expect(parseDeckFilters({ kind: "MOVIE", short: "0" })).toEqual(ANY);
   });
 });
