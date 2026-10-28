@@ -34,6 +34,8 @@ export interface TrackedShowSummary {
   showId: string;
   name: string;
   posterPath: string | null;
+  /** 16:9 artwork for the Watching hero; null until the show is re-synced. */
+  backdropPath: string | null;
   status: TrackStatus;
   /** Episodes that have already aired — the denominator for progress. */
   airedCount: number;
@@ -62,6 +64,10 @@ export interface TrackedShowSummary {
     seasonNumber: number;
     episodeNumber: number;
     name: string | null;
+    /** Minutes, when TMDB knows it. */
+    runtime: number | null;
+    /** A frame from the episode, for the Continue watching thumbnail. */
+    stillPath: string | null;
   } | null;
 }
 
@@ -87,7 +93,9 @@ export async function getTrackedShows(
       showId: true,
       status: true,
       addedAt: true,
-      show: { select: { name: true, posterPath: true, status: true } },
+      show: {
+        select: { name: true, posterPath: true, backdropPath: true, status: true },
+      },
     },
   });
 
@@ -114,6 +122,7 @@ export async function getTrackedShows(
       showId: entry.showId,
       name: entry.show.name,
       posterPath: entry.show.posterPath,
+      backdropPath: entry.show.backdropPath,
       status: entry.status as TrackStatus,
       airedCount,
       watchedCount,
@@ -284,9 +293,11 @@ async function loadNextUnwatched(
       seasonNumber: number;
       episodeNumber: number;
       name: string | null;
+      runtime: number | bigint | null;
+      stillPath: string | null;
     }>
   >`
-    SELECT "showId", "id", "seasonNumber", "episodeNumber", "name"
+    SELECT "showId", "id", "seasonNumber", "episodeNumber", "name", "runtime", "stillPath"
     FROM (
       SELECT
         e."showId" AS "showId",
@@ -294,6 +305,8 @@ async function loadNextUnwatched(
         e."seasonNumber" AS "seasonNumber",
         e."episodeNumber" AS "episodeNumber",
         e."name" AS "name",
+        e."runtime" AS "runtime",
+        e."stillPath" AS "stillPath",
         ROW_NUMBER() OVER (
           PARTITION BY e."showId"
           ORDER BY e."seasonNumber" ASC, e."episodeNumber" ASC
@@ -318,6 +331,8 @@ async function loadNextUnwatched(
         seasonNumber: Number(row.seasonNumber),
         episodeNumber: Number(row.episodeNumber),
         name: row.name,
+        runtime: row.runtime === null ? null : Number(row.runtime),
+        stillPath: row.stillPath,
       },
     ]),
   );

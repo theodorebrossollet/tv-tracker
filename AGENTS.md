@@ -589,6 +589,14 @@ white, with `on-accent` near-black; `highlight` (amber) is the one warm note,
 for "up next" and "airing soon". Type is Inter Tight (`--font-sans`).
 `themeColor` and the manifest's colours equal `--background`.
 
+The Watching screen opens on `WatchingHero`: the first show with an episode
+ready (`splitHero` in `lib/watching.ts`, over `getShowBuckets`' order), its
+backdrop full-bleed (poster when it has none yet), the screen's header drawn
+over it, and a wide "Mark watched". Everything else in progress is "Continue
+watching" (`ShowGrid`): a vertical list on purpose, since a sideways carousel
+can't share rows with swipe-to-mark. Thumbnails prefer the next episode's
+still, then the backdrop, then the poster (`backdropUrl` in `lib/images.ts`).
+
 Watching cards also mark their next episode watched on a swipe right
 (`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared
 with Discover's `lockAxis`). It is a shortcut beside the ✓ button, which stays

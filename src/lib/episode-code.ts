@@ -13,3 +13,16 @@ export function episodeCode(
     episodeNumber,
   ).padStart(2, "0")}`;
 }
+
+/**
+ * "S2 · E7" — the unpadded form the Marquee screens show beside artwork, where
+ * the padded code reads as an identifier rather than a place in a show.
+ * Accessible names keep `episodeCode`, which is what tests and screen readers
+ * already know.
+ */
+export function shortEpisodeCode(
+  seasonNumber: number,
+  episodeNumber: number,
+): string {
+  return `S${seasonNumber} · E${episodeNumber}`;
+}

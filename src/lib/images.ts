@@ -14,6 +14,20 @@ export function posterUrl(
   return path ? `${IMAGE_BASE}/${size}${path}` : null;
 }
 
+export type BackdropSize = "w300" | "w780" | "w1280";
+
+/**
+ * A 16:9 image URL — a show's backdrop or an episode's still — or null when
+ * TMDB has none. Same host and path shape as posters, so `next.config.ts`'s
+ * `remotePatterns` already admits it.
+ */
+export function backdropUrl(
+  path: string | null | undefined,
+  size: BackdropSize = "w780",
+): string | null {
+  return path ? `${IMAGE_BASE}/${size}${path}` : null;
+}
+
 /** A cast member's photo, or null when TMDB has none. */
 export function profileUrl(path: string | null | undefined): string | null {
   return path ? `${IMAGE_BASE}/w185${path}` : null;

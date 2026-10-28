@@ -9,6 +9,11 @@ interface MarkWatchedButtonProps {
   /** For the label — "Mark S02E07 watched" is ambiguous in a list of ten. */
   showName: string;
   code: string;
+  /**
+   * `icon`, the round ✓ on a list row; `wide`, the labelled full-width button
+   * under the Watching hero.
+   */
+  variant?: "icon" | "wide";
 }
 
 /**
@@ -29,6 +34,7 @@ export function MarkWatchedButton({
   episodeId,
   showName,
   code,
+  variant = "icon",
 }: MarkWatchedButtonProps) {
   // Derived from the transition, not copied into `useState`. The row is
   // re-rendered by the server the moment the action lands, and a state copy
@@ -36,19 +42,53 @@ export function MarkWatchedButton({
   const [marked, setMarked] = useOptimistic(false);
   const [pending, startTransition] = useTransition();
 
+  function mark(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    startTransition(async () => {
+      setMarked(true);
+      await markEpisodeWatched(episodeId);
+    });
+  }
+
+  const tick = (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={variant === "wide" ? "size-[18px]" : "size-3.5"}
+      aria-hidden="true"
+    >
+      <path d="m5 13 4 4L19 7" />
+    </svg>
+  );
+
+  if (variant === "wide") {
+    return (
+      <button
+        type="button"
+        onClick={mark}
+        disabled={pending}
+        aria-label={`Mark ${showName} ${code} watched`}
+        className={`flex h-[50px] flex-1 items-center justify-center gap-2 rounded-full bg-accent text-[16px] font-bold text-on-accent transition-opacity ${
+          marked ? "opacity-60" : ""
+        }`}
+      >
+        {tick}
+        Mark watched
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"
       // Sits inside a card whose link is stretched across it.
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        startTransition(async () => {
-          setMarked(true);
-          await markEpisodeWatched(episodeId);
-        });
-      }}
+      onClick={mark}
       disabled={pending}
       aria-label={`Mark ${showName} ${code} watched`}
       title="Mark watched"
@@ -61,18 +101,7 @@ export function MarkWatchedButton({
           marked ? "opacity-60" : ""
         }`}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-3.5"
-          aria-hidden="true"
-        >
-          <path d="m5 13 4 4L19 7" />
-        </svg>
+        {tick}
       </span>
     </button>
   );

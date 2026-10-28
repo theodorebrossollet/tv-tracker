@@ -25,6 +25,7 @@ function show(id: string, status: TrackStatus = "watching"): TrackedShowSummary 
     showId: id,
     name: `Show ${id}`,
     posterPath: null,
+    backdropPath: null,
     status,
     airedCount: 10,
     watchedCount: 10,
