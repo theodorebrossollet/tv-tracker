@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { MarkWatchedButton } from "@/components/mark-watched-button";
 import { Poster } from "@/components/poster";
+import { SwipeToMark } from "@/components/swipe-to-mark";
 import { episodeCode } from "@/lib/episode-code";
 import { caughtUpLabel, progressPercent } from "@/lib/format";
 import type { TrackedShowSummary } from "@/lib/queries";
@@ -14,7 +15,8 @@ import type { TrackedShowSummary } from "@/lib/queries";
  * client state and localStorage behind it — existed purely because finished
  * shows had nowhere else to go.
  *
- * A server component. `MarkWatchedButton` is the one client island per row.
+ * A server component. Each row is a `SwipeToMark` (swipe right to mark the
+ * next episode) holding server-rendered content, plus `MarkWatchedButton`.
  *
  * The count is derived from the rows actually rendered rather than tracked
  * optimistically. Marking the last aired episode of a show moves it out of this
@@ -35,9 +37,10 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
           const percent = progressPercent(show.watchedCount, show.airedCount);
 
           return (
-            <li
+            <SwipeToMark
               key={show.showId}
-              className="relative flex gap-3 rounded-[15px] border border-border bg-surface p-[11px]"
+              episodeId={show.nextUnwatched?.id ?? null}
+              className="flex gap-3 rounded-[15px] border border-border bg-surface p-[11px]"
             >
               <Poster path={show.posterPath} name={show.name} width={52} />
 
@@ -117,7 +120,7 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
                   </div>
                 )}
               </div>
-            </li>
+            </SwipeToMark>
           );
         })}
       </ul>

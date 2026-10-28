@@ -574,6 +574,12 @@ then the settings groups. The capsule's geometry is two variables in
 deck are sized against the second. `themeColor` follows the colour scheme and
 must match `--background` in each.
 
+Watching cards also mark their next episode watched on a swipe right
+(`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared
+with Discover's `lockAxis`). It is a shortcut beside the ✓ button, which stays
+the accessible path. Like Discover's, the touch half has no automated coverage:
+changes there need a device.
+
 ## Rows or posters, in short
 
 Every list of titles (a list's page, the Library's Shows and Movies sections)
