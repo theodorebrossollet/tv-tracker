@@ -21,7 +21,7 @@ export default async function PasswordLoginPage() {
 
       <Link
         href="/login/code"
-        className="mt-6 block text-center text-xs text-neutral-500 underline"
+        className="mt-6 block text-center text-xs text-muted underline"
       >
         Forgotten your password? Use your code
       </Link>

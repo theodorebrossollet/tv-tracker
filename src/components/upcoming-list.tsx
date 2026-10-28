@@ -53,7 +53,7 @@ export function UpcomingList({
         <div key={group} className="mt-4 first:mt-3">
           <h3
             className={`text-[12px] font-semibold uppercase tracking-[0.06em] ${
-              group !== LATER && isSoon(group) ? "text-accent-deep" : "text-faint"
+              group !== LATER && isSoon(group) ? "text-highlight" : "text-faint"
             }`}
           >
             {groupLabel(group)}

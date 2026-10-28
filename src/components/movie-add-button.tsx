@@ -109,7 +109,7 @@ export function MovieAddButton({
         {tracked ? LABELS[current] : "Add to watchlist"}
       </button>
 
-      {error ? <p className="text-xs text-red-500">{error}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

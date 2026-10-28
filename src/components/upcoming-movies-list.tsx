@@ -84,7 +84,7 @@ function MovieRow({ movie }: { movie: UpcomingMovie }) {
         </div>
 
         <span
-          className={`shrink-0 text-xs ${soon ? "text-accent-deep" : "text-faint"}`}
+          className={`shrink-0 text-xs ${soon ? "text-highlight" : "text-faint"}`}
         >
           {relativeAirDate(iso)}
         </span>

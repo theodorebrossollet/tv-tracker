@@ -113,7 +113,7 @@ export function TabBar() {
         // `viewportFit: "cover"` in the viewport export is still load-bearing:
         // without it iOS reports the inset as 0, and the capsule sits on the
         // home indicator.
-        className="pointer-events-auto mx-auto grid max-w-md grid-cols-5 rounded-[28px] border border-border bg-background/85 p-1 shadow-[0_10px_30px_-10px_rgba(0,0,0,.35)] backdrop-blur-xl backdrop-saturate-150"
+        className="pointer-events-auto mx-auto grid max-w-md grid-cols-5 rounded-[28px] border border-border bg-surface/75 p-1 shadow-[0_12px_30px_rgba(0,0,0,.45)] backdrop-blur-xl backdrop-saturate-150"
       >
         {TABS.map((tab) => {
           const active = isActive(tab);

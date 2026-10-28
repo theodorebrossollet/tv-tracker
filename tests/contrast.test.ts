@@ -48,68 +48,58 @@ function contrast(a: string, b: string): number {
 
 /**
  * Reads the tokens straight out of the stylesheet, so the test measures what
- * ships rather than a copy that can drift away from it.
+ * ships rather than a copy that can drift away from it. The app is dark only,
+ * so there is one palette, declared once.
  */
-async function readScheme(scheme: "light" | "dark") {
+async function readTokens() {
   const css = await readFile(CSS, "utf8");
-  const darkAt = css.indexOf("prefers-color-scheme: dark");
-  const block = scheme === "dark" ? css.slice(darkAt) : css.slice(0, darkAt);
 
   const tokens: Record<string, string> = {};
-  for (const [, name, value] of block.matchAll(
+  for (const [, name, value] of css.matchAll(
     /--([a-z-]+):\s*(#[0-9a-f]{3,8});/gi,
   )) {
-    // First win per scheme: the light block is read from the top of the file.
     tokens[name] ??= value;
   }
 
   return tokens;
 }
 
-const SCHEMES = ["light", "dark"] as const;
-
 /** Backgrounds that body text is actually drawn on. */
 const TEXT_SURFACES = ["background", "surface", "surface-raised"];
 
-describe.each(SCHEMES)("%s scheme", (scheme) => {
+describe("the palette", () => {
   it("defines every token the app uses", async () => {
     // Guards the parse itself: a regex that silently matched nothing would make
     // every assertion below vacuously true.
-    const tokens = await readScheme(scheme);
+    const tokens = await readTokens();
 
-    for (const name of [...TEXT_SURFACES, "foreground", "muted", "faint"]) {
-      expect(tokens[name], `${name} missing from ${scheme}`).toBeDefined();
+    for (const name of [...TEXT_SURFACES, "foreground", "muted", "faint", "highlight"]) {
+      expect(tokens[name], `${name} missing`).toBeDefined();
     }
   });
 
   it("keeps every text colour readable on every surface", async () => {
-    const tokens = await readScheme(scheme);
+    const tokens = await readTokens();
 
-    for (const text of ["foreground", "muted", "faint"]) {
+    for (const text of ["foreground", "muted", "faint", "highlight"]) {
       for (const surface of TEXT_SURFACES) {
         const ratio = contrast(tokens[text], tokens[surface]);
 
         expect(
           Number(ratio.toFixed(2)),
-          `${text} on ${surface} in ${scheme}`,
+          `${text} on ${surface}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
 
   it("keeps the elevation levels far enough apart to see", async () => {
-    // Not a WCAG rule — a lesson, and the thresholds differ by scheme for a
-    // reason worth knowing: near-blacks are perceptually compressed on an
-    // emissive screen, so the same numeric ratio that reads as a clear step on
-    // white is invisible on black. The dark palette that came back as "can't
-    // see much" measured 1.099 and 1.146 here; light has always been 1.080 and
-    // nobody has ever complained about it.
-    //
-    // So the dark bar is set above what was reported broken, and the light bar
-    // below what has always been fine. Raising light to match dark would fail
-    // a palette with nothing wrong with it.
-    const floor = scheme === "dark" ? 1.15 : 1.05;
-    const tokens = await readScheme(scheme);
+    // Not a WCAG rule — a lesson. Near-blacks are perceptually compressed on
+    // an emissive screen, so steps that read clearly on white vanish on black:
+    // the dark palette that came back as "can't see much" measured 1.099 and
+    // 1.146 here. The floor sits above that.
+    const floor = 1.15;
+    const tokens = await readTokens();
 
     for (const [under, over] of [
       ["background", "surface"],
@@ -119,17 +109,17 @@ describe.each(SCHEMES)("%s scheme", (scheme) => {
 
       expect(
         Number(ratio.toFixed(3)),
-        `${under} vs ${over} in ${scheme}`,
+        `${under} vs ${over}`,
       ).toBeGreaterThan(floor);
     }
   });
 
   it("keeps borders visible against what they enclose", async () => {
-    const tokens = await readScheme(scheme);
+    const tokens = await readTokens();
 
     expect(
       Number(contrast(tokens.border, tokens.surface).toFixed(3)),
-      `border on surface in ${scheme}`,
+      `border on surface`,
     ).toBeGreaterThan(1.1);
   });
 });

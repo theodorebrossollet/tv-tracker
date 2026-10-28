@@ -1,13 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Inter_Tight } from "next/font/google";
 
 import { SearchProvider } from "@/components/search-provider";
 import { ServiceWorker } from "@/components/service-worker";
 import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Inter Tight: Inter's spacing tightened for display sizes, which is where the
+// Marquee look lives (big titles over artwork). Geist Mono stays for codes.
+const interTight = Inter_Tight({
+  variable: "--font-inter-tight",
   subsets: ["latin"],
 });
 
@@ -34,7 +36,7 @@ export const metadata: Metadata = {
     // Safari's pinned-tab mask. It wants a solid black shape on transparency
     // and applies `color` itself — a white one, which is how the artwork
     // arrived, is invisible against the tab bar.
-    other: [{ rel: "mask-icon", url: "/icon-mono.svg", color: "#4f46e5" }],
+    other: [{ rel: "mask-icon", url: "/icon-mono.svg", color: "#09090b" }],
   },
   appleWebApp: {
     capable: true,
@@ -47,15 +49,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // The page's own background in each scheme, not the accent. Whatever the
-  // browser paints from this (Safari's toolbar tint, the installed app's
-  // chrome) should continue the page rather than draw an indigo band above a
-  // near-black one, which is what a single accent value did in dark mode.
-  // Keep these in step with `--background` in globals.css.
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0b0d" },
-  ],
+  // The page's own background, not an accent: whatever the browser paints
+  // from this (Safari's toolbar tint, the installed app's chrome) continues
+  // the page. One value, because the app is dark only; keep it in step with
+  // `--background` in globals.css and the manifest's colours.
+  themeColor: "#09090b",
   // Load-bearing for the tab bar: without it iOS reports every
   // `env(safe-area-inset-*)` as 0, and the bar renders under the home
   // indicator. The cost is that content now runs edge to edge, so anything
@@ -71,7 +69,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${interTight.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {/* Next emits the standardised `mobile-web-app-capable`. Older iOS
