@@ -49,7 +49,7 @@ export function CodeForm() {
       />
 
       {error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -57,7 +57,7 @@ export function CodeForm() {
       <button
         type="submit"
         disabled={pending || !code.trim()}
-        className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+        className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
       >
         {pending ? "Signing in…" : "Continue"}
       </button>

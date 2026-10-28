@@ -36,10 +36,10 @@ describe("system colours", () => {
   it("declares a colour scheme, so the UA's own colours follow ours", () => {
     const css = readFileSync(CSS, "utf8");
 
-    // `light dark`, not bare `dark`: the palette still switches on
-    // `prefers-color-scheme`, and pinning the scheme would leave a reader in
-    // light mode with dark form controls.
-    expect(css).toMatch(/color-scheme:\s*light dark;/);
+    // `dark`: the app has one, dark palette, so the UA's own colours (dialog
+    // text, form controls, scrollbars) must resolve dark too. `light dark`
+    // would hand a phone in light mode black text on the dark panels.
+    expect(css).toMatch(/color-scheme:\s*dark;/);
   });
 
   it("names a text colour on every dialog", () => {

@@ -34,7 +34,7 @@ export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-[15px]">
       <div className="flex items-baseline gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-accent-deep">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-highlight">
           Next up
         </span>
         <span className="text-[12px] tabular-nums text-faint">{code}</span>

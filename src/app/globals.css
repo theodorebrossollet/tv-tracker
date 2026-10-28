@@ -1,79 +1,63 @@
 @import "tailwindcss";
 
-/* Design tokens for the phone-first redesign.
+/* Design tokens: "Marquee", the dark, artwork-first look.
  *
- * Every colour the UI uses is named here and nowhere else. The redesign's
- * handoff specifies most screens as inline hex, which is how forty components
- * end up each holding their own copy of #17171a — so a component that reaches
- * for a literal colour is a component that missed a token.
+ * Dark only. The app is used in the evening, on a phone, and the screens are
+ * built around poster and still artwork, which reads best on near-black; a
+ * light version would be a second design to keep right for no one who asked
+ * for it. So there is one palette, `color-scheme` is `dark`, and nothing here
+ * switches on `prefers-color-scheme`.
  *
- * None of the greys match the handoff's table any more, and `tests/contrast.ts`
- * is why: it reads this file and measures every text token against every
- * surface it is drawn on. Three separate rounds of "can't see much" came back
- * from a phone before that existed, and each time the values had looked
- * perfectly reasonable here — because a hex code tells you nothing about the
- * *distance* between two colours, which is the thing that was actually wrong.
+ * The accent is white. Colour comes from the artwork, so the interface itself
+ * stays monochrome: primary actions are white with near-black text, progress
+ * is white on a dim track. `highlight` is the one warm note, kept for the few
+ * labels that say "this one, now" (up next, airing soon).
  *
- * Two rules the numbers encode, so nobody has to rediscover them:
- *
- *   - Text is measured against `surface`, not `background`. Almost all of it
- *     sits on a card, and a value tuned to the page is a value that fails on
- *     everything drawn on top of it. That is exactly how `faint` shipped at
- *     4.47:1 in light mode.
- *   - The elevation steps have to be a step. Levels four units apart per
- *     channel are the same colour on a dimmed phone screen, however carefully
- *     each one was chosen.
+ * Every colour the UI uses is named here and nowhere else — a component that
+ * reaches for a literal colour is a component that missed a token.
+ * `tests/contrast.test.ts` reads this file and measures every text token
+ * against every surface it is drawn on, and the elevation steps against each
+ * other, because three rounds of "can't see much" came back from a phone
+ * before that existed: a hex code says nothing about the *distance* between
+ * two colours, which is what was wrong each time.
  */
 :root {
   /* Load-bearing, not a nicety. The UA stylesheet paints `<dialog>` with
-     `color: CanvasText`, and a *system* colour resolves against the element's
-     used colour scheme — not against `prefers-color-scheme`, which is why the
-     dark block below does nothing for it. Undeclared, that scheme is light, so
-     every string inside a sheet came out pure black on the dark panel while any
-     child that named a token (the row hints, `text-muted`) stayed correct. A
-     heading dimmer than its own subtitle is what it looked like from outside.
+     `color: CanvasText`, a system colour resolved against the element's used
+     colour scheme. Undeclared, that scheme is light, and every string in a
+     sheet came out black on the dark panel. Declaring `dark` also gives form
+     controls and scrollbars their dark appearance. */
+  color-scheme: dark;
 
-     `light dark`, not `dark`: the palette still switches on the media query,
-     and pinning the scheme would hand a reader in light mode dark UA chrome.
-     Note this is not about form controls — Tailwind's preflight already gives
-     those `color: inherit`, and they measured correct before this line. */
-  color-scheme: light dark;
-
-  --background: #ffffff;
-  /* Settings only: grouped rows read as cards against a tinted page. */
-  --background-grouped: #f4f4f5;
-  --foreground: #171717;
-  /* Both were picked against white and then used on cards, where they landed
-     at 4.48 and 4.47 — under the line, in the scheme nobody had looked at yet.
-     The contrast test found them.
-     `faint` is the binding constraint, being the lighter of the two: it sits
-     just clear of 4.5 on `surface`, and `muted` is pushed down from there to
-     keep a visible step between them rather than two tokens that read the
-     same. */
-  --muted: #575e6b;
-  --faint: #6d6d76;
-  --surface: #f6f6f7;
-  --surface-sunken: #fafafa;
+  --background: #09090b;
+  /* Settings' grouped rows sit on the page itself in this palette. */
+  --background-grouped: #09090b;
+  --foreground: #fafafa;
+  --muted: #a1a1aa;
+  /* The binding constraint: the lightest text token has to clear 4.5:1 on
+     `surface-raised`, the lightest surface. */
+  --faint: #94949f;
+  --surface: #1c1c20;
+  --surface-sunken: #111114;
   /* The raised element on a sunken track — a selected segment. */
-  --surface-raised: #ffffff;
-  --border: #e4e4e7;
-  --border-faint: #f0f0f2;
-  /* Decorative strokes: empty-state glyphs, the sheet's grab handle. Stronger
-     than `border`, which disappears against a sunken panel, but well below
-     `faint` — these carry no information and must not read as text. */
-  --icon-faint: #c4c4cc;
-  --accent: #4f46e5;
-  /* Accent text on an accent tint, where the accent itself is too light. */
-  --accent-deep: #4338ca;
-  --accent-tint: rgba(79, 70, 229, 0.08);
-  --accent-border: rgba(79, 70, 229, 0.3);
-  /* Text and icons ON an accent fill. Not always white — see the dark block. */
-  --on-accent: #ffffff;
-  --danger: #dc2626;
-  /* Behind a modal. Was `bg-neutral-900/40` inline, which is Tailwind's palette
-     rather than ours — the one colour in the sheet that this file did not
-     name. These are the values that shipped, measured off a rendered page. */
-  --scrim: rgba(22, 22, 22, 0.4);
+  --surface-raised: #2b2b31;
+  /* Hairlines, not outlines: just enough to find a control's edge. */
+  --border: #2e2e35;
+  --border-faint: #1d1d22;
+  /* Decorative strokes: empty-state glyphs, the sheet's grab handle. */
+  --icon-faint: #52525e;
+  --accent: #fafafa;
+  /* Emphasised text on an accent tint. */
+  --accent-deep: #ffffff;
+  --accent-tint: rgba(255, 255, 255, 0.1);
+  --accent-border: rgba(255, 255, 255, 0.22);
+  /* Text and icons ON an accent fill: the accent is white, so this is dark. */
+  --on-accent: #09090b;
+  /* The one warm note: "up next", "airing soon". */
+  --highlight: #f5b971;
+  --danger: #f87171;
+  /* Behind a modal. Heavy, because the panel is only a step above the page. */
+  --scrim: rgba(0, 0, 0, 0.6);
 }
 
 @theme inline {
@@ -93,46 +77,11 @@
   --color-accent-tint: var(--accent-tint);
   --color-accent-border: var(--accent-border);
   --color-on-accent: var(--on-accent);
+  --color-highlight: var(--highlight);
   --color-danger: var(--danger);
   --color-scrim: var(--scrim);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter-tight);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0b0b0d;
-    /* No separate grouped background in dark — the surfaces carry it. */
-    --background-grouped: #0b0b0d;
-    --foreground: #ededed;
-    --muted: #9ca3af;
-    --faint: #94949f;
-    /* The elevation steps used to sit 4-12 units apart per channel, which is
-       arithmetic rather than design: on a phone at anything below full
-       brightness, a card and the page behind it were the same black, and the
-       sheet's icon tiles were invisible. Reported twice as "can't see much".
-       Each level is now a step you can actually see, and every text token still
-       clears 4.5:1 on the lightest of them — `faint` was lifted to keep up. */
-    --surface: #1e1e24;
-    --surface-sunken: #131317;
-    --surface-raised: #2b2b34;
-    --border: #383842;
-    --border-faint: #26262d;
-    --icon-faint: #52525e;
-    --accent: #818cf8;
-    /* The dark accent is already light enough to read on its own tint. */
-    --accent-deep: #818cf8;
-    --accent-tint: rgba(129, 140, 248, 0.12);
-    --accent-border: rgba(129, 140, 248, 0.4);
-    /* White on #818cf8 is 3:1 — under AA. The accent is light in this scheme,
-       so what goes on top of it has to be dark. */
-    --on-accent: #0b0b0d;
-    /* #dc2626 on near-black is 4.1:1; this is 7.1:1. */
-    --danger: #f87171;
-    /* Heavier than in light: the panel is only a step above the page behind
-       it, so a 40% scrim left too little separating them. */
-    --scrim: rgba(0, 0, 0, 0.6);
-  }
 }
 
 /* The floating tab bar's geometry, in one place because three things depend on
@@ -153,7 +102,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-inter-tight), system-ui, sans-serif;
   /* Suppresses the browser's own pull-to-refresh, which would otherwise fire
      alongside the app's — Chrome on Android reloads the page, and iOS does the
      same in an installed PWA. Two refreshes from one gesture, one of them
