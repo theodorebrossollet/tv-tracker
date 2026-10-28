@@ -102,7 +102,7 @@ export function ChangePasswordForm() {
       />
 
       {error && (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -111,7 +111,7 @@ export function ChangePasswordForm() {
         <button
           type="submit"
           disabled={pending || !code.trim() || !password || !confirm}
-          className="rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+          className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-on-accent transition-opacity disabled:opacity-50"
         >
           {pending ? "Saving…" : "Save new password"}
         </button>

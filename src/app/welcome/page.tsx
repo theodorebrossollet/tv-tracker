@@ -21,7 +21,7 @@ export default async function WelcomePage() {
       <h1 className="text-xl font-semibold tracking-tight">
         Set up your account
       </h1>
-      <p className="mt-2 text-sm text-neutral-500">
+      <p className="mt-2 text-sm text-muted">
         {session.user.nickname
           ? "Choose a password. You'll sign in with these from now on."
           : "Choose a nickname and password. You'll sign in with these from now on."}

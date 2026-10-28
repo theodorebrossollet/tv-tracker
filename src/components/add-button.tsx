@@ -116,7 +116,7 @@ export function AddButton({
       {pending && !tracked ? (
         <p className="text-xs text-muted">Fetching episodes from TMDB…</p>
       ) : null}
-      {error ? <p className="text-xs text-red-500">{error}</p> : null}
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );
 }

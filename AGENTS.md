@@ -416,10 +416,10 @@ which reads as a grading mistake rather than a missing declaration.
 `SearchOverlay` set `text-foreground` on its dialog from the start and looked
 right throughout, which is what kept it from being one bug in one place.
 
-`color-scheme: light dark` on `:root` is the fix — that declaration, not the
-`@media (prefers-color-scheme: dark)` block, is what a system colour resolves
-against. The sheet also names `text-foreground` itself, so it no longer depends
-on a system colour at all. Form controls were never part of this: Tailwind's
+`color-scheme: dark` on `:root` is the fix — that declaration is what a system
+colour resolves against (the app is dark only since the Marquee redesign, so
+it is `dark` rather than `light dark`). The sheet also names `text-foreground`
+itself, so it no longer depends on a system colour at all. Form controls were never part of this: Tailwind's
 preflight already gives them `color: inherit`, and they measured correct both
 before and after.
 
@@ -580,8 +580,14 @@ nickname, "Since …", four stats from `getProfileStats` (`lib/queries.ts`;
 current runs only, read softly so a failure drops the numbers, never the page),
 then the settings groups. The capsule's geometry is two variables in
 `globals.css`, `--tab-bar-gap` and `--tab-bar-room`; `main` and the Discover
-deck are sized against the second. `themeColor` follows the colour scheme and
-must match `--background` in each.
+deck are sized against the second.
+
+The look is "Marquee": dark only, one palette in `globals.css` (no
+`prefers-color-scheme` block, and no Tailwind `dark:` variants — they switch on
+the phone's setting, which no longer changes anything here). The accent is
+white, with `on-accent` near-black; `highlight` (amber) is the one warm note,
+for "up next" and "airing soon". Type is Inter Tight (`--font-sans`).
+`themeColor` and the manifest's colours equal `--background`.
 
 Watching cards also mark their next episode watched on a swipe right
 (`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared

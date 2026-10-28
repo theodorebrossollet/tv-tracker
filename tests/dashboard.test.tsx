@@ -143,9 +143,9 @@ describe("how soon an upcoming episode airs", () => {
     const soon = screen.getByRole("heading", { name: "Friday" });
     const later = screen.getByRole("heading", { name: "Later" });
 
-    expect(soon.className).toContain("text-accent-deep");
+    expect(soon.className).toContain("text-highlight");
     expect(later.className).toContain("text-faint");
-    expect(later.className).not.toContain("text-accent");
+    expect(later.className).not.toContain("text-highlight");
     // Under Later the row carries its own date.
     expect(later.nextElementSibling!.textContent).toContain("28 Aug");
   });

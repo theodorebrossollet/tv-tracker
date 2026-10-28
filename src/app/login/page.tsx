@@ -17,27 +17,27 @@ export default async function LoginPage() {
   return (
     <div className="mx-auto max-w-sm py-10">
       <h1 className="text-xl font-semibold tracking-tight">Welcome</h1>
-      <p className="mt-2 text-sm text-neutral-500">
+      <p className="mt-2 text-sm text-muted">
         How would you like to sign in?
       </p>
 
       <div className="mt-6 space-y-3">
         <Link
           href="/login/password"
-          className="block rounded-md bg-neutral-900 px-3 py-2 text-center text-sm font-medium text-white dark:bg-white dark:text-neutral-900"
+          className="block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-on-accent"
         >
           I have an account
         </Link>
 
         <Link
           href="/login/code"
-          className="block rounded-md border border-neutral-300 px-3 py-2 text-center text-sm font-medium dark:border-neutral-700"
+          className="block rounded-md border border-border px-3 py-2 text-center text-sm font-medium"
         >
           First time — I have a code
         </Link>
       </div>
 
-      <p className="mt-6 text-xs text-neutral-500">
+      <p className="mt-6 text-xs text-muted">
         Accounts are created by invitation. Your code sets one up the first time
         you use it, and is also the way back in if you forget your password.
       </p>

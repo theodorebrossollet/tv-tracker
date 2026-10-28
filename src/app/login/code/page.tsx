@@ -16,7 +16,7 @@ export default async function CodeLoginPage() {
   return (
     <div className="mx-auto max-w-sm py-10">
       <h1 className="text-xl font-semibold tracking-tight">Enter your code</h1>
-      <p className="mt-2 text-sm text-neutral-500">
+      <p className="mt-2 text-sm text-muted">
         The code you were given. Use this the first time, or if you&rsquo;ve
         forgotten your password.
       </p>
@@ -25,7 +25,7 @@ export default async function CodeLoginPage() {
 
       <Link
         href="/login"
-        className="mt-6 block text-center text-xs text-neutral-500 underline"
+        className="mt-6 block text-center text-xs text-muted underline"
       >
         Back
       </Link>
