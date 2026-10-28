@@ -7,9 +7,11 @@ import { SignOutButton } from "@/components/sign-out-button";
 import {
   DisclosureRow,
   Group,
-  InfoRow,
 } from "@/components/settings-rows";
 import { requireOnboardedSession } from "@/lib/auth";
+import { formatWatchTime } from "@/lib/format";
+import { initials } from "@/lib/initials";
+import { getProfileStats, type ProfileStats } from "@/lib/queries";
 import { prisma } from "@/lib/prisma";
 import { parseProviderIds } from "@/lib/alternate-countries";
 import { limitFrom } from "@/components/show-more-link";
@@ -18,7 +20,7 @@ import { getWatchProviderList, getWatchRegions, TmdbError } from "@/lib/tmdb";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Settings · TV Tracker" };
+export const metadata = { title: "Profile · TV Tracker" };
 
 /** Search param the service catalogue reveals itself with. */
 const PROVIDER_PARAM = "providers";
@@ -92,6 +94,15 @@ export default async function SettingsPage({
       .sort(byName);
   }
 
+  // Soft, like the hidden-suggestions count below: the numbers are a nicety,
+  // and this page is also where you sign out, so it must render without them.
+  let stats: ProfileStats | null = null;
+  try {
+    stats = await getProfileStats(user.id);
+  } catch (error) {
+    logger.warn("profile.stats_unavailable", describeError(error));
+  }
+
   // Null when the table is missing (migration not applied yet): Settings
   // must still render, with the row reading "Unavailable".
   let hiddenCount: number | null = null;
@@ -105,7 +116,11 @@ export default async function SettingsPage({
 
   return (
     <div>
-      <h1 className="text-[25px] font-semibold tracking-[-0.025em]">Settings</h1>
+      <ProfileHeader nickname={user.nickname} stats={stats} />
+
+      <h2 className="mt-9 text-lg font-semibold tracking-[-0.015em]">
+        Settings
+      </h2>
 
       <SettingsClient
         notifyEnabled={settings.notifyEnabled}
@@ -123,11 +138,8 @@ export default async function SettingsPage({
         }}
       />
 
-      <Group
-        label="Account"
-        footnote="Signing out ends this session only — other devices stay signed in. Sign out everywhere ends all of them, including this one, for when you've left yourself signed in somewhere you'd rather not have."
-      >
-        <InfoRow label="Signed in as" value={user.nickname} />
+      {/* No "Signed in as" row: the header above says who. */}
+      <Group label="Account">
 
         <DisclosureRow label="Change password">
           <p className="text-[12.5px] leading-relaxed text-muted">
@@ -201,14 +213,74 @@ export default async function SettingsPage({
         <SignOutButton />
       </Group>
 
-      <Group
-        label="Discover"
-        description="Suggestions you swiped away stay hidden until you show them again."
-      >
+      <Group label="Discover">
         <HiddenSuggestions count={hiddenCount} />
       </Group>
 
       <DangerZone />
+    </div>
+  );
+}
+
+const MEMBER_SINCE = new Intl.DateTimeFormat("en-GB", {
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/**
+ * The top of the page the avatar opens: who you are and what you've watched,
+ * above the settings that used to be this whole screen.
+ */
+function ProfileHeader({
+  nickname,
+  stats,
+}: {
+  nickname: string | null;
+  stats: ProfileStats | null;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-4">
+        <span
+          aria-hidden="true"
+          className="flex size-16 shrink-0 items-center justify-center rounded-full border border-accent-border bg-accent-tint text-[24px] font-semibold tracking-[-0.02em] text-accent-deep"
+        >
+          {initials(nickname)}
+        </span>
+        <div className="min-w-0">
+          <h1 className="truncate text-[25px] font-semibold tracking-[-0.025em]">
+            {nickname ?? "Profile"}
+          </h1>
+          {stats ? (
+            <p className="mt-0.5 text-[13px] text-muted">
+              Since {MEMBER_SINCE.format(stats.memberSince)}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {stats ? (
+        <dl className="mt-5 grid grid-cols-2 gap-2">
+          <Stat label="Time watched" value={formatWatchTime(stats.minutesWatched)} />
+          <Stat label="Episodes" value={stats.episodesWatched.toLocaleString("en-GB")} />
+          <Stat label="Movies" value={stats.moviesWatched.toLocaleString("en-GB")} />
+          <Stat label="Shows finished" value={stats.showsFinished.toLocaleString("en-GB")} />
+        </dl>
+      ) : null}
+    </>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    // Value first in the markup's reading order would be wrong for a `dl`;
+    // `flex-col-reverse` draws the number on top while the term stays first.
+    <div className="flex flex-col-reverse rounded-[14px] border border-border bg-surface px-3.5 py-3">
+      <dt className="mt-0.5 text-[12.5px] text-muted">{label}</dt>
+      <dd className="text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
+        {value}
+      </dd>
     </div>
   );
 }

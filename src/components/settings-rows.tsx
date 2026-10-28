@@ -27,7 +27,7 @@ export function Group({
 }) {
   return (
     <section className="mt-[22px] first:mt-5">
-      <h2 className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
         {label}
       </h2>
 
@@ -52,22 +52,6 @@ export function Group({
 
 /** Shared geometry for every row, interactive or not. */
 const ROW = "flex w-full items-center gap-3 px-3.5 min-h-[52px] text-[15px]";
-
-/** A row that only states something, e.g. "Signed in as". */
-export function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className={`${ROW} justify-between`}>
-      {label}
-      <span className="text-muted">{value}</span>
-    </div>
-  );
-}
 
 /** A row that navigates. */
 export function LinkRow({

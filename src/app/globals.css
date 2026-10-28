@@ -135,6 +135,21 @@
   }
 }
 
+/* The floating tab bar's geometry, in one place because three things depend on
+ * it: the bar itself, `main`'s bottom padding (so the last row scrolls clear of
+ * it), and Discover's deck, which is sized to the pixel to end above it.
+ *
+ * The bar floats `--tab-bar-gap` above the bottom edge: on a phone with a home
+ * indicator that is the inset less 0.75rem, so it sits where iOS 26 puts its own
+ * tab bars, just above the indicator; with no inset it keeps 0.75rem off the
+ * edge. The bar is 4.125rem tall (3.5rem tabs, 0.25rem padding each side, the
+ * border), so `--tab-bar-room` is the gap plus the bar plus a little air, which
+ * comes out as the inset plus 4.25rem on a phone and 5.5rem anywhere else. */
+:root {
+  --tab-bar-gap: max(0.75rem, calc(env(safe-area-inset-bottom) - 0.75rem));
+  --tab-bar-room: max(5.5rem, calc(env(safe-area-inset-bottom) + 4.25rem));
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

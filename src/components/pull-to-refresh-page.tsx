@@ -55,7 +55,7 @@ export function PullToRefreshPage() {
       //
       // The bottom padding is only there while active: with border-box sizing
       // it would otherwise hold the box 10px open at a height of zero.
-      className={`-mt-6 mb-6 flex items-end justify-center gap-2 overflow-hidden font-mono text-[10px] uppercase tracking-[0.07em] sm:-mt-10 sm:mb-10 ${
+      className={`-mt-6 mb-6 flex items-end justify-center gap-2 overflow-hidden text-[11px] font-medium uppercase tracking-[0.06em] sm:-mt-10 sm:mb-10 ${
         willRefresh || pending ? "text-accent-deep" : "text-faint"
       } ${active ? "pb-2.5" : ""} ${pull > 0 ? "" : "transition-[height]"}`}
     >

@@ -117,13 +117,9 @@ export function SettingsClient({
       <Group
         label="Your services"
         description={
-          <>
-            Used to tell you where a show is streaming — and where it
-            isn&rsquo;t.{" "}
-            {selectedProviders.length === 0
-              ? "None selected."
-              : `${selectedProviders.length} selected.`}
-          </>
+          selectedProviders.length === 0
+            ? "None selected."
+            : `${selectedProviders.length} selected.`
         }
       >
         {providerOptions.length === 0 && !browsingProviders ? null : (

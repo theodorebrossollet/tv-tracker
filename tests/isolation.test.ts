@@ -50,7 +50,7 @@ const {
   setSeasonWatched,
   unmarkEpisodeWatched,
 } = await import("@/app/actions");
-const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getMovieDetail, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
+const { getListDetail, getLists, getListsForTitle, getMovieBuckets, getMovieDetail, getProfileStats, getShowBuckets, getShowDetail, getTrackedShows, getUpcomingEpisodes } =
   await import("@/lib/queries");
 const { prisma } = await import("@/lib/prisma");
 const { resetDatabase, seedSeasonedShow, seedShow, seedUser, statusOf, watchEpisode } =
@@ -183,6 +183,35 @@ describe("movie reads never cross accounts", () => {
     expect(forB.watchlist).toEqual([]);
     expect(forB.watched.map((m) => m.movieId)).toEqual(["10"]);
     expect(forB.notInterested.map((m) => m.movieId)).toEqual(["20"]);
+  });
+});
+
+describe("profile stats never cross accounts", () => {
+  it("counts the caller's own episodes, movies and time, not the household's", async () => {
+    // One shared show and one shared movie: B has watched both, A neither.
+    // Dropping the `userId` condition from either sum hands A B's totals.
+    await seedShow({ showId: "500", offsets: [-2, -1], status: "watching", userId: A });
+    await seedShow({
+      showId: "500",
+      offsets: [-2, -1],
+      status: "watching",
+      watched: [0, 1],
+      userId: B,
+    });
+    await prisma.episode.updateMany({ where: { showId: "500" }, data: { runtime: 50 } });
+    await prisma.movie.create({ data: { id: "10", title: "Shared", runtime: 120 } });
+    await prisma.trackedMovie.createMany({
+      data: [
+        { movieId: "10", userId: A, status: "watchlist" },
+        { movieId: "10", userId: B, status: "watched", watchedAt: new Date() },
+      ],
+    });
+
+    const forA = await getProfileStats(A);
+    const forB = await getProfileStats(B);
+
+    expect(forA).toMatchObject({ episodesWatched: 0, moviesWatched: 0, minutesWatched: 0 });
+    expect(forB).toMatchObject({ episodesWatched: 2, moviesWatched: 1, minutesWatched: 220 });
   });
 });
 

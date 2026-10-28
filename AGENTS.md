@@ -122,8 +122,8 @@ Components: `list-form-sheet` (create/edit), `new-list-button`,
 `list-item-row`, `list-menu`, `add-titles-button` (opens the search overlay in
 "adding to a list" mode via `useSearch().openForList`), `list-add-button` (the
 overlay's per-result control), `add-to-list-button` (on movie and show pages).
-`searchSuggestions(query, listId?)` marks results `onList`. The fifth "Lists"
-tab stays active for `/lists/...`. Rules:
+`searchSuggestions(query, listId?)` marks results `onList`. The "Lists" tab
+stays active for `/lists/...`. Rules:
 
 - Writes live in `src/app/list-actions.ts`; its rules are the ones in
   `actions.ts`'s header (gate above each `try`, every call scoped by user,
@@ -192,7 +192,7 @@ and `show-header`'s `runNumber`/`startOver` props. Rules:
   (`archivedWatches: { none: {} }` beside `watched`), so deleting a dropped
   episode never cascades past-run history away.
 
-Discover, in short: `/discover` (the sparkle icon in the dashboard header) is a
+Discover, in short: `/discover` (the sparkle tab in the tab bar) is a
 swipe deck of suggestions seeded from what you've watched and rated. Code:
 `lib/discover.ts` (deck building), `lib/discover-types.ts`, `lib/swipe.ts`,
 `components/discover-*.tsx`, writes in `src/app/discover-actions.ts`. Rules:
@@ -222,12 +222,14 @@ swipe deck of suggestions seeded from what you've watched and rated. Code:
 - Movie cards have a third button, "Already watched" (`setMovieStatus(id,
   "watched")`, which also works for an untracked movie); shows have none, since
   watched is per episode.
-- The deck is exactly one screen tall (`h-[calc(100dvh-6.75rem-...)]`, the
-  layout's top padding plus the tab bar's room): the card's poster is the one
+- The deck is exactly one screen tall (`h-[calc(100dvh-1.5rem-var(--tab-bar-room))]`,
+  the layout's top padding plus the tab bar's room): the card's poster is the one
   flexible part and shrinks to fit, the ✕, eye and ✓ row is last in the column, and
-  opened details replace the poster and scroll inside the card. If the layout's
-  `main` padding or the tab bar's height changes, that calc has to change with
-  it (checked against a standalone mock in a real browser, not in jsdom).
+  opened details replace the poster and scroll inside the card. The bar's room is
+  `--tab-bar-room` in `globals.css`, which `main`'s bottom padding also uses; if
+  the bar's height changes, change that variable, not the deck. If `main`'s top
+  padding changes, the `1.5rem` here has to change with it (checked against a
+  standalone mock in a real browser, not in jsdom).
 - Tapping a card's poster or title opens the title's page. A drag that began on
   it must not also count as that tap (`suppressClick` in `discover-card.tsx`).
   The cards already passed over are kept in `sessionStorage` (`discover:seen`,
@@ -558,6 +560,19 @@ rule can only be broken at build time, that is the shape a test for it takes.
 - Log events are namespaced (`show.paused`, `cron.refresh.completed`) and emit
   one JSON object per line. Never log a TMDB URL — a v3 key rides in the query
   string.
+
+## Navigation and profile, in short
+
+Five tabs in a floating capsule (`tab-bar.tsx`): Watching, Library, Discover,
+Lists, Search. Settings has no tab. The round initials avatar
+(`ProfileButton`, initials from `lib/initials.ts`) at the top right of
+Watching, Library, Discover and Lists opens `/settings`, which is the profile:
+nickname, "Since …", four stats from `getProfileStats` (`lib/queries.ts`;
+current runs only, read softly so a failure drops the numbers, never the page),
+then the settings groups. The capsule's geometry is two variables in
+`globals.css`, `--tab-bar-gap` and `--tab-bar-room`; `main` and the Discover
+deck are sized against the second. `themeColor` follows the colour scheme and
+must match `--background` in each.
 
 ## Rows or posters, in short
 

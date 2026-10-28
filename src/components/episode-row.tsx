@@ -140,7 +140,7 @@ export function EpisodeRow({
               {name ?? "Untitled episode"}
             </span>
 
-            <span className="truncate font-mono text-[10.5px] text-faint">
+            <span className="truncate text-[12px] tabular-nums text-faint">
               {code}
               {runtime ? ` · ${formatRuntime(runtime)}` : ""}
               {` · ${formatAirDate(airDate)}`}
@@ -163,10 +163,23 @@ export function EpisodeRow({
             }
             className="flex min-h-10 min-w-10 shrink-0 items-center justify-center rounded-full px-2 py-1 text-xs transition-colors hover:bg-surface"
           >
+            {/* An outline star, not the word "Rate": every watched row of a
+                season offers it, and ten "Rate"s down a list read as ten
+                instructions rather than one affordance. */}
             {rating !== null ? (
               <RatingValue value={rating} />
             ) : (
-              <span className="text-faint">Rate</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="size-4 text-faint"
+              >
+                <path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
+              </svg>
             )}
           </button>
         ) : null}

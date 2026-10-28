@@ -4,8 +4,8 @@ import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
 import { LIBRARY_PAGE_SIZE, LibraryList } from "@/components/library-list";
 import { MovieList } from "@/components/movie-list";
+import { ProfileButton } from "@/components/profile-button";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
-import { SearchIconButton } from "@/components/search-icon-button";
 import { ViewToggle } from "@/components/view-toggle";
 import { limitFrom } from "@/components/show-more-link";
 import { splitByRelease } from "@/lib/movie-status";
@@ -24,6 +24,8 @@ interface LibraryScreenProps {
     | { type: "movies"; buckets: MovieBuckets };
   /** Rows (the default) or posters, from the visitor's cookie. */
   view?: ViewMode;
+  /** For the avatar in the header. */
+  nickname?: string | null;
 }
 
 /**
@@ -43,25 +45,31 @@ export function LibraryScreen({
   searchParams,
   data,
   view = "rows",
+  nickname = null,
 }: LibraryScreenProps) {
   return (
     <div>
       <PullToRefreshPage />
-      <div className="flex items-center justify-between gap-2.5">
+      {/* Two rows, each a single job: what you're looking at (Shows or
+          Movies) beside the title, then which half of it and how it's laid
+          out. The view switch used to share the first row with the type
+          switch and a search button, which on a 402pt phone was four controls
+          wrapping into each other. */}
+      <div className="flex items-center gap-3">
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
           Library
         </h1>
-        {/* Wraps rather than overflows on a narrow phone: title, two switches
-            and the search button are close to the width of the screen. */}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <TypeSwitch segment={segment} type={data.type} />
-          <ViewToggle view={view} />
-          <SearchIconButton />
+        <TypeSwitch segment={segment} type={data.type} />
+        <div className="ml-auto">
+          <ProfileButton nickname={nickname} />
         </div>
       </div>
 
-      <div className="mt-3.5">
-        <Segments segment={segment} type={data.type} />
+      <div className="mt-3.5 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <Segments segment={segment} type={data.type} />
+        </div>
+        <ViewToggle view={view} />
       </div>
 
       {data.type === "movies" ? (
@@ -110,11 +118,6 @@ function ShowsView({
     <>
       {segment === "watchlist" ? (
         <>
-          <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
-            Shows you haven&rsquo;t started. Mark any episode watched and the
-            show moves to Watching on its own.
-          </p>
-
           <div className="mt-[18px]">
             {watchlist.length === 0 ? (
               <EmptyState
@@ -139,10 +142,7 @@ function ShowsView({
           </div>
 
           {notOutYet.length > 0 ? (
-            <Section
-              title="Not out yet"
-              description="Nothing has aired. These move up on their own once an episode does."
-            >
+            <Section title="Not out yet">
               <LibraryList
                 shows={notOutYet}
                 tone="sunken"
@@ -156,10 +156,7 @@ function ShowsView({
           ) : null}
 
           {paused.length > 0 ? (
-            <Section
-              title="Paused"
-              description="Started, then set aside. Progress is kept, and these stay out of Watching and Upcoming."
-            >
+            <Section title="Paused">
               <LibraryList
                 shows={paused}
                 tone="sunken"
@@ -192,11 +189,7 @@ function ShowsView({
            * Stopped are both settled.
            */}
           {caughtUp.length > 0 ? (
-            <Section
-              title="Caught up"
-              description="Every aired episode watched, but the series is still running. Each of these returns to Watching on its own when the next episode airs."
-              first
-            >
+            <Section title="Caught up" first>
               <LibraryList
                 shows={caughtUp}
                 detail="progress"
@@ -209,11 +202,7 @@ function ShowsView({
           ) : null}
 
           {finished.length > 0 ? (
-            <Section
-              title="Finished"
-              description="Watched to the end, and the series is over. If one is revived and a new episode airs it moves back to Watching."
-              first={caughtUp.length === 0}
-            >
+            <Section title="Finished" first={caughtUp.length === 0}>
               <LibraryList
                 shows={finished}
                 detail="progress"
@@ -229,7 +218,6 @@ function ShowsView({
           {stopped.length > 0 ? (
             <Section
               title="Stopped"
-              description="Started, then given up on. Marking any episode watched brings a show back."
               first={caughtUp.length === 0 && finished.length === 0}
             >
               <LibraryList
@@ -265,10 +253,6 @@ function MoviesView({
   if (segment === "watchlist") {
     return (
       <>
-        <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
-          Movies you want to watch.
-        </p>
-
         <div className="mt-[18px]">
           {watchlist.length === 0 ? (
             <EmptyState
@@ -294,10 +278,7 @@ function MoviesView({
         </div>
 
         {unreleased.length > 0 ? (
-          <Section
-            title="Not released yet"
-            description="Not out in cinemas or at home yet, or without a release date."
-          >
+          <Section title="Not released yet">
             <MovieList
               movies={unreleased}
               tone="sunken"
@@ -326,11 +307,7 @@ function MoviesView({
       ) : null}
 
       {watched.length > 0 ? (
-        <Section
-          title="Watched"
-          description="Movies you've seen, most recent first."
-          first
-        >
+        <Section title="Watched" first>
           <MovieList
             movies={watched}
             detail="watched"
@@ -343,11 +320,7 @@ function MoviesView({
       ) : null}
 
       {notInterested.length > 0 ? (
-        <Section
-          title="Not interested"
-          description="Set aside for good. Move one back to the watchlist any time."
-          first={watched.length === 0}
-        >
+        <Section title="Not interested" first={watched.length === 0}>
           <MovieList
             movies={notInterested}
             tone="sunken"
@@ -363,30 +336,30 @@ function MoviesView({
   );
 }
 
+/**
+ * A titled bucket. Headings only: each used to carry a sentence explaining its
+ * rule ("Every aired episode watched, but the series is still running…"),
+ * which was written for friends learning the app. Its one reader knows.
+ */
 function Section({
   title,
-  description,
   first = false,
   children,
 }: {
   title: string;
-  description: string;
   first?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section className={first ? "mt-[18px]" : "mt-[26px]"}>
       <h2 className="text-[17px] font-semibold tracking-[-0.015em]">{title}</h2>
-      <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-        {description}
-      </p>
       <div className="mt-3">{children}</div>
     </section>
   );
 }
 
 /**
- * Shows / Movies, as links, compact and in the header beside search.
+ * Shows / Movies, as links, compact and in the header beside the title.
  *
  * It used to sit above the segments as a second full-width control that looked
  * exactly like them, which read as one confusing stack. This is a filter on the

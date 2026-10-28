@@ -88,7 +88,7 @@ function EpisodeRow({ episode }: { episode: UpcomingEpisode }) {
             ) : null}
           </span>
 
-          <span className="truncate font-mono text-[10.5px] text-faint">
+          <span className="truncate text-[12px] tabular-nums text-faint">
             {episodeCode(episode.seasonNumber, episode.episodeNumber)}
             {episode.name ? ` · ${episode.name}` : ""}
           </span>

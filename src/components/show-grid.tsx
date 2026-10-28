@@ -49,7 +49,7 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
                   >
                     {show.name}
                   </Link>
-                  <span className="shrink-0 font-mono text-[11px] text-muted">
+                  <span className="shrink-0 text-[12px] tabular-nums text-muted">
                     {show.watchedCount} / {show.airedCount}
                   </span>
                 </div>
@@ -74,7 +74,7 @@ export function ShowGrid({ shows }: { shows: TrackedShowSummary[] }) {
                       <span className="truncate text-[13px]">
                         {show.nextUnwatched.name ?? "Episode title to come"}
                       </span>
-                      <span className="font-mono text-[10.5px] text-muted">
+                      <span className="text-[12px] tabular-nums text-muted">
                         {episodeCode(
                           show.nextUnwatched.seasonNumber,
                           show.nextUnwatched.episodeNumber,

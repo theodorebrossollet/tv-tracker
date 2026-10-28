@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { NewListButton } from "@/components/new-list-button";
+import { ProfileButton } from "@/components/profile-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getLists } from "@/lib/queries";
 
@@ -21,7 +22,10 @@ export default async function ListsPage() {
     <div>
       <div className="flex items-center justify-between gap-2.5">
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">Lists</h1>
-        <NewListButton />
+        <div className="flex items-center gap-2">
+          <NewListButton />
+          <ProfileButton nickname={user.nickname} />
+        </div>
       </div>
 
       <div className="mt-[18px]">

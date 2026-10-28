@@ -32,6 +32,8 @@ export interface DiscoverDeckProps {
   seedCount: number;
   recommendationsUnavailable: boolean;
   filters: DeckFilters;
+  /** The header's avatar, rendered by the page (it needs the session). */
+  profile?: React.ReactNode;
 }
 
 const KINDS = [
@@ -129,6 +131,7 @@ export function DiscoverDeck({
   seedCount,
   recommendationsUnavailable,
   filters,
+  profile,
 }: DiscoverDeckProps) {
   const router = useRouter();
   const [seen, setSeen] = useState<string[]>([]);
@@ -287,27 +290,33 @@ export function DiscoverDeck({
 
   return (
     // One screen, no scrolling: exactly the height between the top of the page
-    // and the tab bar (the layout's `main` padding is 1.5rem on top, 5.25rem
-    // plus the home-indicator inset below; 2.5rem on top from `sm`). The poster
-    // gives up whatever the chips, text and buttons need. On a screen too short
-    // for that it falls back to scrolling the page, rather than squashing the
-    // card. `overflow-x-clip` so a dragged card can't push the page sideways.
-    <div className="mx-auto flex h-[calc(100dvh-6.75rem-env(safe-area-inset-bottom))] min-h-[28rem] max-w-md flex-col overflow-x-clip sm:h-[calc(100dvh-7.75rem-env(safe-area-inset-bottom))]">
+    // and the tab bar (the layout's `main` padding: 1.5rem on top, 2.5rem from
+    // `sm`, and `--tab-bar-room` below, which is defined beside the bar's own
+    // geometry in globals.css). The poster gives up whatever the chips, text
+    // and buttons need. On a screen too short for that it falls back to
+    // scrolling the page, rather than squashing the card. `overflow-x-clip` so
+    // a dragged card can't push the page sideways.
+    <div className="mx-auto flex h-[calc(100dvh-1.5rem-var(--tab-bar-room))] min-h-[28rem] max-w-md flex-col overflow-x-clip sm:h-[calc(100dvh-2.5rem-var(--tab-bar-room))]">
       <div className="flex shrink-0 items-center justify-between gap-2">
         <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
           Discover
         </h1>
-        <button
-          type="button"
-          onClick={reshuffle}
-          aria-label="Reshuffle"
-          title="Reshuffle"
-          className="-my-1.5 flex size-11 items-center justify-center text-muted hover:text-foreground"
-        >
-          <span className="flex size-9 items-center justify-center rounded-full border border-border">
-            <ShuffleIcon />
-          </span>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={reshuffle}
+            aria-label="Reshuffle"
+            title="Reshuffle"
+            className="-my-1.5 flex size-11 items-center justify-center text-muted hover:text-foreground"
+          >
+            <span className="flex size-9 items-center justify-center rounded-full border border-border">
+              <ShuffleIcon />
+            </span>
+          </button>
+          {/* Pulled in to the reshuffle button's height, so the header row
+              doesn't grow and take it out of the poster. */}
+          {profile ? <div className="-my-1">{profile}</div> : null}
+        </div>
       </div>
 
       <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-1.5">

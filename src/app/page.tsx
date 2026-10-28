@@ -1,8 +1,7 @@
-import { DiscoverIconButton } from "@/components/discover-icon-button";
 import { EmptyState } from "@/components/empty-state";
 import { FindShowButton } from "@/components/find-show-button";
+import { ProfileButton } from "@/components/profile-button";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
-import { SearchIconButton } from "@/components/search-icon-button";
 import { ShowGrid } from "@/components/show-grid";
 import { limitFrom } from "@/components/show-more-link";
 import {
@@ -62,10 +61,7 @@ export default async function DashboardPage({
             <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
               Watching
             </h1>
-            <div className="flex items-center gap-1.5">
-              <DiscoverIconButton />
-              <SearchIconButton />
-            </div>
+            <ProfileButton nickname={user.nickname} />
           </div>
 
           {watching.length === 0 ? (
@@ -86,10 +82,6 @@ export default async function DashboardPage({
           <h2 className="text-lg font-semibold tracking-[-0.015em]">
             Upcoming episodes
           </h2>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-            Across everything you&rsquo;re watching and on your watchlist. Air
-            dates refresh once a day.
-          </p>
 
           {upcoming.length === 0 ? (
             <div className="mt-4">
@@ -115,10 +107,6 @@ export default async function DashboardPage({
             <h2 className="text-lg font-semibold tracking-[-0.015em]">
               Upcoming movies
             </h2>
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
-              Movies on your watchlist heading to cinemas or streaming, with
-              the dates for your country.
-            </p>
 
             <UpcomingMoviesList
               movies={upcomingMovies}

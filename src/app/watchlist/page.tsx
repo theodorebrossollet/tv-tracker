@@ -44,6 +44,7 @@ export default async function WatchlistPage({
       searchParams={params}
       data={data}
       view={view}
+      nickname={user.nickname}
     />
   );
 }
