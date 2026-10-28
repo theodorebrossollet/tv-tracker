@@ -38,6 +38,7 @@ export default async function ArchivePage({ searchParams }: ArchivePageProps) {
       searchParams={params}
       data={data}
       view={view}
+      nickname={user.nickname}
     />
   );
 }

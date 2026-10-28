@@ -432,6 +432,60 @@ export async function getShowBuckets(userId: string): Promise<ShowBuckets> {
   return buckets;
 }
 
+export interface ProfileStats {
+  /** Watched episodes plus watched movies, by their TMDB runtimes. */
+  minutesWatched: number;
+  episodesWatched: number;
+  moviesWatched: number;
+  /** Shows in the Finished bucket, by `getShowBuckets`' own rule. */
+  showsFinished: number;
+  memberSince: Date;
+}
+
+/**
+ * The numbers at the top of the profile page.
+ *
+ * Current runs only, like everything else that counts: a show started over
+ * counts the episodes of the run in progress, not the archived ones. Unknown
+ * runtimes add nothing rather than a guess, so the time is a floor.
+ *
+ * The two sums are raw SQL because Prisma's `aggregate` cannot sum a column of
+ * a related row. `userId` is a `WHERE` here, not a join condition — but it is
+ * still the one thing standing between this and the household's totals, so
+ * `tests/isolation.test.ts` covers it like the others.
+ */
+export async function getProfileStats(userId: string): Promise<ProfileStats> {
+  const [episodes, movies, buckets, user] = await Promise.all([
+    prisma.$queryRaw<Array<{ count: number | bigint; minutes: number | bigint | null }>>`
+      SELECT COUNT(*) AS "count", SUM(e."runtime") AS "minutes"
+      FROM "WatchedEpisode" w
+      JOIN "Episode" e ON e."id" = w."episodeId"
+      WHERE w."userId" = ${userId}
+    `,
+    prisma.$queryRaw<Array<{ count: number | bigint; minutes: number | bigint | null }>>`
+      SELECT COUNT(*) AS "count", SUM(m."runtime") AS "minutes"
+      FROM "TrackedMovie" t
+      JOIN "Movie" m ON m."id" = t."movieId"
+      WHERE t."userId" = ${userId}
+        AND t."status" = 'watched'
+    `,
+    getShowBuckets(userId),
+    prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { createdAt: true },
+    }),
+  ]);
+
+  return {
+    minutesWatched:
+      Number(episodes[0]?.minutes ?? 0) + Number(movies[0]?.minutes ?? 0),
+    episodesWatched: Number(episodes[0]?.count ?? 0),
+    moviesWatched: Number(movies[0]?.count ?? 0),
+    showsFinished: buckets.finished.length,
+    memberSince: user.createdAt,
+  };
+}
+
 export interface UpcomingEpisode {
   episodeId: string;
   showId: string;

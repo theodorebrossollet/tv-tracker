@@ -39,9 +39,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { DiscoverDeck } = await import("@/components/discover-deck");
-const { DiscoverIconButton } = await import(
-  "@/components/discover-icon-button"
-);
 
 const OWN_MOVIE: DeckCard = {
   source: "own",
@@ -472,7 +469,7 @@ describe("layout guards (classes only: jsdom does no layout)", () => {
     const root = container.firstChild as HTMLElement;
 
     // Viewport height minus the layout's top padding and the tab bar's room.
-    expect(root.className).toContain("h-[calc(100dvh-6.75rem-env(safe-area-inset-bottom))]");
+    expect(root.className).toContain("h-[calc(100dvh-1.5rem-var(--tab-bar-room))]");
     expect(root.className).toContain("flex-col");
     // Clip, not hidden: a dragged card must not push the page sideways.
     expect(root.className).toContain("overflow-x-clip");
@@ -645,27 +642,6 @@ describe("notices and empty states", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     // A refresh is a reshuffle: a new pick of your own titles, not the same set.
     expect(replace).toHaveBeenCalledWith("/discover?shuffle=1", { scroll: false });
-  });
-});
-
-describe("DiscoverIconButton", () => {
-  it("links to /discover with a name and a 44px hit area", () => {
-    render(<DiscoverIconButton />);
-    const link = screen.getByRole("link", { name: "Discover" });
-    expect(link.getAttribute("href")).toBe("/discover");
-    expect(link.className).toContain("size-11");
-    expect(link.querySelector("span")?.className).toContain("size-10");
-    expect(link.querySelector("svg")).toBeTruthy();
-  });
-});
-
-describe("the dashboard header", () => {
-  it("puts Discover right before Search, in one group", async () => {
-    const { readFileSync } = await import("node:fs");
-    const source = readFileSync("src/app/page.tsx", "utf8");
-    expect(source).toMatch(
-      /<div className="flex[^"]*">\s*<DiscoverIconButton \/>\s*<SearchIconButton \/>\s*<\/div>/,
-    );
   });
 });
 

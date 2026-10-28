@@ -71,7 +71,11 @@ export function ShowHeader({
   const backdrop = posterUrl(posterPath, "w500");
 
   return (
-    <div className="relative -mx-4 overflow-hidden px-4 pb-[18px] pt-3">
+    // Bleeds up through `main`'s top padding as well as out to the sides, so
+    // the tint starts at the top of the screen; the padding gives the same
+    // amount back, leaving the content where it was. It used to start below
+    // the refresh strip, which no longer holds that line when closed.
+    <div className="relative -mx-4 -mt-6 overflow-hidden px-4 pb-[18px] pt-9 sm:-mt-10 sm:pt-[3.25rem]">
       {backdrop ? (
         <>
           <div aria-hidden="true" className="absolute inset-0 scale-110">
@@ -162,11 +166,11 @@ export function ShowHeader({
                     style={{ width: `${percent}%` }}
                   />
                 </div>
-                <span className="font-mono text-[11px] text-accent-deep">
+                <span className="text-[12px] tabular-nums text-accent-deep">
                   {percent}%
                 </span>
                 {runNumber != null && runNumber > 1 ? (
-                  <span className="font-mono text-[10.5px] text-faint">
+                  <span className="text-[12px] tabular-nums text-faint">
                     Run {runNumber}
                   </span>
                 ) : null}
@@ -177,7 +181,7 @@ export function ShowHeader({
               <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11px]">
                 <RatingValue value={rating.average} average />
                 {rating.coverage ? (
-                  <span className="font-mono text-[10.5px] text-faint">
+                  <span className="text-[12px] tabular-nums text-faint">
                     {rating.coverage}
                   </span>
                 ) : null}
@@ -185,7 +189,7 @@ export function ShowHeader({
             ) : null}
 
             {nextAiring ? (
-              <p className="mt-1.5 font-mono text-[10.5px] text-faint">
+              <p className="mt-1.5 text-[12px] tabular-nums text-faint">
                 {nextAiring}
               </p>
             ) : null}

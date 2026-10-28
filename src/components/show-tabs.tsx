@@ -110,7 +110,7 @@ export function SeasonTabs({
               S{season.seasonNumber}
               {season.unwatched > 0 ? (
                 <span
-                  className={`rounded-full px-1.5 font-mono text-[10px] ${
+                  className={`rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
                     selected
                       ? "bg-accent-tint text-accent-deep"
                       : "bg-surface-sunken text-faint"

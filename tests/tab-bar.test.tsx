@@ -41,8 +41,13 @@ describe("which tab is active", () => {
     expect(activeTab()).toBe("Watching");
 
     cleanup();
+    renderAt("/discover");
+    expect(activeTab()).toBe("Discover");
+  });
+
+  it("lights nothing up on Settings, which is reached from the avatar", () => {
     renderAt("/settings");
-    expect(activeTab()).toBe("Settings");
+    expect(activeTab()).toBeNull();
   });
 
   it("lights Library up on both of its routes", () => {
@@ -88,7 +93,7 @@ describe("the tabs", () => {
     const labels = [
       ...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("a, button"),
     ].map((el) => el.textContent);
-    expect(labels).toEqual(["Watching", "Library", "Lists", "Search", "Settings"]);
+    expect(labels).toEqual(["Watching", "Library", "Discover", "Lists", "Search"]);
   });
 });
 

@@ -72,7 +72,7 @@ function MovieRow({ movie }: { movie: UpcomingMovie }) {
             {movie.title}
           </span>
 
-          <span className="truncate font-mono text-[10.5px] text-faint">
+          <span className="truncate text-[12px] tabular-nums text-faint">
             {RELEASE_LABEL[movie.next.kind]}
             {movie.later
               ? ` · ${RELEASE_LABEL[movie.later.kind]} ${formatAirDateShort(

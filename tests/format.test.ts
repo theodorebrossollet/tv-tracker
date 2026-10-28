@@ -8,6 +8,7 @@ import {
   formatWatchedDate,
   formatAirDateShort,
   formatRuntime,
+  formatWatchTime,
   progressPercent,
   relativeAirDate,
   showMetaLine,
@@ -228,6 +229,19 @@ describe("formatRuntime", () => {
   it("splits a longer one, and drops a zero remainder", () => {
     expect(formatRuntime(95)).toBe("1h 35m");
     expect(formatRuntime(120)).toBe("2h");
+  });
+});
+
+describe("formatWatchTime", () => {
+  it("stays in minutes under an hour, including nothing at all", () => {
+    expect(formatWatchTime(0)).toBe("0m");
+    expect(formatWatchTime(45)).toBe("45m");
+  });
+
+  it("drops to whole hours past one, with a thousands separator", () => {
+    expect(formatWatchTime(60)).toBe("1h");
+    expect(formatWatchTime(18_759)).toBe("312h");
+    expect(formatWatchTime(72_240)).toBe("1,204h");
   });
 });
 

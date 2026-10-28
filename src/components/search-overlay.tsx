@@ -248,7 +248,7 @@ export function SearchOverlay({
 
           {!trimmedQuery && recent.length > 0 ? (
             <div className="px-4 pt-5">
-              <h2 className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+              <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
                 Recent
               </h2>
               <div className="mt-2.5 flex flex-wrap gap-2">

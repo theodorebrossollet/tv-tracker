@@ -27,6 +27,11 @@ interface Tab {
 }
 
 /**
+ * Settings has no tab: it is visited rarely, and its slot went to Discover,
+ * which used to hide behind a small icon in the Watching header. It is reached
+ * from the initials avatar at the top of each of these screens instead
+ * (`ProfileButton`).
+ *
  * Library is one screen over two routes. `/watchlist` and `/archive` are its
  * two segments rather than separate destinations, so the tab is active for
  * both and points at whichever is the more common entry.
@@ -42,6 +47,12 @@ const TABS: Tab[] = [
     icon: <BookmarkIcon />,
   },
   {
+    label: "Discover",
+    href: "/discover",
+    segment: true,
+    icon: <SparkleIcon />,
+  },
+  {
     label: "Lists",
     href: "/lists",
     // Matched as a segment, not a prefix: see `isActive`.
@@ -49,11 +60,10 @@ const TABS: Tab[] = [
     icon: <ListIcon />,
   },
   { label: "Search", icon: <SearchGlyph /> },
-  { label: "Settings", href: "/settings", icon: <SlidersIcon /> },
 ];
 
 const TAB_CLASS =
-  "flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg text-[10.5px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+  "flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-[22px] text-[10.5px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
 
 export function TabBar() {
   const pathname = usePathname();
@@ -89,19 +99,28 @@ export function TabBar() {
       // div's, so dashboard -> show -> back loses your place) and permanently
       // disables the URL bar collapsing on scroll. The page scrolls the
       // document; only this bar is pinned.
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-background/92 backdrop-blur"
+      //
+      // A floating capsule, the shape iOS 26 gives its own tab bars, rather
+      // than a full-width strip: the page shows around and through it, and it
+      // sits just above the home indicator instead of reserving the strip
+      // beside it. The geometry lives in globals.css (`--tab-bar-gap`,
+      // `--tab-bar-room`) because `main` and Discover's deck are sized against
+      // it. This element only positions; it lets touches through, so the
+      // margins either side of the capsule stay part of the page.
+      className="pointer-events-none fixed inset-x-0 bottom-[var(--tab-bar-gap)] z-20 px-4"
     >
       <div
-        // The inset is what the prototype drew as a fixed 4px "home indicator
-        // strip". Reading the real value needs `viewportFit: "cover"` in the
-        // viewport export, or it resolves to 0 on iOS and the bar sits under
-        // the gesture bar.
-        className="mx-auto grid max-w-lg grid-cols-5 px-1.5 pb-[env(safe-area-inset-bottom)] pt-2"
+        // `viewportFit: "cover"` in the viewport export is still load-bearing:
+        // without it iOS reports the inset as 0, and the capsule sits on the
+        // home indicator.
+        className="pointer-events-auto mx-auto grid max-w-md grid-cols-5 rounded-[28px] border border-border bg-background/85 p-1 shadow-[0_10px_30px_-10px_rgba(0,0,0,.35)] backdrop-blur-xl backdrop-saturate-150"
       >
         {TABS.map((tab) => {
           const active = isActive(tab);
+          // The selected tab gets a lozenge of its own inside the capsule, as
+          // iOS draws it, as well as the colour.
           const className = `${TAB_CLASS} ${
-            active ? "text-accent-deep" : "text-faint"
+            active ? "bg-accent-tint text-accent-deep" : "text-faint"
           }`;
 
           // Search is a tab, but it opens the overlay rather than navigating —
@@ -226,15 +245,12 @@ function SearchGlyph() {
   );
 }
 
-function SlidersIcon() {
+/** Four-point sparkles, one large and one small: Discover's mark. */
+function SparkleIcon() {
   return (
     <Glyph>
-      <path d="M4 8h5" />
-      <path d="M13 8h7" />
-      <path d="M4 16h11" />
-      <path d="M19 16h1" />
-      <circle cx="11" cy="8" r="2.2" />
-      <circle cx="17" cy="16" r="2.2" />
+      <path d="M10 3c.6 3.9 2.1 5.4 6 6-3.9.6-5.4 2.1-6 6-.6-3.9-2.1-5.4-6-6 3.9-.6 5.4-2.1 6-6Z" />
+      <path d="M18 14c.3 1.9 1.1 2.7 3 3-1.9.3-2.7 1.1-3 3-.3-1.9-1.1-2.7-3-3 1.9-.3 2.7-1.1 3-3Z" />
     </Glyph>
   );
 }

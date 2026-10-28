@@ -47,9 +47,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Matches the manifest's theme_color, so the browser chrome and the
-  // installed splash agree.
-  themeColor: "#4f46e5",
+  // The page's own background in each scheme, not the accent. Whatever the
+  // browser paints from this (Safari's toolbar tint, the installed app's
+  // chrome) should continue the page rather than draw an indigo band above a
+  // near-black one, which is what a single accent value did in dark mode.
+  // Keep these in step with `--background` in globals.css.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0b0d" },
+  ],
   // Load-bearing for the tab bar: without it iOS reports every
   // `env(safe-area-inset-*)` as 0, and the bar renders under the home
   // indicator. The cost is that content now runs edge to edge, so anything
@@ -76,11 +82,11 @@ export default function RootLayout({
 
         <SearchProvider>
           <ServiceWorker />
-          {/* Clearance for the fixed tab bar: its own height plus whatever the
-              device reserves below it. Padding on the scrolling document rather
-              than a margin on the bar, so the last row of a list can still be
+          {/* Clearance for the floating tab bar (`--tab-bar-room` in
+              globals.css). Padding on the scrolling document rather than a
+              margin on the bar, so the last row of a list can still be
               scrolled clear of it. */}
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-[calc(5.25rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 sm:pt-10">
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-[var(--tab-bar-room)] pt-6 sm:px-6 sm:pt-10">
             {children}
           </main>
           <TabBar />

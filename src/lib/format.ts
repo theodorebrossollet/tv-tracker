@@ -153,6 +153,17 @@ export function formatRuntime(minutes: number): string {
 }
 
 /**
+ * A lifetime total for the profile page: "45m" under an hour, then whole hours
+ * ("312h", "1,204h"). Not `formatRuntime`, whose "5h 12m" is the right
+ * precision for one episode and noise on a number this size; and not days,
+ * which reads as calendar time rather than time spent watching.
+ */
+export function formatWatchTime(minutes: number): string {
+  if (minutes < 60) return `${Math.max(0, Math.round(minutes))}m`;
+  return `${Math.floor(minutes / 60).toLocaleString("en-GB")}h`;
+}
+
+/**
  * A coarse "how far off is this", for the caught-up card's countdown pill.
  *
  * Deliberately not `relativeAirDate`, and the difference is contextual rather

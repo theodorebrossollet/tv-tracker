@@ -90,10 +90,14 @@ function renderMovies(
 }
 
 describe("Library in the posters view", () => {
-  it("puts the toggle in the header and defaults to rows", () => {
+  it("puts the toggle beside the Watchlist/Archive segments and defaults to rows", () => {
     renderShows("watchlist", { watchlist: [show()] });
-    const header = screen.getByRole("heading", { name: "Library" }).parentElement!;
-    expect(within(header).getByRole("button", { name: "Rows view" }).getAttribute("aria-pressed")).toBe("true");
+    // Its own row with the segments, not the title row: that one holds the
+    // title, the Shows/Movies switch and the avatar.
+    const segmentsRow = screen.getByRole("link", { name: "Archive" }).closest<HTMLElement>("div.items-start")!;
+    expect(within(segmentsRow).getByRole("button", { name: "Rows view" }).getAttribute("aria-pressed")).toBe("true");
+    const titleRow = screen.getByRole("heading", { name: "Library" }).parentElement!;
+    expect(within(titleRow).queryByRole("button", { name: "Rows view" })).toBeNull();
     expect(screen.getByRole("button", { name: /Change status for Severance/ })).toBeTruthy();
   });
 
@@ -106,7 +110,7 @@ describe("Library in the posters view", () => {
     expect(screen.queryByRole("img", { name: "Movie" })).toBeNull();
   });
 
-  it("keeps each section's heading and description, and its rating star", () => {
+  it("keeps each section's heading and its rating star", () => {
     renderShows(
       "watchlist",
       { watchlist: [show({ ratingAverage: 7.4 })], paused: [show({ showId: "9", name: "Paused one" })] },

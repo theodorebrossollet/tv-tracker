@@ -3,8 +3,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/actions", () => ({ markEpisodeWatched: vi.fn() }));
-vi.mock("@/components/search-icon-button", () => ({ SearchIconButton: () => null }));
-vi.mock("@/components/discover-icon-button", () => ({ DiscoverIconButton: () => null }));
 vi.mock("@/components/find-show-button", () => ({ FindShowButton: () => null }));
 vi.mock("@/components/pull-to-refresh-page", () => ({ PullToRefreshPage: () => null }));
 vi.mock("@/lib/auth", () => ({

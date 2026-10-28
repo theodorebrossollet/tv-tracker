@@ -1,4 +1,5 @@
 import { DiscoverDeck } from "@/components/discover-deck";
+import { ProfileButton } from "@/components/profile-button";
 import { requireOnboardedSession } from "@/lib/auth";
 import { getDeck, parseDeckFilters } from "@/lib/discover";
 import type { SearchParams } from "@/lib/search-params";
@@ -29,6 +30,7 @@ export default async function DiscoverPage({
       seedCount={deck.seedCount}
       recommendationsUnavailable={deck.recommendationsUnavailable}
       filters={filters}
+      profile={<ProfileButton nickname={user.nickname} />}
     />
   );
 }
