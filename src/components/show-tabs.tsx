@@ -33,7 +33,9 @@ export function ShowSegments({
   params: Params;
 }) {
   return (
-    <div className="flex gap-[3px] rounded-[13px] border border-border bg-surface-sunken p-[3px]">
+    // Underlined text tabs, the Marquee look: a segmented control's sunken
+    // track read as a form widget under a full-bleed header.
+    <div className="flex gap-6 border-b border-border">
       {SHOW_TABS.map((tab) => {
         const current = tab === active;
 
@@ -46,10 +48,10 @@ export function ShowSegments({
             scroll={false}
             href={showHref(params, { [TAB_PARAM]: tab })}
             aria-current={current ? "page" : undefined}
-            className={`flex min-h-10 flex-1 items-center justify-center rounded-[10px] text-[13px] font-medium transition-colors ${
+            className={`-mb-px flex min-h-11 items-center border-b-2 text-[15px] font-semibold transition-colors ${
               current
-                ? "bg-surface-raised text-foreground shadow-[0_1px_2px_rgba(0,0,0,.12)]"
-                : "text-muted"
+                ? "border-foreground text-foreground"
+                : "border-transparent text-faint hover:text-muted"
             }`}
           >
             {TAB_LABELS[tab]}
