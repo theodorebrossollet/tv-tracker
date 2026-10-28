@@ -40,6 +40,7 @@ interface EpisodePayload {
   air_date?: string | null;
   runtime?: number | null;
   overview?: string | null;
+  still_path?: string | null;
 }
 
 /**
@@ -65,6 +66,7 @@ function mockTmdb(episodes: EpisodePayload[]) {
       id: Number(SHOW_ID),
       name: "Game of Thrones",
       poster_path: null,
+      backdrop_path: "/got-wide.jpg",
       overview: null,
       seasons: [{ season_number: 1, episode_count: episodes.length }],
       first_air_date: "2011-04-17",
@@ -201,6 +203,47 @@ describe("syncing a show from TMDB", () => {
       where: { id: "63057" },
     });
     expect(corrected?.airDate?.toISOString().slice(0, 10)).toBe("2011-05-01");
+  });
+
+  it("stores the show's backdrop and each episode's still", async () => {
+    mockTmdb([
+      { id: 63056, episode_number: 1, still_path: "/s1e1.jpg" },
+      { id: 63057, episode_number: 2, still_path: null },
+    ]);
+
+    await syncShowFromTmdb(SHOW_ID);
+
+    const show = await prisma.show.findUniqueOrThrow({ where: { id: SHOW_ID } });
+    expect(show.backdropPath).toBe("/got-wide.jpg");
+
+    const stills = await prisma.episode.findMany({
+      where: { showId: SHOW_ID },
+      orderBy: { episodeNumber: "asc" },
+      select: { stillPath: true },
+    });
+    expect(stills.map((row) => row.stillPath)).toEqual(["/s1e1.jpg", null]);
+  });
+
+  it("writes a still TMDB adds later, as an update to that episode alone", async () => {
+    // TMDB often has no still until an episode airs. The diff-write compares
+    // fields to decide what to touch, so a still that is not one of them would
+    // never arrive on a show that is otherwise settled.
+    mockTmdb([
+      { id: 63056, episode_number: 1, still_path: "/s1e1.jpg" },
+      { id: 63057, episode_number: 2, still_path: null },
+    ]);
+    await syncShowFromTmdb(SHOW_ID);
+
+    mockTmdb([
+      { id: 63056, episode_number: 1, still_path: "/s1e1.jpg" },
+      { id: 63057, episode_number: 2, still_path: "/s1e2.jpg" },
+    ]);
+    const writes = countWrites();
+    await syncShowFromTmdb(SHOW_ID);
+
+    expect(writes.updates).toBe(1);
+    const second = await prisma.episode.findUniqueOrThrow({ where: { id: "63057" } });
+    expect(second.stillPath).toBe("/s1e2.jpg");
   });
 
   it("adds newly announced episodes without touching the existing ones", async () => {

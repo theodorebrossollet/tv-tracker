@@ -21,6 +21,7 @@ export async function syncMovieFromTmdb(
   const fields = {
     title: details.title,
     posterPath: details.posterPath,
+    backdropPath: details.backdropPath,
     overview: details.overview,
     releaseDate: details.releaseDate,
     runtime: details.runtime,

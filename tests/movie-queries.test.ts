@@ -156,6 +156,7 @@ describe("getMovieDetail", () => {
       id: 12,
       title: "Fresh",
       posterPath: "/p.jpg",
+      backdropPath: null,
       overview: "Plot",
       releaseDate: at("2024-03-01T00:00:00Z"),
       runtime: 90,

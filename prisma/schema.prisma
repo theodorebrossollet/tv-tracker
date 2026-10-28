@@ -101,6 +101,10 @@ model Show {
   id         String   @id // TMDB show id, stored as a string
   name       String
   posterPath String?
+  /// TMDB's 16:9 still for the show, for the full-bleed headers. Null when
+  /// TMDB has none, or on a row not re-synced since the column arrived; the
+  /// UI falls back to the poster.
+  backdropPath String?
   overview   String?
   lastSynced DateTime @default(now()) // last refresh of episode data from TMDB
 
@@ -145,6 +149,9 @@ model Episode {
   /// "hours watched" stat would be built on.
   runtime       Int?
   overview      String?
+  /// TMDB's still from the episode itself, from the season fetch the sync
+  /// already makes. Null when TMDB has none (common before an episode airs).
+  stillPath     String?
 
   show            Show                   @relation(fields: [showId], references: [id], onDelete: Cascade)
   watched         WatchedEpisode[]
@@ -186,6 +193,8 @@ model Movie {
   id         String   @id // TMDB movie id, stored as a string
   title      String
   posterPath String?
+  /// TMDB's 16:9 still, as on `Show`.
+  backdropPath String?
   overview   String?
   lastSynced DateTime @default(now()) // last refresh of the details from TMDB
 

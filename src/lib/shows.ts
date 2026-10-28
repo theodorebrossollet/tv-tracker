@@ -26,6 +26,7 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
       createdAt: new Date(),
       name: details.name,
       posterPath: details.posterPath,
+      backdropPath: details.backdropPath,
       overview: details.overview,
       firstAirDate: details.firstAirDate,
       lastAirDate: details.lastAirDate,
@@ -36,6 +37,7 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
     update: {
       name: details.name,
       posterPath: details.posterPath,
+      backdropPath: details.backdropPath,
       overview: details.overview,
       firstAirDate: details.firstAirDate,
       lastAirDate: details.lastAirDate,
@@ -64,6 +66,7 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
       airDate: true,
       runtime: true,
       overview: true,
+      stillPath: true,
     },
   });
 
@@ -89,6 +92,7 @@ export async function syncShowFromTmdb(tmdbShowId: string, addedById?: string) {
       airDate: episode.airDate,
       runtime: episode.runtime,
       overview: episode.overview,
+      stillPath: episode.stillPath,
     };
 
     const current = byId.get(id);
@@ -186,6 +190,7 @@ interface EpisodeFields {
   airDate: Date | null;
   runtime: number | null;
   overview: string | null;
+  stillPath: string | null;
 }
 
 function differs(current: EpisodeFields, next: EpisodeFields): boolean {
@@ -195,6 +200,7 @@ function differs(current: EpisodeFields, next: EpisodeFields): boolean {
     current.name !== next.name ||
     current.runtime !== next.runtime ||
     current.overview !== next.overview ||
+    current.stillPath !== next.stillPath ||
     // Dates are objects: compare the instant, and allow either side to be null.
     (current.airDate?.getTime() ?? null) !== (next.airDate?.getTime() ?? null)
   );

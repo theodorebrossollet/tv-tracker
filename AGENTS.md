@@ -101,7 +101,16 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   unapplied, Settings' "Clear all my data" breaks (its
                   transaction also deletes dismissals), the Settings count
                   shows "Unavailable", and the deck's read of dismissed rows
-                  fails
+                  fails;
+                  20261028181917_add_artwork adds Show.backdropPath,
+                  Movie.backdropPath and Episode.stillPath — additive (three
+                  `ADD COLUMN`s, no table rebuild), but like ratings it adds
+                  columns to core tables Prisma selects whole, so unapplied it
+                  breaks nearly every screen: apply it BEFORE merging, check
+                  `SELECT backdropPath FROM Show LIMIT 1; SELECT stillPath FROM
+                  Episode LIMIT 1;` on Turso, then run
+                  `scripts/backfill-artwork.mjs` (backdrops; stills arrive with
+                  each show's next sync)
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);

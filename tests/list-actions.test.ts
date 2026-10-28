@@ -80,6 +80,7 @@ function movieDetails(id: string | number) {
     id: Number(id),
     title: `Movie ${id}`,
     posterPath: null,
+    backdropPath: null,
     overview: null,
     releaseDate: null,
     runtime: 100,

@@ -35,6 +35,8 @@ export interface TmdbShowDetails {
   id: number;
   name: string;
   posterPath: string | null;
+  /** 16:9 artwork for the full-bleed headers. */
+  backdropPath: string | null;
   overview: string | null;
   seasonNumbers: number[];
   firstAirDate: Date | null;
@@ -50,6 +52,8 @@ export interface TmdbMovieDetails {
   id: number;
   title: string;
   posterPath: string | null;
+  /** 16:9 artwork for the full-bleed headers. */
+  backdropPath: string | null;
   overview: string | null;
   releaseDate: Date | null;
   /** Minutes, when TMDB knows it. */
@@ -69,6 +73,8 @@ export interface TmdbEpisode {
   /** Minutes, when TMDB knows it. */
   runtime: number | null;
   overview: string | null;
+  /** A frame from the episode, 16:9. */
+  stillPath: string | null;
 }
 
 /**
@@ -418,6 +424,7 @@ interface RawShowResponse {
   id: number;
   name: string;
   poster_path: string | null;
+  backdrop_path?: string | null;
   overview: string | null;
   seasons: Array<{ season_number: number; episode_count: number }>;
   first_air_date: string | null;
@@ -445,6 +452,8 @@ export async function getShowDetails(
     // The guarantee is the allow-list, so it belongs there; if these paths ever
     // reach a plain <img>, it moves here.
     posterPath: data.poster_path,
+    // Same reasoning as the poster: only ever built into an allow-listed URL.
+    backdropPath: data.backdrop_path || null,
     overview: data.overview || null,
     // Season 0 is TMDB's "Specials" bucket; skip it, and skip empty seasons
     // that would just cost us a request for nothing.
@@ -469,6 +478,7 @@ interface RawMovieResponse {
   id: number;
   title: string;
   poster_path: string | null;
+  backdrop_path?: string | null;
   overview: string | null;
   release_date: string | null;
   runtime?: number | null;
@@ -487,6 +497,7 @@ export async function getMovieDetails(
     // Not validated, for the same reason as a show's: `next.config.ts`'s
     // `remotePatterns` is the guarantee. See `getShowDetails`.
     posterPath: data.poster_path,
+    backdropPath: data.backdrop_path || null,
     overview: data.overview || null,
     // A plain calendar date, so it gets the same US-Eastern anchoring as an
     // episode's air date.
@@ -509,6 +520,7 @@ interface RawSeasonResponse {
     air_date: string | null;
     runtime: number | null;
     overview: string | null;
+    still_path?: string | null;
   }>;
 }
 
@@ -522,6 +534,7 @@ function mapSeasonEpisodes(data: RawSeasonResponse): TmdbEpisode[] {
     // Both already present in this response — no extra request needed.
     runtime: episode.runtime ?? null,
     overview: episode.overview || null,
+    stillPath: episode.still_path || null,
   }));
 }
 
