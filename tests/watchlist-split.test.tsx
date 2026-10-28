@@ -54,6 +54,7 @@ function show(over: Partial<TrackedShowSummary>): TrackedShowSummary {
     showId: "1",
     name: "Show",
     posterPath: null,
+    backdropPath: null,
     status: "watchlist",
     airedCount: 0,
     watchedCount: 0,

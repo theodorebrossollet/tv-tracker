@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/app/actions", () => ({ markEpisodeWatched: vi.fn() }));
 
 const { ShowGrid } = await import("@/components/show-grid");
+const { WatchingHero } = await import("@/components/watching-hero");
+const { splitHero } = await import("@/lib/watching");
 const { UpcomingList } = await import("@/components/upcoming-list");
 const { UpcomingMoviesList } = await import("@/components/upcoming-movies-list");
 
@@ -25,6 +27,7 @@ function show(overrides: Partial<TrackedShowSummary> = {}): TrackedShowSummary {
     showId: "101",
     name: "Severance",
     posterPath: null,
+    backdropPath: null,
     status: "watching",
     airedCount: 19,
     watchedCount: 16,
@@ -38,6 +41,8 @@ function show(overrides: Partial<TrackedShowSummary> = {}): TrackedShowSummary {
       seasonNumber: 2,
       episodeNumber: 7,
       name: "Chikhai Bardo",
+      runtime: 50,
+      stillPath: null,
     },
     ...overrides,
   };
@@ -99,20 +104,56 @@ describe("the inline mark-watched button", () => {
   });
 });
 
-describe("the in-progress count", () => {
-  it("counts the rows on screen", () => {
-    // Derived rather than tracked optimistically: marking the last aired
-    // episode moves a show out of this bucket, so an optimistic count would
-    // tick down while the row it refers to is still visible.
-    render(<ShowGrid shows={[show(), show({ showId: "102" })]} />);
+describe("the Watching hero", () => {
+  it("features the first show with an episode ready, and leaves the rest to the list", () => {
+    // `getShowBuckets` orders by actionability, so a caught-up show can sit
+    // first only when nothing is ready; it must never take the hero.
+    const caughtUp = show({ showId: "1", nextUnwatched: null, watchedCount: 19 });
+    const ready = show({ showId: "2", name: "Dark" });
+    const later = show({ showId: "3", name: "Andor" });
 
-    expect(screen.getByText("2 shows in progress")).toBeTruthy();
+    const { hero, rest } = splitHero([caughtUp, ready, later]);
+
+    expect(hero?.showId).toBe("2");
+    expect(rest.map((entry) => entry.showId)).toEqual(["1", "3"]);
   });
 
-  it("does not say '1 shows'", () => {
-    render(<ShowGrid shows={[show()]} />);
+  it("has no hero when nothing is ready to watch", () => {
+    const shows = [show({ nextUnwatched: null, watchedCount: 19 })];
+    expect(splitHero(shows)).toEqual({ hero: null, rest: shows });
+  });
 
-    expect(screen.getByText("1 show in progress")).toBeTruthy();
+  it("names the episode up next and marks it from a labelled button", () => {
+    const { hero } = splitHero([
+      show({
+        nextUnwatched: {
+          id: "e5",
+          seasonNumber: 2,
+          episodeNumber: 5,
+          name: "Trojan's Horse",
+          runtime: 52,
+          stillPath: null,
+        },
+      }),
+    ]);
+    render(<WatchingHero show={hero!} nickname="Theo" />);
+
+    expect(screen.getByRole("heading", { name: "Watching" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Severance" })).toBeTruthy();
+    expect(screen.getByText("S2 · E5")).toBeTruthy();
+    expect(screen.getByText("Trojan's Horse · 52m")).toBeTruthy();
+    expect(screen.getByText("16 of 19")).toBeTruthy();
+
+    const button = screen.getByRole("button", { name: "Mark Severance S02E05 watched" });
+    expect(button.textContent).toContain("Mark watched");
+    expect(screen.getByRole("link", { name: "Open Severance" }).getAttribute("href")).toBe("/show/101");
+  });
+
+  it("falls back to the poster when the show has no backdrop yet", () => {
+    const { hero } = splitHero([show({ posterPath: "/poster.jpg", backdropPath: null })]);
+    const { container } = render(<WatchingHero show={hero!} nickname="Theo" />);
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("poster.jpg");
   });
 });
 

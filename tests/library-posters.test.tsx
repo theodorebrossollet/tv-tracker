@@ -32,6 +32,7 @@ function show(over: Partial<TrackedShowSummary> = {}): TrackedShowSummary {
     showId: "1",
     name: "Severance",
     posterPath: "/s.jpg",
+    backdropPath: null,
     status: "watchlist",
     airedCount: 10,
     watchedCount: 0,

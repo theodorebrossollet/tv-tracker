@@ -23,6 +23,7 @@ const details = {
   id: 603,
   title: "The Matrix",
   posterPath: "/matrix.jpg",
+  backdropPath: "/matrix-wide.jpg",
   overview: "A hacker learns the truth.",
   releaseDate: new Date("1999-03-31T04:00:00Z"),
   runtime: 136,
@@ -48,6 +49,7 @@ describe("syncMovieFromTmdb", () => {
     ).resolves.toMatchObject({
       title: "The Matrix",
       posterPath: "/matrix.jpg",
+      backdropPath: "/matrix-wide.jpg",
       overview: "A hacker learns the truth.",
       releaseDate: details.releaseDate,
       runtime: 136,

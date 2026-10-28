@@ -3,6 +3,7 @@ import { FindShowButton } from "@/components/find-show-button";
 import { ProfileButton } from "@/components/profile-button";
 import { PullToRefreshPage } from "@/components/pull-to-refresh-page";
 import { ShowGrid } from "@/components/show-grid";
+import { WatchingHero } from "@/components/watching-hero";
 import { limitFrom } from "@/components/show-more-link";
 import {
   UPCOMING_PAGE_SIZE,
@@ -17,6 +18,7 @@ import { requireOnboardedSession } from "@/lib/auth";
 import { getShowBuckets, getUpcomingEpisodes } from "@/lib/queries";
 import { getSettings } from "@/lib/shows";
 import { getUpcomingMovies } from "@/lib/upcoming-movies";
+import { splitHero } from "@/lib/watching";
 
 // Everything on this page comes from the database and changes as soon as you
 // mark an episode watched, so there's nothing worth prerendering at build time.
@@ -50,36 +52,43 @@ export default async function DashboardPage({
     ),
   ]);
 
+  const { hero, rest } = splitHero(watching);
+
   return (
     <>
       {/* Outside the `space-y` wrapper, which would otherwise add a top
           margin to the first section beneath it. */}
       <PullToRefreshPage />
-      <div className="space-y-10">
-        <section>
-          <div className="flex items-center justify-between gap-2.5">
-            <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
-              Watching
-            </h1>
-            <ProfileButton nickname={user.nickname} />
-          </div>
+      {/* The hero carries the screen's header over its artwork; with nothing
+          ready to watch there is no hero, and the plain header stands in. */}
+      {hero ? (
+        <WatchingHero show={hero} nickname={user.nickname} />
+      ) : (
+        <div className="flex items-center justify-between gap-2.5">
+          <h1 className="text-[30px] font-bold tracking-[-0.03em]">Watching</h1>
+          <ProfileButton nickname={user.nickname} />
+        </div>
+      )}
 
-          {watching.length === 0 ? (
-            <div className="mt-4">
-              <EmptyState
-                title="Nothing in progress"
-                description="Shows land here on their own once you mark an episode watched. Finished ones move to the Archive."
-                icon="shows"
-                action={<FindShowButton />}
-              />
-            </div>
-          ) : (
-            <ShowGrid shows={watching} />
-          )}
-        </section>
+      <div className="mt-8 space-y-10">
+        {watching.length === 0 ? (
+          <EmptyState
+            title="Nothing in progress"
+            description="Shows land here on their own once you mark an episode watched. Finished ones move to the Archive."
+            icon="shows"
+            action={<FindShowButton />}
+          />
+        ) : rest.length > 0 ? (
+          <section>
+            <h2 className="text-[19px] font-bold tracking-[-0.02em]">
+              Continue watching
+            </h2>
+            <ShowGrid shows={rest} />
+          </section>
+        ) : null}
 
         <section>
-          <h2 className="text-lg font-semibold tracking-[-0.015em]">
+          <h2 className="text-[19px] font-bold tracking-[-0.02em]">
             Upcoming episodes
           </h2>
 
@@ -104,7 +113,7 @@ export default async function DashboardPage({
             episodes, and an empty section would just be noise. */}
         {upcomingMovies.length > 0 ? (
           <section>
-            <h2 className="text-lg font-semibold tracking-[-0.015em]">
+            <h2 className="text-[19px] font-bold tracking-[-0.02em]">
               Upcoming movies
             </h2>
 

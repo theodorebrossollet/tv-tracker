@@ -101,7 +101,16 @@ prisma/           schema + migrations; 20261002031325_add_movies adds Movie and
                   unapplied, Settings' "Clear all my data" breaks (its
                   transaction also deletes dismissals), the Settings count
                   shows "Unavailable", and the deck's read of dismissed rows
-                  fails
+                  fails;
+                  20261028181917_add_artwork adds Show.backdropPath,
+                  Movie.backdropPath and Episode.stillPath — additive (three
+                  `ADD COLUMN`s, no table rebuild), but like ratings it adds
+                  columns to core tables Prisma selects whole, so unapplied it
+                  breaks nearly every screen: apply it BEFORE merging, check
+                  `SELECT backdropPath FROM Show LIMIT 1; SELECT stillPath FROM
+                  Episode LIMIT 1;` on Turso, then run
+                  `scripts/backfill-artwork.mjs` (backdrops; stills arrive with
+                  each show's next sync)
 scripts/          migrate, backup, one-off backfills, icon generation,
                   inspect-show (read-only dump of one show's episode and watch
                   rows, for when the app and the database seem to disagree);
@@ -579,6 +588,14 @@ the phone's setting, which no longer changes anything here). The accent is
 white, with `on-accent` near-black; `highlight` (amber) is the one warm note,
 for "up next" and "airing soon". Type is Inter Tight (`--font-sans`).
 `themeColor` and the manifest's colours equal `--background`.
+
+The Watching screen opens on `WatchingHero`: the first show with an episode
+ready (`splitHero` in `lib/watching.ts`, over `getShowBuckets`' order), its
+backdrop full-bleed (poster when it has none yet), the screen's header drawn
+over it, and a wide "Mark watched". Everything else in progress is "Continue
+watching" (`ShowGrid`): a vertical list on purpose, since a sideways carousel
+can't share rows with swipe-to-mark. Thumbnails prefer the next episode's
+still, then the backdrop, then the poster (`backdropUrl` in `lib/images.ts`).
 
 Watching cards also mark their next episode watched on a swipe right
 (`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared
