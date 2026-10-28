@@ -119,7 +119,7 @@ describe("the in-progress count", () => {
 describe("how soon an upcoming episode airs", () => {
   const paging = { searchParams: {}, limit: 15 };
 
-  it("accents a date inside the week and leaves the rest quiet", () => {
+  it("heads each day inside the week, accented, and puts the rest under Later", () => {
     // Pinned to noon UTC (safely inside the same calendar day in US Eastern
     // too) rather than the real clock: `daysUntil` reads "today" in Eastern,
     // so anchoring these fixtures to `Date.now()` made this test's outcome
@@ -140,12 +140,37 @@ describe("how soon an upcoming episode airs", () => {
 
     // Read off the rendered class rather than a colour: the token is what the
     // component chooses, and the scheme decides what it resolves to.
-    const soon = screen.getByText("In 2 days");
-    const later = soon.closest("ul")!.querySelectorAll("li")[1];
+    const soon = screen.getByRole("heading", { name: "Friday" });
+    const later = screen.getByRole("heading", { name: "Later" });
 
     expect(soon.className).toContain("text-accent-deep");
-    expect(later.textContent).not.toContain("In ");
-    expect(later.querySelector(".text-faint")).toBeTruthy();
+    expect(later.className).toContain("text-faint");
+    expect(later.className).not.toContain("text-accent");
+    // Under Later the row carries its own date.
+    expect(later.nextElementSibling!.textContent).toContain("28 Aug");
+  });
+
+  it("collapses a show's episodes on one day into one row", () => {
+    const now = new Date("2026-07-29T12:00:00.000Z").getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const drop = new Date(now + 3 * DAY_MS);
+
+    render(
+      <UpcomingList
+        episodes={[
+          episode({ episodeId: "a", episodeNumber: 1, airDate: drop }),
+          episode({ episodeId: "b", episodeNumber: 2, airDate: drop }),
+          episode({ episodeId: "c", episodeNumber: 3, airDate: drop }),
+          episode({ episodeId: "d", showId: "202", showName: "Dark", airDate: drop }),
+        ]}
+        {...paging}
+      />,
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("S02E01–E03 · 3 episodes")).toBeTruthy();
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
   });
 
   it("flags only the shows you haven't started", () => {

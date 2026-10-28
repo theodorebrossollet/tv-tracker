@@ -3,8 +3,9 @@ import Link from "next/link";
 import { KindBadge } from "@/components/kind-badge";
 import { Poster } from "@/components/poster";
 import { ShowMoreLink } from "@/components/show-more-link";
-import { SOON_DAYS, UPCOMING_PAGE_SIZE } from "@/components/upcoming-list";
+import { UPCOMING_PAGE_SIZE } from "@/components/upcoming-list";
 import { daysUntil, formatAirDateShort, relativeAirDate } from "@/lib/format";
+import { SOON_DAYS } from "@/lib/upcoming-days";
 import type { UpcomingMovie } from "@/lib/upcoming-movies";
 
 /** Search param this list expands with; its own, so it pages independently. */

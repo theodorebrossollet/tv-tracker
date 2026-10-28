@@ -101,7 +101,7 @@ describe("the Watching screen's upcoming sections", () => {
   it("pages each section on its own param", async () => {
     vi.mocked(getUpcomingEpisodes).mockResolvedValue(
       Array.from({ length: 20 }, (_, i) =>
-        episode({ episodeId: `e${i}`, showName: `Show ${i}`, airDate: new Date(Date.now() + (i + 1) * DAY_MS) }),
+        episode({ episodeId: `e${i}`, showId: `s${i}`, showName: `Show ${i}`, airDate: new Date(Date.now() + (i + 1) * DAY_MS) }),
       ),
     );
     vi.mocked(getUpcomingMovies).mockResolvedValue(

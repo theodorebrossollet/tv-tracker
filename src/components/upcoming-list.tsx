@@ -3,22 +3,23 @@ import Link from "next/link";
 import { Poster } from "@/components/poster";
 import { ShowMoreLink } from "@/components/show-more-link";
 import { StatusBadge } from "@/components/status-badge";
-import { episodeCode } from "@/lib/episode-code";
-import { daysUntil, relativeAirDate } from "@/lib/format";
 import type { UpcomingEpisode } from "@/lib/queries";
+import { formatAirDateShort } from "@/lib/format";
+import {
+  groupLabel,
+  groupRows,
+  isSoon,
+  LATER,
+  rowDetail,
+  upcomingRows,
+  type UpcomingRow,
+} from "@/lib/upcoming-days";
 
 /** How many rows to show at first, and to add per click. */
 export const UPCOMING_PAGE_SIZE = 15;
 
 /** Search param this list expands with. */
 export const UPCOMING_PARAM = "upcoming";
-
-/**
- * Inside this many days the date is worth noticing rather than just reading,
- * so it takes the accent. Matches where `relativeAirDate` stops counting days
- * and starts printing a date — the two would look arbitrary if they disagreed.
- */
-export const SOON_DAYS = 7;
 
 interface UpcomingListProps {
   episodes: UpcomingEpisode[];
@@ -27,28 +28,43 @@ interface UpcomingListProps {
 }
 
 /**
- * The upcoming-episodes list, revealed a page at a time.
+ * The upcoming-episodes list, by day, revealed a page at a time.
  *
  * A server component: the query caps at 90 episodes, and previously all of them
  * serialised into the page whether or not anyone expanded the list. Now only
  * the rows being shown are rendered, and "Load more" is a URL rather than
  * client state. Movies have their own list (`UpcomingMoviesList`).
+ *
+ * Pages count rows, not episodes (`upcomingRows`): a season dropped at once is
+ * one row, and so is everything a show has scheduled past this week.
  */
 export function UpcomingList({
   episodes,
   searchParams,
   limit,
 }: UpcomingListProps) {
-  const shown = episodes.slice(0, limit);
-  const remaining = episodes.length - shown.length;
+  const rows = upcomingRows(episodes);
+  const shown = rows.slice(0, limit);
+  const remaining = rows.length - shown.length;
 
   return (
     <>
-      <ul className="mt-3">
-        {shown.map((episode) => (
-          <EpisodeRow key={episode.episodeId} episode={episode} />
-        ))}
-      </ul>
+      {groupRows(shown).map(({ group, rows: groupedRows }) => (
+        <div key={group} className="mt-4 first:mt-3">
+          <h3
+            className={`text-[12px] font-semibold uppercase tracking-[0.06em] ${
+              group !== LATER && isSoon(group) ? "text-accent-deep" : "text-faint"
+            }`}
+          >
+            {groupLabel(group)}
+          </h3>
+          <ul className="mt-1">
+            {groupedRows.map((row) => (
+              <Row key={row.key} row={row} />
+            ))}
+          </ul>
+        </div>
+      ))}
 
       {remaining > 0 ? (
         <ShowMoreLink
@@ -64,41 +80,42 @@ export function UpcomingList({
   );
 }
 
-function EpisodeRow({ episode }: { episode: UpcomingEpisode }) {
-  const iso = episode.airDate.toISOString();
-  const soon = daysUntil(iso) < SOON_DAYS;
-
+function Row({ row }: { row: UpcomingRow }) {
   return (
-    <li className="border-b border-border-faint">
+    <li className="border-b border-border-faint last:border-b-0">
       <Link
-        href={`/show/${episode.showId}`}
-        className="flex items-center gap-[11px] py-[11px]"
+        href={`/show/${row.showId}`}
+        className="flex items-center gap-[11px] py-[9px]"
       >
-        <Poster path={episode.posterPath} name={episode.showName} width={34} />
+        <Poster path={row.posterPath} name={row.showName} width={34} />
 
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <span className="flex items-center gap-[7px]">
             <span className="min-w-0 truncate text-sm font-medium">
-              {episode.showName}
+              {row.showName}
             </span>
             {/* Only worth flagging the ones you haven't started — a
                 "Watching" badge on most rows would be noise. */}
-            {episode.status === "watchlist" ? (
-              <StatusBadge status={episode.status} />
+            {row.status === "watchlist" ? (
+              <StatusBadge status={row.status} />
             ) : null}
           </span>
 
           <span className="truncate text-[12px] tabular-nums text-faint">
-            {episodeCode(episode.seasonNumber, episode.episodeNumber)}
-            {episode.name ? ` · ${episode.name}` : ""}
+            {rowDetail(row)}
           </span>
         </div>
 
-        <span
-          className={`shrink-0 text-xs ${soon ? "text-accent-deep" : "text-faint"}`}
-        >
-          {relativeAirDate(iso)}
-        </span>
+        {/* Under Later the header no longer dates the row, so it dates
+            itself, and says how much more of the show is scheduled. */}
+        {row.group === LATER ? (
+          <span className="flex shrink-0 flex-col items-end gap-[3px] text-xs text-faint">
+            {formatAirDateShort(row.episodes[0].airDate.toISOString())}
+            {row.more > 0 ? (
+              <span className="text-[11px]">+{row.more} more</span>
+            ) : null}
+          </span>
+        ) : null}
       </Link>
     </li>
   );
