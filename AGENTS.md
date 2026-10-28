@@ -597,6 +597,11 @@ watching" (`ShowGrid`): a vertical list on purpose, since a sideways carousel
 can't share rows with swipe-to-mark. Thumbnails prefer the next episode's
 still, then the backdrop, then the poster (`backdropUrl` in `lib/images.ts`).
 
+The show page's `ShowHeader` does the same with `backdropPath`: artwork
+full-bleed, a large title over its lower edge, no poster; a show with no
+backdrop yet keeps the older blurred-poster header with the poster beside the
+title. Its Episodes / Watch / About segments are underlined text tabs.
+
 Watching cards also mark their next episode watched on a swipe right
 (`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared
 with Discover's `lockAxis`). It is a shortcut beside the ✓ button, which stays

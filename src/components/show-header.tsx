@@ -7,7 +7,7 @@ import { Poster } from "@/components/poster";
 import { RatingValue } from "@/components/rating-value";
 import { StatusMenu } from "@/components/status-sheet";
 import { progressPercent } from "@/lib/format";
-import { posterUrl } from "@/lib/images";
+import { backdropUrl, posterUrl } from "@/lib/images";
 import type { TitleListMembership } from "@/lib/queries";
 import type { TrackStatus } from "@/lib/types";
 
@@ -15,6 +15,8 @@ interface ShowHeaderProps {
   showId: string;
   name: string;
   posterPath: string | null;
+  /** TMDB's 16:9 artwork; null until the show is re-synced since it existed. */
+  backdropPath?: string | null;
   metaLine: string | null;
   watchedCount: number;
   airedCount: number;
@@ -41,20 +43,21 @@ interface ShowHeaderProps {
 }
 
 /**
- * The show page's header: backdrop, poster, title, progress.
+ * The show page's header: artwork, title, progress.
  *
- * The backdrop is the show's own poster, blurred past recognition. The handoff
- * asks for TMDB's 16:9 backdrop, which the Show model has no column for — and
- * adding one means a migration, a mapping and a backfill script, because both
- * refresh paths key on time rather than completeness and would leave existing
- * rows blank until they aged out. Blurring the poster costs none of that, needs
- * no extra request (same CDN path, already in the payload), and at half opacity
- * behind the scrim it is indistinguishable from the real thing.
+ * With a backdrop (the Marquee look) the show's 16:9 artwork runs full-bleed
+ * behind the header, sharp, and the title sits large over its lower edge; the
+ * poster is left out, since the artwork already says which show this is.
+ *
+ * Without one — a show not re-synced since backdrops were stored — it falls
+ * back to the older treatment: the poster blurred past recognition behind a
+ * scrim, with the poster itself beside the title.
  */
 export function ShowHeader({
   showId,
   name,
   posterPath,
+  backdropPath = null,
   metaLine,
   watchedCount,
   airedCount,
@@ -68,19 +71,34 @@ export function ShowHeader({
   resetHistory,
 }: ShowHeaderProps) {
   const percent = progressPercent(watchedCount, airedCount);
-  const backdrop = posterUrl(posterPath, "w500");
+  const artwork = backdropUrl(backdropPath, "w1280");
+  const blurred = artwork ? null : posterUrl(posterPath, "w500");
 
   return (
     // Bleeds up through `main`'s top padding as well as out to the sides, so
     // the tint starts at the top of the screen; the padding gives the same
     // amount back, leaving the content where it was. It used to start below
     // the refresh strip, which no longer holds that line when closed.
-    <div className="relative -mx-4 -mt-6 overflow-hidden px-4 pb-[18px] pt-9 sm:-mt-10 sm:pt-[3.25rem]">
-      {backdrop ? (
+    <div className="relative -mx-4 -mt-6 overflow-hidden px-4 pb-[18px] pt-9 sm:-mx-6 sm:-mt-10 sm:px-6 sm:pt-[3.25rem]">
+      {artwork ? (
+        <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[400px]">
+          <Image
+            src={artwork}
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 1024px) 1024px, 100vw"
+            className="object-cover"
+          />
+          {/* Dark at the top for the controls, clear through the middle, the
+              page colour at the bottom where the title sits. */}
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background)_55%,transparent)_0%,transparent_30%,color-mix(in_srgb,var(--background)_45%,transparent)_62%,var(--background)_100%)]" />
+        </div>
+      ) : blurred ? (
         <>
           <div aria-hidden="true" className="absolute inset-0 scale-110">
             <Image
-              src={backdrop}
+              src={blurred}
               alt=""
               fill
               sizes="100vw"
@@ -101,7 +119,8 @@ export function ShowHeader({
           <Link
             href="/"
             aria-label="Back"
-            className="-ml-2 flex size-10 items-center justify-center rounded-full"
+            // A glass circle: it sits over artwork that can be any colour.
+            className="flex size-11 items-center justify-center rounded-full border border-accent-border bg-background/45 backdrop-blur-md"
           >
             <svg
               viewBox="0 0 24 24"
@@ -134,16 +153,26 @@ export function ShowHeader({
           </div>
         </div>
 
-        <div className="mt-3 flex items-end gap-3.5">
-          <Poster
-            path={posterPath}
-            name={name}
-            width={78}
-            className="shadow-[0_10px_22px_-12px_rgba(0,0,0,.8)]"
-          />
+        <div
+          className={`flex items-end gap-3.5 ${artwork ? "mt-[164px]" : "mt-3"}`}
+        >
+          {artwork ? null : (
+            <Poster
+              path={posterPath}
+              name={name}
+              width={78}
+              className="shadow-[0_10px_22px_-12px_rgba(0,0,0,.8)]"
+            />
+          )}
 
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-semibold leading-[27px] tracking-[-0.025em]">
+            <h1
+              className={
+                artwork
+                  ? "text-[42px] leading-none font-extrabold tracking-[-0.04em]"
+                  : "text-2xl font-semibold leading-[27px] tracking-[-0.025em]"
+              }
+            >
               {name}
             </h1>
 
@@ -154,7 +183,7 @@ export function ShowHeader({
             {airedCount > 0 ? (
               <div className="mt-3 flex items-center gap-[9px]">
                 <div
-                  className="h-[5px] flex-1 overflow-hidden rounded-full bg-surface-sunken"
+                  className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/20"
                   role="progressbar"
                   aria-valuenow={percent}
                   aria-valuemin={0}

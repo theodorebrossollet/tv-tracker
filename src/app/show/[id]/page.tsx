@@ -394,6 +394,7 @@ export default async function ShowPage({
         showId={show.id}
         name={show.name}
         posterPath={show.posterPath}
+        backdropPath={show.backdropPath}
         metaLine={showMetaLine(show)}
         watchedCount={watchedCount}
         airedCount={airedCount}

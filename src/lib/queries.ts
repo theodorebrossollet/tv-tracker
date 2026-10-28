@@ -772,6 +772,7 @@ export const getShowDetail = cache(async function getShowDetail(
     id: show.id,
     name: show.name,
     posterPath: show.posterPath,
+    backdropPath: show.backdropPath,
     overview: show.overview,
     lastSynced: show.lastSynced,
     status: (show.tracked[0]?.status ?? null) as TrackStatus | null,
