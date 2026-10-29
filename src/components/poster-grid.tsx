@@ -43,7 +43,7 @@ export function PosterGrid({ items }: { items: PosterGridItem[] }) {
               <Link
                 href={item.href}
                 aria-label={item.title}
-                className="relative block aspect-[2/3] overflow-hidden rounded-md border border-border bg-surface"
+                className="relative block aspect-[2/3] overflow-hidden rounded-xl bg-surface"
               >
                 {url ? (
                   <Image

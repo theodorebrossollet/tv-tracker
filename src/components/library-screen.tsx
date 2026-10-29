@@ -56,16 +56,16 @@ export function LibraryScreen({
           switch and a search button, which on a 402pt phone was four controls
           wrapping into each other. */}
       <div className="flex items-center gap-3">
-        <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
-          Library
-        </h1>
+        <h1 className="text-[30px] font-bold tracking-[-0.03em]">Library</h1>
         <TypeSwitch segment={segment} type={data.type} />
         <div className="ml-auto">
           <ProfileButton nickname={nickname} />
         </div>
       </div>
 
-      <div className="mt-3.5 flex items-start gap-2">
+      {/* One rule under the whole row, so the tabs' underline and the layout
+          switch read as a single bar. */}
+      <div className="mt-3 flex items-center gap-2 border-b border-border">
         <div className="min-w-0 flex-1">
           <Segments segment={segment} type={data.type} />
         </div>
@@ -352,7 +352,7 @@ function Section({
 }) {
   return (
     <section className={first ? "mt-[18px]" : "mt-[26px]"}>
-      <h2 className="text-[17px] font-semibold tracking-[-0.015em]">{title}</h2>
+      <h2 className="text-[19px] font-bold tracking-[-0.02em]">{title}</h2>
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -384,10 +384,7 @@ function TypeSwitch({
   ] as const;
 
   return (
-    <nav
-      aria-label="Shows or movies"
-      className="flex gap-0.5 rounded-[11px] border border-border bg-surface-sunken p-0.5"
-    >
+    <nav aria-label="Shows or movies" className="flex gap-1.5">
       {OPTIONS.map((option) => (
         <PillLink
           key={option.id}
@@ -428,7 +425,7 @@ function Segments({
   ] as const;
 
   return (
-    <div className="flex gap-[3px] rounded-[13px] border border-border bg-surface-sunken p-[3px]">
+    <div className="flex gap-6">
       {SEGMENTS.map((option) => (
         <PillLink
           key={option.id}
@@ -450,7 +447,10 @@ function PillLink({
 }: {
   href: string;
   active: boolean;
-  /** `compact` hugs its label, for the header; `full` shares the row. */
+  /**
+   * `compact`, a chip in the header (Shows / Movies): solid white when chosen.
+   * `full`, an underlined tab (Watchlist / Archive), as on the show page.
+   */
   size?: "full" | "compact";
   children: React.ReactNode;
 }) {
@@ -458,15 +458,17 @@ function PillLink({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center justify-center text-[13px] font-medium transition-colors ${
+      className={
         size === "compact"
-          ? "min-h-9 rounded-[9px] px-3"
-          : "min-h-10 flex-1 rounded-[10px]"
-      } ${
-        active
-          ? "bg-surface-raised text-foreground shadow-[0_1px_2px_rgba(0,0,0,.12)]"
-          : "text-muted"
-      }`}
+          ? `flex min-h-9 items-center justify-center rounded-full px-3.5 text-[13px] font-semibold transition-colors ${
+              active ? "bg-accent text-on-accent" : "bg-surface text-muted"
+            }`
+          : `-mb-px flex min-h-11 items-center border-b-2 text-[15px] font-semibold transition-colors ${
+              active
+                ? "border-foreground text-foreground"
+                : "border-transparent text-faint hover:text-muted"
+            }`
+      }
     >
       {children}
     </Link>

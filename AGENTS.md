@@ -602,6 +602,14 @@ full-bleed, a large title over its lower edge, no poster; a show with no
 backdrop yet keeps the older blurred-poster header with the poster beside the
 title. Its Episodes / Watch / About segments are underlined text tabs.
 
+The same rules run through Library, Lists, Discover and Profile: cards are
+filled (`bg-surface`, `rounded-2xl`) with no outline; a choice is a solid
+white chip (Shows/Movies, Discover's filters) or an underlined text tab
+(Watchlist/Archive, a show's segments); round icon buttons are filled, not
+outlined. Lists show a fan of each list's newest posters (`posterPaths` on
+`getLists`, at most `LIST_COVER_POSTERS`). Discover frames a poster on a
+blurred copy of itself rather than cropping it to the card.
+
 Watching cards also mark their next episode watched on a swipe right
 (`SwipeToMark`; the decisions are in `lib/swipe-row.ts`, axis locking shared
 with Discover's `lockAxis`). It is a shortcut beside the ✓ button, which stays

@@ -52,7 +52,7 @@ export default async function ListPage({ params }: ListPageProps) {
         <Link
           href="/lists"
           aria-label="Back"
-          className="-ml-2 flex size-10 items-center justify-center rounded-full"
+          className="flex size-11 items-center justify-center rounded-full bg-surface"
         >
           <svg
             viewBox="0 0 24 24"
@@ -78,7 +78,7 @@ export default async function ListPage({ params }: ListPageProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <h1 className="min-w-0 break-words text-[25px] font-semibold tracking-[-0.025em]">
+        <h1 className="min-w-0 break-words text-[30px] leading-tight font-bold tracking-[-0.03em]">
           {list.name}
         </h1>
         {list.items.length > 0 ? (

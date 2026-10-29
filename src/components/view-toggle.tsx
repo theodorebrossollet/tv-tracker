@@ -53,7 +53,7 @@ export function ViewToggle({ view }: { view: ViewMode }) {
       <div
         role="group"
         aria-label="Layout"
-        className="flex gap-0.5 rounded-[11px] border border-border bg-surface-sunken p-0.5"
+        className="flex gap-0.5"
       >
         {OPTIONS.map((option) => (
           <button
@@ -62,10 +62,10 @@ export function ViewToggle({ view }: { view: ViewMode }) {
             aria-label={`${option.label} view`}
             aria-pressed={shown === option.mode}
             onClick={() => choose(option.mode)}
-            className={`flex h-10 min-w-9 items-center justify-center rounded-[9px] transition-colors ${
+            className={`flex size-10 items-center justify-center rounded-full transition-colors ${
               shown === option.mode
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted hover:text-foreground"
+                ? "bg-surface-raised text-foreground"
+                : "text-faint hover:text-foreground"
             }`}
           >
             <svg

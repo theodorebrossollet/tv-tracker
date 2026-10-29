@@ -72,20 +72,20 @@ export function ListItemRow({
 
   return (
     <li
-      className={`relative rounded-[15px] border border-border p-[11px] transition-colors ${
+      className={`relative rounded-2xl p-2.5 transition-colors ${
         quiet ? "bg-surface-sunken" : "bg-surface"
       }`}
     >
       <div className="flex items-center gap-3">
         <div className="relative shrink-0">
-          <Poster path={item.posterPath} name={item.title} width={44} />
+          <Poster path={item.posterPath} name={item.title} width={52} />
           <KindBadge kind={item.kind === "movie" ? "movie" : "tv"} />
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
           <Link
             href={href}
-            className={`truncate text-[15px] font-medium tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
+            className={`truncate text-[15.5px] font-semibold tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
               quiet ? "text-muted" : ""
             }`}
           >
@@ -98,7 +98,7 @@ export function ListItemRow({
               item.kind === "show" && item.finished ? (
                 // A finished show sits under "Watched"; its status is still
                 // "watching", which would read as a contradiction.
-                <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted">
+                <span className="shrink-0 rounded-full bg-surface-raised px-1.5 py-0.5 text-[10px] font-normal text-muted">
                   Finished
                 </span>
               ) : (
@@ -145,7 +145,7 @@ export function ListItemRow({
           aria-haspopup="dialog"
           className="relative -m-1.5 flex size-11 shrink-0 items-center justify-center"
         >
-          <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground">
+          <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised text-muted transition-colors hover:text-foreground">
             <svg
               viewBox="0 0 24 24"
               fill="currentColor"

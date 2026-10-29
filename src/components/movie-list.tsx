@@ -95,18 +95,16 @@ export function MovieList({
           return (
             <li
               key={movie.movieId}
-              className={`relative flex items-center gap-3 rounded-[15px] border p-[11px] transition-colors ${
-                tone === "sunken"
-                  ? "border-border bg-surface-sunken"
-                  : "border-border bg-surface"
+              className={`relative flex items-center gap-3 rounded-2xl p-2.5 transition-colors ${
+                tone === "sunken" ? "bg-surface-sunken" : "bg-surface"
               }`}
             >
-              <Poster path={movie.posterPath} name={movie.title} width={44} />
+              <Poster path={movie.posterPath} name={movie.title} width={52} />
 
               <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
                 <Link
                   href={`/movie/${movie.movieId}`}
-                  className={`truncate text-[15px] font-medium tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
+                  className={`truncate text-[15.5px] font-semibold tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
                     tone === "sunken" ? "text-muted" : ""
                   }`}
                 >

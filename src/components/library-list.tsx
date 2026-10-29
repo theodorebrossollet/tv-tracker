@@ -73,18 +73,16 @@ export function LibraryList({
         {shown.map((show) => (
           <li
             key={show.showId}
-            className={`relative flex items-center gap-3 rounded-[15px] border p-[11px] transition-colors ${
-              tone === "sunken"
-                ? "border-border bg-surface-sunken"
-                : "border-border bg-surface"
+            className={`relative flex items-center gap-3 rounded-2xl p-2.5 transition-colors ${
+              tone === "sunken" ? "bg-surface-sunken" : "bg-surface"
             }`}
           >
-            <Poster path={show.posterPath} name={show.name} width={44} />
+            <Poster path={show.posterPath} name={show.name} width={52} />
 
             <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
               <Link
                 href={`/show/${show.showId}`}
-                className={`truncate text-[15px] font-medium tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
+                className={`truncate text-[15.5px] font-semibold tracking-[-0.01em] after:absolute after:inset-0 after:content-[''] ${
                   tone === "sunken" ? "text-muted" : ""
                 }`}
               >
