@@ -196,7 +196,7 @@ export function DiscoverCard({
       // whatever is left after the text, so the whole card (and the buttons
       // under it) fit one screen with no scrolling. Opened details replace the
       // poster and scroll inside the card instead.
-      className={`relative z-10 flex min-h-0 flex-1 touch-pan-y flex-col rounded-2xl border border-border bg-background p-3 shadow-sm ${
+      className={`relative z-10 flex min-h-0 flex-1 touch-pan-y flex-col rounded-3xl bg-surface p-2.5 shadow-[0_18px_40px_rgba(0,0,0,.5)] ${
         dragging ? "" : "transition-[transform,opacity] duration-200"
       }`}
     >
@@ -210,7 +210,7 @@ export function DiscoverCard({
         {expanded ? null : <CardPoster path={card.posterPath} title={card.title} />}
 
         <div className={`shrink-0 px-1 ${expanded ? "" : "mt-3"}`}>
-          <h2 className="text-xl font-semibold tracking-[-0.015em]">
+          <h2 className="text-2xl leading-tight font-bold tracking-[-0.03em]">
             {card.title}
           </h2>
           <p className="mt-0.5 text-[13px] text-muted">{meta}</p>
@@ -240,16 +240,30 @@ export function DiscoverCard({
 }
 
 /**
- * The poster, as large as the room allows. A 2:3 box that fills the height it
- * is given and is as wide as that makes it (never wider than the card); a title
- * with no poster gets an empty frame of the same shape so the card doesn't jump.
+ * The poster, as large as the room allows, on a blurred copy of itself.
+ *
+ * The room is rarely 2:3, and cropping a poster to fill it cuts its title
+ * art, so the poster keeps its shape — a 2:3 box as tall as the room, never
+ * wider than the card — and the blurred copy fills the rest of the panel, the
+ * way the TV app frames artwork that doesn't match its slot. A title with no
+ * poster gets the same panel, empty, so the card doesn't jump.
  */
 function CardPoster({ path, title }: { path: string | null; title: string }) {
   const url = posterUrl(path, "w342");
 
   return (
-    <div className="min-h-0 flex-1">
-      <div className="relative mx-auto aspect-[2/3] h-full max-w-full overflow-hidden rounded-md border border-border bg-surface">
+    <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-surface-raised">
+      {url ? (
+        <Image
+          src={url}
+          alt=""
+          aria-hidden="true"
+          fill
+          sizes="160px"
+          className="scale-125 object-cover opacity-60 blur-2xl"
+        />
+      ) : null}
+      <div className="relative mx-auto aspect-[2/3] h-full max-w-full overflow-hidden rounded-xl shadow-[0_12px_30px_rgba(0,0,0,.55)]">
         {url ? (
           <Image
             src={url}

@@ -37,7 +37,7 @@ export function Group({
         </p>
       ) : null}
 
-      <div className="mt-2.5 divide-y divide-border-faint overflow-hidden rounded-[14px] border border-border bg-surface">
+      <div className="mt-2.5 divide-y divide-border-faint overflow-hidden rounded-2xl bg-surface">
         {children}
       </div>
 

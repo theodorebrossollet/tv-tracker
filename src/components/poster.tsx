@@ -23,7 +23,7 @@ export function Poster({
     return (
       <div
         style={{ width, height }}
-        className={`flex shrink-0 items-center justify-center rounded-md border border-border bg-surface text-center text-[10px] leading-tight text-muted ${className}`}
+        className={`flex shrink-0 items-center justify-center rounded-lg bg-surface-raised text-center text-[10px] leading-tight text-muted ${className}`}
       >
         No poster
       </div>
@@ -36,7 +36,7 @@ export function Poster({
       alt={`Poster for ${name}`}
       width={width}
       height={height}
-      className={`shrink-0 rounded-md border border-border object-cover ${className}`}
+      className={`shrink-0 rounded-lg object-cover ${className}`}
     />
   );
 }

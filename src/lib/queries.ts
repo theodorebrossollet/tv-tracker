@@ -987,14 +987,38 @@ export interface ListSummary {
   name: string;
   trackSeparately: boolean;
   itemCount: number;
+  /**
+   * Posters of the most recently added titles, newest first, at most
+   * `LIST_COVER_POSTERS`: the fan on the Lists screen. Titles without a poster
+   * are skipped rather than drawn as blanks.
+   */
+  posterPaths: string[];
 }
 
-/** The account's lists, newest first, each with how many titles it holds. */
+export const LIST_COVER_POSTERS = 3;
+
+/**
+ * The account's lists, newest first, each with how many titles it holds and
+ * a few of their posters.
+ */
 export async function getLists(userId: string): Promise<ListSummary[]> {
   const rows = await prisma.list.findMany({
     where: { userId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    include: { _count: { select: { items: true } } },
+    include: {
+      _count: { select: { items: true } },
+      // A few more than are drawn, so items with no poster don't leave the
+      // fan short. The list is already the caller's (`where` above), so its
+      // items need no userId of their own.
+      items: {
+        orderBy: [{ addedAt: "desc" }, { id: "desc" }],
+        take: LIST_COVER_POSTERS * 2,
+        select: {
+          movie: { select: { posterPath: true } },
+          show: { select: { posterPath: true } },
+        },
+      },
+    },
   });
 
   return rows.map((row) => ({
@@ -1002,6 +1026,10 @@ export async function getLists(userId: string): Promise<ListSummary[]> {
     name: row.name,
     trackSeparately: row.trackSeparately,
     itemCount: row._count.items,
+    posterPaths: row.items
+      .map((item) => item.movie?.posterPath ?? item.show?.posterPath ?? null)
+      .filter((path): path is string => path !== null)
+      .slice(0, LIST_COVER_POSTERS),
   }));
 }
 

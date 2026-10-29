@@ -298,9 +298,7 @@ export function DiscoverDeck({
     // a dragged card can't push the page sideways.
     <div className="mx-auto flex h-[calc(100dvh-1.5rem-var(--tab-bar-room))] min-h-[28rem] max-w-md flex-col overflow-x-clip sm:h-[calc(100dvh-2.5rem-var(--tab-bar-room))]">
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <h1 className="text-[25px] font-semibold tracking-[-0.025em]">
-          Discover
-        </h1>
+        <h1 className="text-[30px] font-bold tracking-[-0.03em]">Discover</h1>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -309,7 +307,7 @@ export function DiscoverDeck({
             title="Reshuffle"
             className="-my-1.5 flex size-11 items-center justify-center text-muted hover:text-foreground"
           >
-            <span className="flex size-9 items-center justify-center rounded-full border border-border">
+            <span className="flex size-9 items-center justify-center rounded-full bg-surface">
               <ShuffleIcon />
             </span>
           </button>
@@ -395,7 +393,7 @@ export function DiscoverDeck({
                 onClick={() => choose("left")}
                 disabled={pending}
                 aria-label="Not this one"
-                className="flex size-14 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
+                className="flex size-14 items-center justify-center rounded-full bg-surface-raised text-foreground transition-colors hover:bg-surface disabled:opacity-50"
               >
                 <CrossIcon />
               </button>
@@ -405,7 +403,7 @@ export function DiscoverDeck({
                   onClick={() => void seenIt()}
                   disabled={pending}
                   aria-label="Already watched"
-                  className="flex size-14 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
+                  className="flex size-14 items-center justify-center rounded-full bg-surface-raised text-foreground transition-colors hover:bg-surface disabled:opacity-50"
                 >
                   <EyeIcon />
                 </button>
@@ -426,7 +424,7 @@ export function DiscoverDeck({
             </div>
           </>
         ) : cards.length === 0 && !chose ? (
-          <div className="rounded-2xl border border-border px-6 py-10 text-center">
+          <div className="rounded-3xl bg-surface px-6 py-10 text-center">
             <p className="font-semibold">Nothing to pick from yet</p>
             <p className="mt-2 text-[13px] text-muted">
               {
@@ -435,12 +433,12 @@ export function DiscoverDeck({
             </p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-border px-6 py-10 text-center">
+          <div className="rounded-3xl bg-surface px-6 py-10 text-center">
             <p className="font-semibold">{"You've seen them all"}</p>
             <button
               type="button"
               onClick={reshuffle}
-              className="mt-4 min-h-[46px] rounded-full border border-border px-[22px] text-[15px] font-medium transition-colors hover:bg-surface"
+              className="mt-4 min-h-[46px] rounded-full bg-accent px-[22px] text-[15px] font-semibold text-on-accent"
             >
               Refresh
             </button>
@@ -469,10 +467,10 @@ function Chip({
       className="flex min-h-11 items-center"
     >
       <span
-        className={`rounded-full border px-3.5 py-1.5 text-[13px] transition-colors ${
+        className={`rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${
           pressed
-            ? "border-accent bg-accent text-on-accent"
-            : "border-border text-muted hover:bg-surface hover:text-foreground"
+            ? "bg-accent text-on-accent"
+            : "bg-surface text-muted hover:text-foreground"
         }`}
       >
         {children}
@@ -487,7 +485,7 @@ function Peek({ card }: { card: DeckCard }) {
     <div
       data-testid="next-card"
       aria-hidden="true"
-      className="absolute inset-x-4 top-0 h-24 overflow-hidden rounded-2xl border border-border bg-surface px-3 pt-0.5 text-[11px] text-muted"
+      className="absolute inset-x-4 top-0 h-24 overflow-hidden rounded-3xl bg-surface-raised px-3 pt-0.5 text-[11px] text-muted"
     >
       {card.title}
     </div>
@@ -504,7 +502,7 @@ function Tonight({
   onOpen: () => void;
 }) {
   return (
-    <section className="flex flex-col items-center rounded-2xl border border-border px-6 py-8 text-center">
+    <section className="flex flex-col items-center rounded-3xl bg-surface px-6 py-8 text-center">
       <Poster path={card.posterPath} name={card.title} width={160} />
       <h2 className="mt-4 text-xl font-semibold tracking-[-0.015em]">
         Tonight: {card.title}

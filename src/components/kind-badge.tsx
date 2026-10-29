@@ -18,7 +18,7 @@ export function KindBadge({ kind }: { kind: "tv" | "movie" }) {
       role="img"
       aria-label={label}
       title={label}
-      className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted"
+      className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-full bg-background/90 text-muted"
     >
       <svg
         viewBox="0 0 24 24"

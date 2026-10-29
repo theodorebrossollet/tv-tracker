@@ -14,7 +14,7 @@
 
 /** One pulsing block. */
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`rounded bg-surface ${className}`} />;
+  return <div className={`rounded bg-surface-raised ${className}`} />;
 }
 
 /**
@@ -48,7 +48,7 @@ export function SkeletonHeader() {
 /** A dashboard show card: poster, title, progress bar, next episode. */
 export function SkeletonShowCard() {
   return (
-    <div className="flex gap-3 rounded-[15px] border border-border p-[11px]">
+    <div className="flex gap-3 rounded-2xl bg-surface p-2.5">
       <Skeleton className="h-[78px] w-[52px] shrink-0 rounded-lg" />
       <div className="flex min-w-0 flex-1 flex-col justify-center gap-[7px]">
         <Skeleton className="h-4 w-1/2" />
@@ -62,8 +62,8 @@ export function SkeletonShowCard() {
 /** A library row: smaller poster, name, detail line. */
 export function SkeletonListRow() {
   return (
-    <div className="flex items-center gap-3 rounded-[15px] border border-border p-[11px]">
-      <Skeleton className="h-[66px] w-[44px] shrink-0 rounded-lg" />
+    <div className="flex items-center gap-3 rounded-2xl bg-surface p-2.5">
+      <Skeleton className="h-[78px] w-[52px] shrink-0 rounded-lg" />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <Skeleton className="h-4 w-2/5" />
         <Skeleton className="h-3 w-1/4" />
@@ -78,7 +78,7 @@ export function SkeletonGroup({ rows }: { rows: number }) {
   return (
     <div className="mt-[22px]">
       <Skeleton className="h-2.5 w-24" />
-      <div className="mt-2.5 divide-y divide-border-faint overflow-hidden rounded-[14px] border border-border">
+      <div className="mt-2.5 divide-y divide-border-faint overflow-hidden rounded-2xl bg-surface">
         {Array.from({ length: rows }, (_, index) => (
           <div key={index} className="flex h-[52px] items-center px-3.5">
             <Skeleton className="h-4 w-1/3" />

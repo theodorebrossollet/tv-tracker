@@ -116,6 +116,26 @@ describe("getLists", () => {
     ]);
   });
 
+  it("carries up to three cover posters, newest first, skipping titles without one", async () => {
+    const list = await seedList("Mixed");
+    await seedMovie("1", { poster: "/one.jpg" });
+    await seedMovie("2", { poster: null });
+    await seedMovie("3", { poster: "/three.jpg" });
+    await seedMovie("4", { poster: "/four.jpg" });
+    await seedMovie("5", { poster: "/five.jpg" });
+    await addMovie(list.id, "1", { addedAt: "2026-01-01T00:00:00Z" });
+    await addMovie(list.id, "2", { addedAt: "2026-01-05T00:00:00Z" });
+    await addMovie(list.id, "3", { addedAt: "2026-01-02T00:00:00Z" });
+    await addMovie(list.id, "4", { addedAt: "2026-01-03T00:00:00Z" });
+    await addMovie(list.id, "5", { addedAt: "2026-01-04T00:00:00Z" });
+
+    const [summary] = await getLists(TEST_USER_ID);
+
+    // Newest is "2", which has no poster; the next three by recency fill in.
+    expect(summary.posterPaths).toEqual(["/five.jpg", "/four.jpg", "/three.jpg"]);
+    expect(summary.itemCount).toBe(5);
+  });
+
   it("never includes another account's lists", async () => {
     await seedList("Mine");
     await seedList("Theirs", { userId: OTHER });

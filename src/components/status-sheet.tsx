@@ -245,7 +245,7 @@ export function StatusMenu({
           aria-expanded={open}
           className="relative -m-1.5 flex size-11 shrink-0 items-center justify-center"
         >
-          <span className="flex size-8 items-center justify-center rounded-full border border-border text-muted transition-colors hover:bg-surface hover:text-foreground">
+          <span className="flex size-8 items-center justify-center rounded-full bg-surface-raised text-muted transition-colors hover:text-foreground">
             <EllipsisIcon />
           </span>
         </button>

@@ -95,7 +95,7 @@ describe("Library in the posters view", () => {
     renderShows("watchlist", { watchlist: [show()] });
     // Its own row with the segments, not the title row: that one holds the
     // title, the Shows/Movies switch and the avatar.
-    const segmentsRow = screen.getByRole("link", { name: "Archive" }).closest<HTMLElement>("div.items-start")!;
+    const segmentsRow = screen.getByRole("link", { name: "Archive" }).closest<HTMLElement>("div.border-b")!;
     expect(within(segmentsRow).getByRole("button", { name: "Rows view" }).getAttribute("aria-pressed")).toBe("true");
     const titleRow = screen.getByRole("heading", { name: "Library" }).parentElement!;
     expect(within(titleRow).queryByRole("button", { name: "Rows view" })).toBeNull();

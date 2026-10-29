@@ -35,9 +35,9 @@ async function renderPage(rows: ListSummary[]) {
 describe("the lists index", () => {
   it("renders rows linking to each list with singular and plural counts", async () => {
     await renderPage([
-      { id: "a", name: "One", trackSeparately: false, itemCount: 1 },
-      { id: "b", name: "Many", trackSeparately: false, itemCount: 12 },
-      { id: "c", name: "None", trackSeparately: false, itemCount: 0 },
+      { id: "a", name: "One", trackSeparately: false, itemCount: 1, posterPaths: [] },
+      { id: "b", name: "Many", trackSeparately: false, itemCount: 12, posterPaths: [] },
+      { id: "c", name: "None", trackSeparately: false, itemCount: 0, posterPaths: [] },
     ]);
 
     expect(screen.getByText("1 title")).toBeTruthy();
@@ -53,8 +53,8 @@ describe("the lists index", () => {
 
   it("labels only the together lists", async () => {
     await renderPage([
-      { id: "a", name: "Solo", trackSeparately: false, itemCount: 2 },
-      { id: "b", name: "Movie night", trackSeparately: true, itemCount: 2 },
+      { id: "a", name: "Solo", trackSeparately: false, itemCount: 2, posterPaths: [] },
+      { id: "b", name: "Movie night", trackSeparately: true, itemCount: 2, posterPaths: [] },
     ]);
 
     expect(screen.getAllByText("Together")).toHaveLength(1);

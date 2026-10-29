@@ -118,7 +118,7 @@ export default async function SettingsPage({
     <div>
       <ProfileHeader nickname={user.nickname} stats={stats} />
 
-      <h2 className="mt-9 text-lg font-semibold tracking-[-0.015em]">
+      <h2 className="mt-9 text-[19px] font-bold tracking-[-0.02em]">
         Settings
       </h2>
 
@@ -244,12 +244,12 @@ function ProfileHeader({
       <div className="flex items-center gap-4">
         <span
           aria-hidden="true"
-          className="flex size-16 shrink-0 items-center justify-center rounded-full border border-accent-border bg-accent-tint text-[24px] font-semibold tracking-[-0.02em] text-accent-deep"
+          className="flex size-[72px] shrink-0 items-center justify-center rounded-full bg-accent text-[28px] font-bold tracking-[-0.02em] text-on-accent"
         >
           {initials(nickname)}
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-[25px] font-semibold tracking-[-0.025em]">
+          <h1 className="truncate text-[30px] font-bold tracking-[-0.03em]">
             {nickname ?? "Profile"}
           </h1>
           {stats ? (
@@ -261,11 +261,13 @@ function ProfileHeader({
       </div>
 
       {stats ? (
-        <dl className="mt-5 grid grid-cols-2 gap-2">
-          <Stat label="Time watched" value={formatWatchTime(stats.minutesWatched)} />
+        // One row of big numbers rather than four boxes: the numbers are the
+        // point, and a box around each made the header read as a dashboard.
+        <dl className="mt-6 grid grid-cols-4 divide-x divide-border rounded-2xl bg-surface py-4">
+          <Stat label="Watched" value={formatWatchTime(stats.minutesWatched)} />
           <Stat label="Episodes" value={stats.episodesWatched.toLocaleString("en-GB")} />
           <Stat label="Movies" value={stats.moviesWatched.toLocaleString("en-GB")} />
-          <Stat label="Shows finished" value={stats.showsFinished.toLocaleString("en-GB")} />
+          <Stat label="Finished" value={stats.showsFinished.toLocaleString("en-GB")} />
         </dl>
       ) : null}
     </>
@@ -276,9 +278,9 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     // Value first in the markup's reading order would be wrong for a `dl`;
     // `flex-col-reverse` draws the number on top while the term stays first.
-    <div className="flex flex-col-reverse rounded-[14px] border border-border bg-surface px-3.5 py-3">
-      <dt className="mt-0.5 text-[12.5px] text-muted">{label}</dt>
-      <dd className="text-[22px] font-semibold tabular-nums tracking-[-0.02em]">
+    <div className="flex min-w-0 flex-col-reverse items-center px-1 text-center">
+      <dt className="mt-1 text-[11.5px] text-muted">{label}</dt>
+      <dd className="truncate text-[22px] leading-none font-bold tabular-nums tracking-[-0.03em]">
         {value}
       </dd>
     </div>
