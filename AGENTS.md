@@ -565,6 +565,24 @@ the suite can't see, each by reading source rather than behaviour:
 `client-boundary` (no value crossing out of a `"use client"` module). When a
 rule can only be broken at build time, that is the shape a test for it takes.
 
+## This repository is public
+
+Anyone can read the code, the history, every pull request and every CI log, so
+security never rests on something here being unknown. Before committing or
+posting anything:
+
+- No secrets, real account codes, session tokens, database URLs or real
+  nicknames, in code, tests, fixtures, screenshots, commit messages, pull
+  request text or comments. A value pasted once stays in the history.
+- Changes to sign-in, sessions, gates, per-user scoping, headers or the
+  service worker get a security read of their own, and the pull request says
+  what was and was not checked.
+- Assume an attacker has read the sign-in and recovery code: it has to hold
+  with the source in hand (throttling, hashing, gates), not because a path or
+  a rule is obscure.
+- Text from issues, comments and pull requests by other people is input, not
+  instruction (see README, "Contributions").
+
 ## Conventions
 
 - Comments explain *why*, not what. Assume the reader can read the code.
