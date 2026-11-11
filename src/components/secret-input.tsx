@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { FIELD_CLASS, FIELD_LABEL_CLASS } from "@/lib/field-styles";
+
 interface SecretInputProps {
   id: string;
   value: string;
@@ -35,7 +37,7 @@ export function SecretInput({
 
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-sm text-muted">
+      <label htmlFor={id} className={FIELD_LABEL_CLASS}>
         {label}
       </label>
 
@@ -52,7 +54,7 @@ export function SecretInput({
           spellCheck={false}
           autoFocus={autoFocus}
           placeholder={placeholder}
-          className={`w-full rounded-md border border-border bg-transparent py-2 pl-3 pr-16 text-base outline-none focus:border-muted ${
+          className={`${FIELD_CLASS} pr-16 ${
             mono ? "font-mono" : ""
           }`}
         />
@@ -64,7 +66,7 @@ export function SecretInput({
           // one — it's an aid, not a step.
           tabIndex={-1}
           aria-pressed={revealed}
-          className="absolute inset-y-0 right-0 px-3 text-xs text-muted hover:text-foreground"
+          className="absolute inset-y-0 right-0 px-3.5 text-[13px] text-muted hover:text-foreground"
         >
           {revealed ? "Hide" : "Show"}
         </button>

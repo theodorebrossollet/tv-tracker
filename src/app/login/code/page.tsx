@@ -1,34 +1,34 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { AuthScreen } from "@/components/auth-screen";
 import { getSession, isOnboarded } from "@/lib/auth";
 
 import { CodeForm } from "./code-form";
 
 export const dynamic = "force-dynamic";
 
-export const metadata = { title: "Sign in with a code · TV Tracker" };
+export const metadata = { title: "Use your account code · TV Tracker" };
 
 export default async function CodeLoginPage() {
   const session = await getSession();
   if (session) redirect(isOnboarded(session.user) ? "/" : "/welcome");
 
   return (
-    <div className="mx-auto max-w-sm py-10">
-      <h1 className="text-xl font-semibold tracking-tight">Enter your code</h1>
-      <p className="mt-2 text-sm text-muted">
-        The code you were given. Use this the first time, or if you&rsquo;ve
-        forgotten your password.
-      </p>
-
+    <AuthScreen
+      title="Use your account code"
+      // Says what it costs before it is used: `loginWithCode` clears the
+      // password and every session the moment a valid code arrives.
+      lede="This signs you in and has you choose a new password. Every other device is signed out."
+    >
       <CodeForm />
 
       <Link
         href="/login"
-        className="mt-6 block text-center text-xs text-muted underline"
+        className="mt-5 flex min-h-11 items-center justify-center text-[13.5px] text-muted transition-colors hover:text-foreground"
       >
-        Back
+        Back to sign in
       </Link>
-    </div>
+    </AuthScreen>
   );
 }

@@ -3,13 +3,14 @@
 A personal web app for tracking TV shows — what you're watching, how far
 through you are, and what's airing next. A replacement for TV Time.
 
-**Accounts are invite-only.** There is no sign-up form: you generate a code
-with `scripts/create-user.mjs`, hand it over, and the recipient sets a nickname
-and password the first time they use it. The code stays valid afterwards as the
-only way back in if the password is forgotten — there is no email to send a
-reset to. Losing both isn't a dead end either, just not self-serve: run
+**There is one account, and no sign-up form.** You sign in at `/login` with a
+nickname and password. The account also has a code, which is the only way back
+in if the password is forgotten — there is no email to send a reset to. Losing
+both isn't a dead end either, just not self-serve: run
 `scripts/reset-user-code.mjs <nickname>` to issue a fresh code for the same
-account, with all of its data untouched.
+account, with all of its data untouched. `scripts/create-user.mjs` creates an
+account in a database that has none (a new or rebuilt one); its code is used
+once at `/login/code` to choose the nickname and password.
 
 The shared `APP_PASSWORD` gate that protected v1 is gone; every page and server
 action now checks a real session.
@@ -21,7 +22,7 @@ action now checks a real session.
 ## Contributions
 
 This repo is public for transparency, not to solicit outside contributions —
-it's a personal project for a handful of invited users, and there's no
+it's a personal project with a single user, and there's no
 roadmap for taking external PRs. Bug reports are still welcome as issues.
 
 No automation in this repo treats issue or PR text as instructions to

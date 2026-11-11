@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { loginWithCode } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
 import { CODE_LENGTH, isAccountCode, normalizeCode } from "@/lib/account-code";
+import { SUBMIT_CLASS } from "@/lib/field-styles";
 
 export function CodeForm() {
   const [code, setCode] = useState("");
@@ -36,7 +37,7 @@ export function CodeForm() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 space-y-4">
+    <form onSubmit={submit} className="mt-7 space-y-4">
       <SecretInput
         id="code"
         label="Account code"
@@ -57,7 +58,7 @@ export function CodeForm() {
       <button
         type="submit"
         disabled={pending || !code.trim()}
-        className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+        className={SUBMIT_CLASS}
       >
         {pending ? "Signing in…" : "Continue"}
       </button>

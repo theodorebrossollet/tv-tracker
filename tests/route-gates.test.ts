@@ -28,7 +28,6 @@ const UNGATED = [
   "api/cron/refresh-episodes/route.ts",
   "login/code/page.tsx",
   "login/page.tsx",
-  "login/password/page.tsx",
 ];
 
 const GATES = ["requireSession", "requireOnboardedSession"];

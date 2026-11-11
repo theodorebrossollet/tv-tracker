@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 
 import { loginWithPassword } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
+import { FIELD_CLASS, FIELD_LABEL_CLASS, SUBMIT_CLASS } from "@/lib/field-styles";
 
 export function PasswordForm() {
   const [nickname, setNickname] = useState("");
@@ -23,9 +24,9 @@ export function PasswordForm() {
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 space-y-4">
+    <form onSubmit={submit} className="mt-7 space-y-4">
       <div>
-        <label htmlFor="nickname" className="mb-1 block text-sm text-muted">
+        <label htmlFor="nickname" className={FIELD_LABEL_CLASS}>
           Nickname
         </label>
         <input
@@ -38,7 +39,7 @@ export function PasswordForm() {
           autoCorrect="off"
           spellCheck={false}
           autoFocus
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-muted"
+          className={FIELD_CLASS}
         />
       </div>
 
@@ -59,7 +60,7 @@ export function PasswordForm() {
       <button
         type="submit"
         disabled={pending || !nickname.trim() || !password}
-        className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+        className={SUBMIT_CLASS}
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>

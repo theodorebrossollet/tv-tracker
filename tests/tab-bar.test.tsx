@@ -119,7 +119,7 @@ describe("routes that render without the bar", () => {
   it("hides on the sign-in and onboarding screens", () => {
     // Every tab points somewhere gated, so a bar here offers five destinations
     // that all bounce straight back to /login.
-    for (const route of ["/login", "/login/password", "/welcome"]) {
+    for (const route of ["/login", "/login/code", "/welcome"]) {
       const { container } = renderAt(route);
       expect(container.innerHTML).toBe("");
       cleanup();

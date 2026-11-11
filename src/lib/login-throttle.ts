@@ -1,6 +1,6 @@
 // Backoff policy for repeated failed password sign-ins.
 //
-// `/login/password` is reachable by anyone who finds the URL, and scrypt alone
+// `/login` is reachable by anyone who finds the URL, and scrypt alone
 // caps guessing at roughly ten a second — around 860k attempts a day, which is
 // thin against an 8-character minimum.
 //
