@@ -1,0 +1,2 @@
+Copied verbatim from https://github.com/emilkowalski/skills (skills/pick-ui-library/SKILL.md) at commit 715c1807e08c497cfd1dc4feb450a2a3300ef2a9, MIT licence (LICENSE beside this file).
+To update: npx -y skills add emilkowalski/skills --skill pick-ui-library --agent claude-code

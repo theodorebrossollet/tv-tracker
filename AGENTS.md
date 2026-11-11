@@ -570,6 +570,34 @@ rule can only be broken at build time, that is the shape a test for it takes.
   one JSON object per line. Never log a TMDB URL — a v3 key rides in the query
   string.
 
+## UI libraries, in short
+
+The components here are hand-built in the Marquee look (`src/components/`,
+tokens in `globals.css`), and that stays: do not run `shadcn init` or pull in a
+styled kit, which would bring a second palette and `dark:` variants that mean
+nothing in a dark-only app. Before adding any UI dependency, run
+`/pick-ui-library` (`.claude/skills/pick-ui-library`, a verbatim copy from
+`emilkowalski/skills`) and name its pick in the pull request. Where its list
+and this file differ, this file wins. What that means in practice:
+
+- Reuse first: sheets are `sheet.tsx` (a `<dialog>`; see the text-colour rule
+  above), search is `search-overlay.tsx`. Don't swap either for a library
+  without a reason the current one can't meet.
+- A new accessible primitive (popover, menu, select, tooltip) that would
+  otherwise mean hand-written focus handling: Base UI (`@base-ui/react`),
+  unstyled, dressed in the existing tokens.
+- Toasts: Sonner. A ⌘K-style command list: cmdk. A drag-to-dismiss drawer:
+  Vaul, only if `sheet.tsx` can't do the job. A number that changes in place
+  (profile stats, ratings): NumberFlow.
+- Decorative components (Magic UI, Aceternity, RareUI, 21st.dev) are copied in
+  one at a time, restyled to the palette, and kept to the login flow, empty
+  states and at most one moment per screen. Never in a list row or anything
+  that swipes.
+- Every one of these is a client component: mind the `"use client"` value
+  rule above, and if a library needs a new origin or inline style allowance,
+  the `Content-Security-Policy` change goes in both the catch-all and the
+  `/sw.js` entry of `next.config.ts`.
+
 ## Navigation and profile, in short
 
 Five tabs in a floating capsule (`tab-bar.tsx`): Watching, Library, Discover,
