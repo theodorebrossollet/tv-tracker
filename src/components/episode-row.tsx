@@ -7,6 +7,7 @@ import { RatingStrip } from "@/components/rating-strip";
 import { RatingValue } from "@/components/rating-value";
 import { episodeCode } from "@/lib/episode-code";
 import { formatAirDate, formatRuntime } from "@/lib/format";
+import { attempt } from "@/lib/notify";
 
 interface EpisodeRowProps {
   episodeId: string;
@@ -75,9 +76,9 @@ export function EpisodeRow({
       // value is dropped and the prop wins — the refreshed one on success, the
       // original one on failure.
       if (watched) {
-        await unmarkEpisodeWatched(episodeId);
+        await attempt(() => unmarkEpisodeWatched(episodeId));
       } else {
-        await markEpisodeWatched(episodeId);
+        await attempt(() => markEpisodeWatched(episodeId));
       }
     });
   }

@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 
 import { setSeasonWatched } from "@/app/actions";
+import { attempt } from "@/lib/notify";
 
 interface SeasonActionsProps {
   showId: string;
@@ -20,7 +21,9 @@ export function SeasonActions({
 
   function toggleSeason() {
     startTransition(async () => {
-      await setSeasonWatched(showId, seasonNumber, !allWatched);
+      await attempt(() =>
+        setSeasonWatched(showId, seasonNumber, !allWatched),
+      );
     });
   }
 

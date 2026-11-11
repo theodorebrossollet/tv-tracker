@@ -4,6 +4,7 @@ import { Geist_Mono, Inter_Tight } from "next/font/google";
 import { SearchProvider } from "@/components/search-provider";
 import { ServiceWorker } from "@/components/service-worker";
 import { TabBar } from "@/components/tab-bar";
+import { Toaster } from "@/components/toaster";
 import "./globals.css";
 
 // Inter Tight: Inter's spacing tightened for display sizes, which is where the
@@ -88,6 +89,7 @@ export default function RootLayout({
             {children}
           </main>
           <TabBar />
+          <Toaster />
         </SearchProvider>
       </body>
     </html>

@@ -1,7 +1,11 @@
 <!-- BEGIN:nextjs-agent-rules -->
+
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
 <!-- END:nextjs-agent-rules -->
 
 # TV Tracker — orientation
@@ -586,7 +590,15 @@ and this file differ, this file wins. What that means in practice:
 - A new accessible primitive (popover, menu, select, tooltip) that would
   otherwise mean hand-written focus handling: Base UI (`@base-ui/react`),
   unstyled, dressed in the existing tokens.
-- Toasts: Sonner. A ⌘K-style command list: cmdk. A drag-to-dismiss drawer:
+- Toasts: Sonner, installed. `components/toaster.tsx` is mounted once in the
+  root layout; raise toasts through `lib/notify.ts`, not `toast` directly:
+  `attempt(() => action())` reports a failed or unreachable server action,
+  `notifyUndoable` adds an Undo (used by swipe-to-mark). They are for controls
+  with nowhere to put an error (a ✓ on a card, a swipe, an episode's checkbox).
+  Forms keep their inline error, and so does anything inside a sheet or the
+  search overlay: a modal dialog is in the top layer and makes the toaster
+  inert, so a toast raised there is drawn underneath it.
+- A ⌘K-style command list: cmdk. A drag-to-dismiss drawer:
   Vaul, only if `sheet.tsx` can't do the job. A number that changes in place
   (profile stats, ratings): NumberFlow.
 - Decorative components (Magic UI, Aceternity, RareUI, 21st.dev) are copied in

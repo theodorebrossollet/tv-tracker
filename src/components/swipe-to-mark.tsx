@@ -2,7 +2,8 @@
 
 import { useOptimistic, useRef, useState, useTransition } from "react";
 
-import { markEpisodeWatched } from "@/app/actions";
+import { markEpisodeWatched, unmarkEpisodeWatched } from "@/app/actions";
+import { attempt, notifyUndoable } from "@/lib/notify";
 import { lockAxis, type SwipeAxis } from "@/lib/swipe";
 import { ROW_COMMIT, rowCommits, rowOffset } from "@/lib/swipe-row";
 
@@ -26,7 +27,8 @@ interface SwipeToMarkProps {
  *
  * Like the button, it marks and waits: the card springs back and dims while
  * the action runs, and the server's next render brings the following episode.
- * Nothing removes or advances the card under the thumb.
+ * Nothing removes or advances the card under the thumb. A swipe that lands
+ * raises a toast with Undo; one that fails raises the error.
  */
 export function SwipeToMark({
   episodeId,
@@ -102,7 +104,14 @@ export function SwipeToMark({
 
     startTransition(async () => {
       setMarked(true);
-      await markEpisodeWatched(episodeId);
+      const ok = await attempt(() => markEpisodeWatched(episodeId));
+      // A swipe is the one way to mark something without meaning to (a scroll
+      // that drifted sideways), and the card has already moved on to the next
+      // episode by the time that is noticed. The ✓ button gets no such toast:
+      // a deliberate tap doesn't need confirming.
+      if (ok) {
+        notifyUndoable("Marked watched", () => unmarkEpisodeWatched(episodeId));
+      }
     });
   }
 

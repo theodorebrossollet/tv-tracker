@@ -3,6 +3,7 @@
 import { useOptimistic, useTransition } from "react";
 
 import { markEpisodeWatched } from "@/app/actions";
+import { attempt } from "@/lib/notify";
 
 interface MarkWatchedButtonProps {
   episodeId: string;
@@ -48,7 +49,7 @@ export function MarkWatchedButton({
 
     startTransition(async () => {
       setMarked(true);
-      await markEpisodeWatched(episodeId);
+      await attempt(() => markEpisodeWatched(episodeId));
     });
   }
 
