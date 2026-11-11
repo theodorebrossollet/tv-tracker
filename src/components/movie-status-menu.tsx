@@ -4,6 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 
 import { removeMovie, setMovieStatus } from "@/app/actions";
 import { resetMovieHistory } from "@/app/rewatch-actions";
+import { ConfirmSheet } from "@/components/confirm-sheet";
 import { Sheet } from "@/components/sheet";
 import { CheckIcon } from "@/components/status-sheet";
 import { movieStatusTargets, type MovieStatusTarget } from "@/lib/movie-status";
@@ -160,41 +161,23 @@ export function MovieStatusMenu({
       )}
 
       {open && showingReset && resetHistory ? (
-        <Sheet title="Reset history?" onClose={close}>
-          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+        <ConfirmSheet
+          title="Reset history?"
+          confirmLabel="Reset history"
+          danger
+          pending={pending}
+          error={error}
+          onConfirm={confirmReset}
+          onCancel={() => {
+            setConfirming(false);
+            setError(null);
+          }}
+          onClose={close}
+        >
             This permanently deletes your watch history and ratings for this
             movie.
             {resetHistory.watched ? " It goes back to your watchlist." : ""}
-          </p>
-
-          {error ? (
-            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
-            <button
-              type="button"
-              onClick={() => {
-                setConfirming(false);
-                setError(null);
-              }}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmReset}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
-            >
-              Reset history
-            </button>
-          </div>
-        </Sheet>
+        </ConfirmSheet>
       ) : null}
 
       {open && !showingReset ? (

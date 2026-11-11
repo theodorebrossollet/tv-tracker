@@ -85,7 +85,7 @@ export function Trailer({ options, showName }: TrailerProps) {
         ) : null}
       </div>
 
-      <div className="mt-3 aspect-video w-full max-w-md overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="mt-3 aspect-video w-full max-w-md overflow-hidden rounded-2xl bg-surface">
         {playing ? (
           <iframe
             key={selected.videoKey}

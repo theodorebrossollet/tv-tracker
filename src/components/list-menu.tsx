@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 
 import { deleteList } from "@/app/list-actions";
 import { ListFormSheet } from "@/components/list-form-sheet";
+import { ConfirmSheet } from "@/components/confirm-sheet";
 import { Sheet } from "@/components/sheet";
 
 interface ListMenuProps {
@@ -77,37 +78,18 @@ export function ListMenu({ list }: ListMenuProps) {
       ) : null}
 
       {step === "confirm" ? (
-        <Sheet title="Delete this list?" onClose={close}>
-          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+        <ConfirmSheet
+          title="Delete this list?"
+          confirmLabel="Delete"
+          danger
+          pending={pending}
+          error={error}
+          onConfirm={confirmDelete}
+          onCancel={close}
+        >
             &ldquo;{list.name}&rdquo; will be deleted. The titles in it stay in
             your library.
-          </p>
-
-          {error ? (
-            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
-            <button
-              type="button"
-              onClick={close}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmDelete}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
-            >
-              Delete
-            </button>
-          </div>
-        </Sheet>
+        </ConfirmSheet>
       ) : null}
 
       {step === "edit" ? (

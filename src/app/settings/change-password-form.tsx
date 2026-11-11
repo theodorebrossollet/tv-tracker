@@ -53,7 +53,7 @@ export function ChangePasswordForm() {
             setOpen(true);
             setDone(false);
           }}
-          className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface"
+          className="rounded-full bg-surface px-4 py-2 text-sm transition-colors hover:bg-surface-raised"
         >
           Change password
         </button>
@@ -122,7 +122,7 @@ export function ChangePasswordForm() {
             setError(null);
           }}
           disabled={pending}
-          className="rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface"
+          className="rounded-full bg-surface px-4 py-2 text-sm transition-colors hover:bg-surface-raised"
         >
           Cancel
         </button>

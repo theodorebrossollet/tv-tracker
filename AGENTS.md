@@ -585,7 +585,9 @@ nothing in a dark-only app. Before adding any UI dependency, run
 and this file differ, this file wins. What that means in practice:
 
 - Reuse first: sheets are `sheet.tsx` (a `<dialog>`; see the text-colour rule
-  above), search is `search-overlay.tsx`. Don't swap either for a library
+  above), a "are you sure?" step is `confirm-sheet.tsx` (Cancel plus the verb;
+  the caller keeps the transition and the error), search is
+  `search-overlay.tsx`. Don't swap either for a library
   without a reason the current one can't meet.
 - A new accessible primitive (popover, menu, select, tooltip) that would
   otherwise mean hand-written focus handling: Base UI (`@base-ui/react`),
@@ -646,7 +648,11 @@ The same rules run through Library, Lists, Discover and Profile: cards are
 filled (`bg-surface`, `rounded-2xl`) with no outline; a choice is a solid
 white chip (Shows/Movies, Discover's filters) or an underlined text tab
 (Watchlist/Archive, a show's segments); round icon buttons are filled, not
-outlined. Lists show a fan of each list's newest posters (`posterPaths` on
+outlined. A secondary button's fill is one step above what it sits on:
+`bg-surface` on the page, `bg-surface-raised` inside a card or list row,
+`bg-accent-tint` inside a sheet. Outlines are kept only where an edge is the
+point: text inputs, an unticked checkbox, the tab bar capsule, and the glass
+controls drawn over a title's artwork. Lists show a fan of each list's newest posters (`posterPaths` on
 `getLists`, at most `LIST_COVER_POSTERS`). Discover frames a poster on a
 blurred copy of itself rather than cropping it to the card.
 

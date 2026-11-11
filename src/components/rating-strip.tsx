@@ -67,10 +67,10 @@ export function RatingStrip({
               disabled={pending}
               aria-label={`Rate ${step} out of 10`}
               aria-pressed={isCurrent}
-              className={`flex min-h-10 min-w-0 flex-1 items-center justify-center rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 ${
+              className={`flex min-h-10 min-w-0 flex-1 items-center justify-center rounded-lg text-sm font-medium transition-colors disabled:opacity-60 ${
                 isCurrent
-                  ? "border-accent bg-accent text-on-accent"
-                  : "border-border hover:bg-surface"
+                  ? "bg-accent text-on-accent"
+                  : "bg-surface text-muted hover:text-foreground"
               }`}
             >
               {step}

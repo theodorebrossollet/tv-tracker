@@ -11,7 +11,7 @@ interface SetAsideButtonsProps {
 }
 
 const BUTTON =
-  "rounded-full border border-border px-4 py-2 text-sm transition-colors hover:bg-surface disabled:opacity-50";
+  "rounded-full bg-surface px-4 py-2 text-sm transition-colors hover:bg-surface-raised disabled:opacity-50";
 
 /**
  * Pause, Stop, and the way back from either.

@@ -57,7 +57,7 @@ export function Availability({
         </p>
       ) : null}
 
-      <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+      <div className="mt-3 space-y-3 rounded-2xl bg-surface p-3">
         {GROUPS.map(({ key, label }) => {
           const providers = selected[key];
           if (providers.length === 0) return null;
@@ -107,7 +107,7 @@ export function ProviderBadge({ provider }: { provider: WatchProvider }) {
 
   return (
     <span
-      className="flex items-center gap-1.5 rounded-full border border-border py-1 pl-1 pr-2.5"
+      className="flex items-center gap-1.5 rounded-full bg-surface-raised py-1 pl-1 pr-2.5"
       title={provider.name}
     >
       {logo ? (

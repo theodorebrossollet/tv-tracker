@@ -257,7 +257,7 @@ export function SearchOverlay({
                     key={entry}
                     type="button"
                     onClick={() => setQuery(entry)}
-                    className="min-h-[38px] rounded-full border border-border bg-surface px-3.5 text-[13.5px] text-muted transition-colors hover:text-foreground"
+                    className="min-h-[38px] rounded-full bg-surface px-3.5 text-[13.5px] text-muted transition-colors hover:text-foreground"
                   >
                     {entry}
                   </button>
