@@ -4,6 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 
 import { markEpisodeWatched } from "@/app/actions";
 import { episodeCode } from "@/lib/episode-code";
+import { attempt } from "@/lib/notify";
 import type { UpNextState } from "@/lib/up-next";
 
 export interface NextUpEpisode {
@@ -51,7 +52,7 @@ export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
           onClick={() => {
             startTransition(async () => {
               setMarked(true);
-              await markEpisodeWatched(episode.id);
+              await attempt(() => markEpisodeWatched(episode.id));
               // The server decides what is next; reset so the card shows the
               // head of the refreshed queue rather than a stale offset into it.
               setIndex(0);
