@@ -33,9 +33,11 @@ export function MarkMovieWatchedButton({ movieId }: { movieId: string }) {
     <div className="flex flex-col gap-1">
       <button
         type="button"
+        // `surface-raised`, not `surface`: it also sits inside a list row, which
+        // is `surface` itself.
         onClick={markWatched}
         disabled={pending}
-        className="rounded-full border border-border bg-surface px-4 py-2 text-sm font-medium disabled:opacity-60"
+        className="rounded-full bg-surface-raised px-4 py-2 text-sm font-medium disabled:opacity-60"
       >
         Mark watched
       </button>

@@ -33,7 +33,7 @@ export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
   const code = episodeCode(episode.seasonNumber, episode.episodeNumber);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-[15px]">
+    <div className="rounded-2xl bg-surface p-[15px]">
       <div className="flex items-baseline gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-highlight">
           Next up
@@ -84,7 +84,7 @@ export function NextUpCard({ queue }: { queue: NextUpEpisode[] }) {
             onClick={() => setIndex((current) => current + 1)}
             disabled={pending}
             aria-label={`Skip ${code}`}
-            className="min-h-12 rounded-[13px] border border-border px-4 text-sm text-muted transition-colors hover:text-foreground"
+            className="min-h-12 rounded-[13px] bg-surface-raised px-4 text-sm text-muted transition-colors hover:text-foreground"
           >
             Skip
           </button>

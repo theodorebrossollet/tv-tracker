@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { resetShowHistory, startShowOver } from "@/app/rewatch-actions";
+import { ConfirmSheet } from "@/components/confirm-sheet";
 import { Sheet } from "@/components/sheet";
 import { STATUS_ACTIONS } from "@/components/status-actions";
 import {
@@ -252,8 +253,16 @@ export function StatusMenu({
       )}
 
       {open && showingStartOver && startOver ? (
-        <Sheet title="Start this show over?" onClose={close}>
-          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+        <ConfirmSheet
+          title="Start this show over?"
+          confirmLabel="Start over"
+          danger
+          pending={pending}
+          error={error}
+          onConfirm={confirmStartOver}
+          onCancel={cancelConfirmation}
+          onClose={close}
+        >
             Your current progress ({startOver.watched} of {startOver.aired}{" "}
             episodes) is kept as{" "}
             {startOver.runNumber === null
@@ -261,66 +270,22 @@ export function StatusMenu({
               : `Run ${startOver.runNumber}`}
             . This show goes back to the start. This can&apos;t be undone in
             this version.
-          </p>
-
-          {error ? (
-            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
-            <button
-              type="button"
-              onClick={cancelConfirmation}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmStartOver}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
-            >
-              Start over
-            </button>
-          </div>
-        </Sheet>
+        </ConfirmSheet>
       ) : null}
 
       {open && showingReset && resetHistory ? (
-        <Sheet title="Reset history?" onClose={close}>
-          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+        <ConfirmSheet
+          title="Reset history?"
+          confirmLabel="Reset history"
+          danger
+          pending={pending}
+          error={error}
+          onConfirm={confirmReset}
+          onCancel={cancelConfirmation}
+          onClose={close}
+        >
             {resetConfirmation(resetHistory)}
-          </p>
-
-          {error ? (
-            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
-            <button
-              type="button"
-              onClick={cancelConfirmation}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirmReset}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full bg-danger px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
-            >
-              Reset history
-            </button>
-          </div>
-        </Sheet>
+        </ConfirmSheet>
       ) : null}
 
       {open && !showingStartOver && !showingReset ? (

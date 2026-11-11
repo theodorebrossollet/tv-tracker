@@ -525,7 +525,7 @@ export default async function ShowPage({
             </p>
           ) : null}
 
-          <dl className="divide-y divide-border-faint overflow-hidden rounded-[14px] border border-border bg-surface">
+          <dl className="divide-y divide-border-faint overflow-hidden rounded-2xl bg-surface">
             <MetaRow label="Network" value={show.network} />
             <MetaRow label="Genres" value={show.genres} />
             <MetaRow

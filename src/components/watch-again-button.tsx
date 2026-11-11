@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { watchMovieAgain } from "@/app/rewatch-actions";
-import { Sheet } from "@/components/sheet";
+import { ConfirmSheet } from "@/components/confirm-sheet";
 import { useViewerTimeZone } from "@/components/watched-date";
 import { formatWatchedDate } from "@/lib/format";
 import { formatRating } from "@/lib/ratings";
@@ -67,43 +67,23 @@ export function WatchAgainButton({
         type="button"
         onClick={show}
         aria-haspopup="dialog"
-        className="min-h-[46px] rounded-full border border-border px-[22px] text-[15px] font-medium transition-colors hover:bg-surface"
+        className="min-h-[46px] rounded-full bg-surface px-[22px] text-[15px] font-medium transition-colors hover:bg-surface-raised"
       >
         Watch again
       </button>
 
       {open ? (
-        <Sheet title="Log a new watch?" onClose={close}>
-          <p className="px-1.5 text-[13px] leading-relaxed text-muted">
+        <ConfirmSheet
+          title="Log a new watch?"
+          confirmLabel="Watch again"
+          pending={pending}
+          error={error}
+          onConfirm={confirm}
+          onCancel={close}
+        >
             {kept} kept in Past watches. The movie shows as watched today with
             no rating.
-          </p>
-
-          {error ? (
-            <p role="alert" className="mt-2 px-1.5 text-xs text-danger">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="mt-3.5 flex gap-2 px-1.5 pb-1">
-            <button
-              type="button"
-              onClick={close}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full border border-border px-[22px] text-[15px] font-medium disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={confirm}
-              disabled={pending}
-              className="min-h-[46px] flex-1 rounded-full bg-accent px-[22px] text-[15px] font-semibold text-on-accent disabled:opacity-50"
-            >
-              Watch again
-            </button>
-          </div>
-        </Sheet>
+        </ConfirmSheet>
       ) : null}
     </>
   );

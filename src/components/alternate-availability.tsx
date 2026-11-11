@@ -36,7 +36,7 @@ export function AlternateAvailability({
         worth knowing before you rely on it.
       </p>
 
-      <div className="mt-3 space-y-3 rounded-lg border border-border p-3">
+      <div className="mt-3 space-y-3 rounded-2xl bg-surface p-3">
         {shown.map((country) => (
           <div key={country.code} className="flex flex-wrap items-center gap-2">
             {/* Wider than the `w-14` in `Availability`: that column holds
