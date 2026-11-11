@@ -75,7 +75,7 @@ export function ChangePasswordForm() {
       />
       <p className="-mt-2 text-xs text-muted">
         Confirms it&rsquo;s really you — a signed-in session alone isn&rsquo;t
-        enough to change the password. Same code you were given when invited.
+        enough to change the password.
       </p>
 
       <SecretInput

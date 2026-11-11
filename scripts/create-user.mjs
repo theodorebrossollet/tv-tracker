@@ -17,9 +17,9 @@
 // Usage:
 //   DATABASE_URL="libsql://…" TURSO_AUTH_TOKEN="…" node scripts/create-user.mjs
 //
-// Unlike scripts/create-admin-user.mjs this has no "must be the first account"
-// guard — that one exists solely to bootstrap the pre-accounts data, and
-// refuses to run twice so it cannot mint a second owner for it.
+// The app has one account today, so this is not for inviting anyone: it is
+// kept as the only way into a database that has no account in it (a rebuilt
+// or brand-new one). It has no "must be the first account" guard.
 
 import { createClient } from "@libsql/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -41,7 +41,7 @@ if (url.startsWith("libsql://") && !authToken) {
 
 const client = createClient({ url, authToken });
 
-// 16 bytes / 128 bits, matching create-admin-user.mjs. Far past brute-force
+// 16 bytes / 128 bits, matching reset-user-code.mjs. Far past brute-force
 // feasibility at any request rate, and short enough to paste onto a phone.
 const code = randomBytes(16).toString("hex");
 const codeHash = createHash("sha256").update(code).digest("hex");

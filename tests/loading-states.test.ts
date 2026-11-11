@@ -31,7 +31,6 @@ const APP_DIR = fileURLToPath(new URL("../src/app", import.meta.url));
 const NO_LOADING_NEEDED = [
   "login",
   "login/code",
-  "login/password",
   "welcome",
 ];
 

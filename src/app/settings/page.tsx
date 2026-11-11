@@ -143,10 +143,9 @@ export default async function SettingsPage({
 
         <DisclosureRow label="Change password">
           <p className="text-[12.5px] leading-relaxed text-muted">
-            Changing it requires your account code — the one you were given when
-            invited — as proof it&rsquo;s really you. Keep that code regardless:
-            it&rsquo;s still the only way back in if you forget whatever password
-            you set here.
+            Changing it requires your account code, as proof it&rsquo;s really
+            you. Keep that code regardless: it&rsquo;s still the only way back
+            in if you forget whatever password you set here.
           </p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
             Changing your password signs you out everywhere else — your other

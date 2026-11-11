@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 
 import { completeOnboarding } from "@/app/account-actions";
 import { SecretInput } from "@/components/secret-input";
+import { FIELD_CLASS, FIELD_LABEL_CLASS, SUBMIT_CLASS } from "@/lib/field-styles";
 import { NICKNAME_RULES, validateNickname } from "@/lib/nickname";
 import { PASSWORD_RULES, validatePassword } from "@/lib/password-rules";
 
@@ -55,9 +56,9 @@ export function OnboardingForm({ existingNickname }: OnboardingFormProps) {
   }
 
   return (
-    <form onSubmit={submit} className="mt-6 space-y-4">
+    <form onSubmit={submit} className="mt-7 space-y-4">
       <div>
-        <label htmlFor="nickname" className="mb-1 block text-sm text-muted">
+        <label htmlFor="nickname" className={FIELD_LABEL_CLASS}>
           Nickname
         </label>
         <input
@@ -76,7 +77,7 @@ export function OnboardingForm({ existingNickname }: OnboardingFormProps) {
           spellCheck={false}
           autoFocus={existingNickname === null}
           maxLength={40}
-          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-muted disabled:opacity-60"
+          className={FIELD_CLASS}
         />
         <p className="mt-2 text-xs text-muted">
           {existingNickname ? "Already chosen — this can't be changed." : NICKNAME_RULES}
@@ -116,7 +117,7 @@ export function OnboardingForm({ existingNickname }: OnboardingFormProps) {
       {confirming && checkedNickname.ok && (
         <div
           role="alert"
-          className="rounded-md border border-highlight/40 bg-highlight/10 p-3 text-sm"
+          className="rounded-2xl bg-highlight/10 p-3.5 text-sm"
         >
           You&rsquo;ll be{" "}
           <strong className="font-semibold">{checkedNickname.nickname}</strong>.
@@ -127,7 +128,7 @@ export function OnboardingForm({ existingNickname }: OnboardingFormProps) {
       <button
         type="submit"
         disabled={pending || !nickname.trim() || !password || !confirm}
-        className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+        className={SUBMIT_CLASS}
       >
         {pending ? "Saving…" : confirming ? "Yes, use this nickname" : "Continue"}
       </button>

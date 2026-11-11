@@ -1,12 +1,23 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { AuthScreen } from "@/components/auth-screen";
 import { getSession, isOnboarded } from "@/lib/auth";
+
+import { PasswordForm } from "./password-form";
 
 export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Sign in · TV Tracker" };
 
+/**
+ * Sign in: nickname and password, with the account code one link away.
+ *
+ * This used to be a chooser ("I have an account" / "First time, I have a
+ * code") in front of two forms, from when codes were handed out as invites.
+ * There is one account now, so the everyday form is the page and the code is
+ * what it always also was: the way back in after a forgotten password.
+ */
 export default async function LoginPage() {
   const session = await getSession();
 
@@ -15,32 +26,15 @@ export default async function LoginPage() {
   if (session) redirect(isOnboarded(session.user) ? "/" : "/welcome");
 
   return (
-    <div className="mx-auto max-w-sm py-10">
-      <h1 className="text-xl font-semibold tracking-tight">Welcome</h1>
-      <p className="mt-2 text-sm text-muted">
-        How would you like to sign in?
-      </p>
+    <AuthScreen title="Sign in">
+      <PasswordForm />
 
-      <div className="mt-6 space-y-3">
-        <Link
-          href="/login/password"
-          className="block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-on-accent"
-        >
-          I have an account
-        </Link>
-
-        <Link
-          href="/login/code"
-          className="block rounded-md border border-border px-3 py-2 text-center text-sm font-medium"
-        >
-          First time — I have a code
-        </Link>
-      </div>
-
-      <p className="mt-6 text-xs text-muted">
-        Accounts are created by invitation. Your code sets one up the first time
-        you use it, and is also the way back in if you forget your password.
-      </p>
-    </div>
+      <Link
+        href="/login/code"
+        className="mt-5 flex min-h-11 items-center justify-center text-[13.5px] text-muted transition-colors hover:text-foreground"
+      >
+        Forgot your password? Use your account code
+      </Link>
+    </AuthScreen>
   );
 }

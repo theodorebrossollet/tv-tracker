@@ -17,8 +17,8 @@
 // this function; see docs/technical-design-v2.md.
 
 /**
- * Bytes of randomness behind a code, matching `scripts/create-user.mjs`,
- * `create-admin-user.mjs` and `reset-user-code.mjs`. Hex-encoded, so the string
+ * Bytes of randomness behind a code, matching `scripts/create-user.mjs` and
+ * `reset-user-code.mjs`. Hex-encoded, so the string
  * is twice this long.
  *
  * Derived rather than written twice: raising the entropy in the scripts without

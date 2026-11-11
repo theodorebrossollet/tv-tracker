@@ -12,7 +12,7 @@ import {
 describe("the shape of an account code", () => {
   it("accepts what the account scripts actually generate", () => {
     // Not a hand-written sample: this is the exact expression in
-    // create-user.mjs, create-admin-user.mjs and reset-user-code.mjs. If the
+    // create-user.mjs and reset-user-code.mjs. If the
     // scripts and this check ever disagree, every newly issued code stops
     // working — and the symptom is "the code I was just given is refused",
     // which points at the wrong thing entirely.
