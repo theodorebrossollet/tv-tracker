@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -44,6 +44,19 @@ function luminance(hex: string): number {
 function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
+}
+
+const SRC_DIR = fileURLToPath(new URL("../src", import.meta.url));
+
+/** Every .tsx file under a directory. */
+async function sourceFiles(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...(await sourceFiles(path)));
+    else if (entry.name.endsWith(".tsx")) found.push(path);
+  }
+  return found;
 }
 
 /**
@@ -121,5 +134,30 @@ describe("the palette", () => {
       Number(contrast(tokens.border, tokens.surface).toFixed(3)),
       `border on surface`,
     ).toBeGreaterThan(1.1);
+  });
+  it("draws no faint hairline on a filled card", async () => {
+    // `border-faint` is the hairline for the page itself. It is within a shade
+    // of `surface`, so on a filled card it is invisible: the rows of the show
+    // page's details card and of every Settings group ran together for as long
+    // as they had "dividers". On `surface`, a divider is `border`, which the
+    // test above holds visible against it.
+    const tokens = await readTokens();
+
+    expect(
+      Number(contrast(tokens["border-faint"], tokens.surface).toFixed(3)),
+      "this rule exists because border-faint cannot be seen on surface",
+    ).toBeLessThan(1.1);
+
+    const offenders: string[] = [];
+    for (const file of await sourceFiles(SRC_DIR)) {
+      const lines = (await readFile(file, "utf8")).split("\n");
+      lines.forEach((line, index) => {
+        if (/border-faint/.test(line) && /\bbg-surface(?![-\w])/.test(line)) {
+          offenders.push(`${file.slice(SRC_DIR.length + 1)}:${index + 1}`);
+        }
+      });
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
