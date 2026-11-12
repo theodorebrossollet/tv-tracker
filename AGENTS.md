@@ -25,7 +25,7 @@ or the manifest/service worker.
 
 ```bash
 npm run dev        # local server (localhost:3000)
-npm test           # vitest, ~450 tests, no network or server needed
+npm test           # vitest, ~1,500 tests, no network or server needed
 npm run lint
 npm run build      # runs prisma generate first
 npm run db:migrate # create + apply a migration locally
@@ -42,9 +42,16 @@ Show/Episode cache, exists nowhere else to re-fetch from.
 (`.github/workflows/ci.yml`). Vercel's preview deploy is a separate check and
 only tells you the app built.
 
-**Nothing enforces a green run.** Branch protection isn't available on private
-repositories on GitHub's free plan, so a red pull request can still be merged —
-it has happened. Treat the check as a gate anyway: don't merge on red.
+**The `check` job gates merging.** The repository is public now, so branch
+protection is available and on: GitHub reports a pull request as blocked until
+`check` has passed on its head commit. That was not always so (while the
+repository was private nothing enforced it, and a red pull request was merged),
+so don't treat the gate as the only reason to care: don't merge on red.
+
+If `check` never appears for a commit (it happened once, on a second push made
+moments after opening the pull request), use "Re-run all jobs" on the Actions
+run, or close and reopen the pull request, which starts a fresh run. Don't
+push an empty commit for it.
 
 ## Where things are
 
