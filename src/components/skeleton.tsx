@@ -78,7 +78,7 @@ export function SkeletonGroup({ rows }: { rows: number }) {
   return (
     <div className="mt-[22px]">
       <Skeleton className="h-2.5 w-24" />
-      <div className="mt-2.5 divide-y divide-border-faint overflow-hidden rounded-2xl bg-surface">
+      <div className="mt-2.5 divide-y divide-border overflow-hidden rounded-2xl bg-surface">
         {Array.from({ length: rows }, (_, index) => (
           <div key={index} className="flex h-[52px] items-center px-3.5">
             <Skeleton className="h-4 w-1/3" />

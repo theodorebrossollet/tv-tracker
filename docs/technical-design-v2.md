@@ -1,5 +1,12 @@
 # TV Tracker — Technical Design (v2)
 
+> **Historical record.** This is the design as written for the v2 work
+> (accounts and the PWA), kept for its reasoning. It is not maintained, and
+> parts of it no longer match the code: the one-off migration scripts in
+> section 3 (`create-admin-user.mjs`, `backfill-user-ownership.mjs`) have run
+> and been deleted, `/login/password` is now `/login`, and the app has one
+> account rather than several. For how things are today, read `AGENTS.md`.
+
 Based on `docs/scope-v2.md`. Read that first, plus `docs/technical-design.md`
 (v1) — this doc only covers the delta: accounts and the PWA.
 
