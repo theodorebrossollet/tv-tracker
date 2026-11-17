@@ -8,9 +8,9 @@ capture ideas as they come up, to revisit once the current phase is done.
 
 - **Shared watchlists** — let another user (friend/family) see or contribute to
   a watchlist, not just their own private one
-- **Mobile app** — native app rather than the responsive web view (currently
-  listed as explicitly out of scope in [scope.md](scope.md); revisit that if
-  this gets prioritized)
+- **Mobile app** — now scoped as a SwiftUI iPhone app with push
+  notifications, for TestFlight: see [scope-ios.md](scope-ios.md) and
+  [technical-design-ios.md](technical-design-ios.md). In prep, not built.
 - **Calendar view** — a calendar showing upcoming episode releases across
   tracked shows, as an alternative to the existing upcoming-episodes list
 - **Export personal data as CSV** — download your own tracked shows/watched

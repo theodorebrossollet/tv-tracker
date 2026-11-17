@@ -19,7 +19,9 @@ Read `docs/technical-design.md` for the reasoning behind anything below, and
 `docs/scope.md` for what's in v1 versus what's deferred. v2 (accounts + a PWA,
 nothing else) is scoped separately in `docs/scope-v2.md` and
 `docs/technical-design-v2.md` — read those before touching auth, per-user data,
-or the manifest/service worker.
+or the manifest/service worker. A SwiftUI iPhone app (v3: a JSON API, bearer
+sessions, push) is scoped in `docs/scope-ios.md` and
+`docs/technical-design-ios.md`, in prep and not built.
 
 ## Commands
 
