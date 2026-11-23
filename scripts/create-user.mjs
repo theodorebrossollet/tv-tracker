@@ -17,9 +17,9 @@
 // Usage:
 //   DATABASE_URL="libsql://…" TURSO_AUTH_TOKEN="…" node scripts/create-user.mjs
 //
-// The app has one account today, so this is not for inviting anyone: it is
-// kept as the only way into a database that has no account in it (a rebuilt
-// or brand-new one). It has no "must be the first account" guard.
+// Used both to add an account for someone new and to get into a database that
+// has no account in it (a rebuilt or brand-new one). It has no "must be the
+// first account" guard, deliberately.
 
 import { createClient } from "@libsql/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";

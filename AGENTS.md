@@ -10,8 +10,9 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # TV Tracker — orientation
 
-A personal TV tracker replacing TV Time. One account, the owner's, and no
-public sign-up; the data model is still per-user (see "Sign-in, in short"). Next.js 16 App Router, Prisma 7 over
+A personal TV tracker replacing TV Time. A few private accounts, each made by
+hand, and no public sign-up; every row is per-user (see "Sign-in, in short").
+Next.js 16 App Router, Prisma 7 over
 SQLite (local file in dev, Turso in production), TMDB for show data, deployed
 on Vercel.
 
@@ -641,17 +642,18 @@ and this file differ, this file wins. What that means in practice:
 
 ## Sign-in, in short
 
-One account today, but nothing in the data model assumes it: every row is
-still scoped by `userId`, and that stays (removing it is a breaking migration
-over every table of watch history, for nothing visible). Three screens outside
+More than one account is live, so per-user scoping is not theoretical: every
+row is scoped by `userId`, and a read that forgets it shows one person the
+other's watch history (see "Per-user data is scoped by hand"). There is no
+sign-up form; accounts are created with `scripts/create-user.mjs`, which prints
+a code once, to be handed over privately. Three screens outside
 the app, all in `AuthScreen` (`components/auth-screen.tsx`) with fields and
 buttons from `lib/field-styles.ts`:
 
 - `/login`: nickname and password (`loginWithPassword`). The everyday way in.
 - `/login/code`: the account code. Recovery: a valid code clears the password
   and every session, then sends you to `/welcome`. Also first login for an
-  account made by `scripts/create-user.mjs`, which is only needed for a
-  database with no account in it.
+  account made by `scripts/create-user.mjs`.
 - `/welcome`: choose a password (and a nickname, first time only).
 
 `scripts/reset-user-code.mjs` issues a new code when both are lost. Don't

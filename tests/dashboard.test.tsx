@@ -263,9 +263,11 @@ describe("the upcoming movies list", () => {
       }),
     ]);
 
+    // 40 days out crosses New Year from late November, and a date in another
+    // year carries its year, so the year is optional here.
     const line = screen.getByText(/^In cinemas · Digital /);
     expect(line.textContent).toMatch(
-      /^In cinemas · Digital \d{1,2} \w{3}$/,
+      /^In cinemas · Digital \d{1,2} \w{3}( \d{4})?$/,
     );
   });
 
