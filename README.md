@@ -3,14 +3,18 @@
 A personal web app for tracking TV shows — what you're watching, how far
 through you are, and what's airing next. A replacement for TV Time.
 
-**There is one account, and no sign-up form.** You sign in at `/login` with a
-nickname and password. The account also has a code, which is the only way back
-in if the password is forgotten — there is no email to send a reset to. Losing
-both isn't a dead end either, just not self-serve: run
+**A handful of private accounts, and no sign-up form.** Each account's watch
+history, ratings, lists and settings are its own. You sign in at `/login` with
+a nickname and password. Each account also has a code, which is the only way
+back in if the password is forgotten — there is no email to send a reset to.
+Losing both isn't a dead end either, just not self-serve: run
 `scripts/reset-user-code.mjs <nickname>` to issue a fresh code for the same
-account, with all of its data untouched. `scripts/create-user.mjs` creates an
-account in a database that has none (a new or rebuilt one); its code is used
-once at `/login/code` to choose the nickname and password.
+account, with all of its data untouched.
+
+Accounts are made by hand: `scripts/create-user.mjs` creates one and prints its
+code once. Hand the code over privately; it is used once at `/login/code` to
+choose the nickname and password, and should be kept afterwards as the way
+back in.
 
 The shared `APP_PASSWORD` gate that protected v1 is gone; every page and server
 action now checks a real session.
@@ -22,7 +26,7 @@ action now checks a real session.
 ## Contributions
 
 This repo is public for transparency, not to solicit outside contributions —
-it's a personal project with a single user, and there's no
+it's a personal project with a few private accounts, and there's no
 roadmap for taking external PRs. Bug reports are still welcome as issues.
 
 No automation in this repo treats issue or PR text as instructions to
